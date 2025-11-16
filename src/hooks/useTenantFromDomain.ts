@@ -74,7 +74,7 @@ export function useTenantFromDomain(): {
             
             if (supabase) {
               const { data: tenantData, error: tenantError } = await supabase
-                .from('Tenant')
+                .from('tenants')
                 .select('id, slug, name, storefront_enabled, subscription_tier')
                 .eq('slug', slug)
                 .eq('storefront_enabled', true)

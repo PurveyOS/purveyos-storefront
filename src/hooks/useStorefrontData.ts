@@ -149,17 +149,17 @@ export function useStorefrontData(tenantId: string): {
             .single(),
           
           supabase
-            .from('Product')
+            .from('products')
             .select('*')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name'),
           
           supabase
-            .from('Category')
+            .from('categories')
             .select('*')
             .eq('tenant_id', tenantId)
-            .order('name')
+            .order('sort_order', { ascending: true })
         ]);
 
         // Check for errors
