@@ -1,0 +1,7 @@
+name = "purveyos-storefront"
+
+[env.production]
+vars = { }
+
+[site]
+bucket = "dist"
