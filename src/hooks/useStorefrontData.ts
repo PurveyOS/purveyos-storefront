@@ -149,14 +149,14 @@ export function useStorefrontData(tenantId: string): {
             .single(),
           
           supabase
-            .from('products')
+            .from('Product')
             .select('*')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name'),
           
           supabase
-            .from('categories')
+            .from('Category')
             .select('*')
             .eq('tenant_id', tenantId)
             .order('name')

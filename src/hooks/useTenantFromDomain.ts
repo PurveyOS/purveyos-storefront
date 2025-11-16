@@ -30,8 +30,16 @@ export function useTenantFromDomain(): {
           slug = params.get('tenant') || 'demo-farm';
         } else if (hostname.endsWith('.purveyos.store')) {
           // Production storefront domain - extract subdomain
-          // sweetpastures.purveyos.store -> "sweetpastures"
-          slug = hostname.replace('.purveyos.store', '');
+          // sweetppastures.purveyos.store -> "sweet-p-pastures"
+          const extractedSlug = hostname.replace('.purveyos.store', '');
+          
+          // Convert domain format to database slug format
+          // "sweetppastures" -> "sweet-p-pastures"
+          if (extractedSlug === 'sweetppastures') {
+            slug = 'sweet-p-pastures';
+          } else {
+            slug = extractedSlug;
+          }
         } else if (hostname === 'purveyos.store') {
           // Root storefront domain - redirect to marketing
           window.location.href = 'https://purveyos.com';
@@ -66,8 +74,8 @@ export function useTenantFromDomain(): {
             
             if (supabase) {
               const { data: tenantData, error: tenantError } = await supabase
-                .from('tenants')
-                .select('*')
+                .from('Tenant')
+                .select('id, slug, name, storefront_enabled, subscription_tier')
                 .eq('slug', slug)
                 .eq('storefront_enabled', true)
                 .single();
