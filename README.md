@@ -1,6 +1,13 @@
 # PurveyOS Storefront
 
-A modern, customizable storefront application for local food producers using the PurveyOS point-of-sale system.
+# PurveyOS Storefront
+
+A modern e-commerce storefront for local food producers, integrated with the PurveyOS point-of-sale system.
+
+## Deployment Status
+- ✅ Deployed to Cloudflare Pages
+- ✅ DNS configured for *.purveyos.store
+- ✅ Database storefront enabled
 
 <!-- Trigger deployment -->
 <!-- Updated with CF_PAGES_UPLOAD_DIR -->
