@@ -23,22 +23,28 @@ export function useTenantFromDomain(): {
         const hostname = window.location.hostname;
         let slug: string | null = null;
 
+        console.log('🔍 Resolving tenant for hostname:', hostname);
+
         // Extract subdomain
         if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
           // Development mode - check for ?tenant=xxx query param or use demo
           const params = new URLSearchParams(window.location.search);
           slug = params.get('tenant') || 'demo-farm';
+          console.log('🏠 Development mode, using slug:', slug);
         } else if (hostname.endsWith('.purveyos.store')) {
           // Production storefront domain - extract subdomain
           // sweetppastures.purveyos.store -> "sweet-p-pastures"
           const extractedSlug = hostname.replace('.purveyos.store', '');
+          console.log('🌐 Extracted slug from domain:', extractedSlug);
           
           // Convert domain format to database slug format
           // "sweetppastures" -> "sweet-p-pastures"
           if (extractedSlug === 'sweetppastures') {
             slug = 'sweet-p-pastures';
+            console.log('✅ Converted to database slug:', slug);
           } else {
             slug = extractedSlug;
+            console.log('📝 Using extracted slug as-is:', slug);
           }
         } else if (hostname === 'purveyos.store') {
           // Root storefront domain - redirect to marketing
@@ -69,10 +75,13 @@ export function useTenantFromDomain(): {
           });
         } else {
           // Try real Supabase query
+          console.log('🔍 Looking up tenant in database:', slug);
           try {
             const { supabase } = await import('../lib/supabaseClient');
+            console.log('📊 Supabase client loaded:', !!supabase);
             
             if (supabase) {
+              console.log('🔎 Querying tenants table for slug:', slug);
               const { data: tenantData, error: tenantError } = await supabase
                 .from('tenants')
                 .select('id, slug, name, storefront_enabled, subscription_tier')
@@ -80,16 +89,21 @@ export function useTenantFromDomain(): {
                 .eq('storefront_enabled', true)
                 .single();
 
+              console.log('📋 Query result:', { tenantData, tenantError });
+
               if (tenantError || !tenantData) {
+                console.error('❌ Tenant not found or disabled:', tenantError);
                 setError(`Storefront "${slug}" not found or disabled`);
               } else {
+                console.log('✅ Tenant found:', tenantData);
                 setTenant(tenantData);
               }
             } else {
+              console.error('❌ Supabase client is null');
               setError(`Tenant "${slug}" - Supabase not configured, using demo mode`);
             }
           } catch (supabaseError) {
-            console.error('Supabase query failed:', supabaseError);
+            console.error('❌ Supabase query failed:', supabaseError);
             setError(`Failed to load storefront "${slug}"`);
           }
         }

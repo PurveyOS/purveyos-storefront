@@ -46,4 +46,9 @@ UPDATE public.products
 SET is_online = true
 WHERE tenant_id = (SELECT id FROM public.tenants WHERE slug = 'sweet-p-pastures')
 AND is_online = false
-LIMIT 3;
+AND id IN (
+  SELECT id FROM public.products 
+  WHERE tenant_id = (SELECT id FROM public.tenants WHERE slug = 'sweet-p-pastures')
+  AND is_online = false
+  LIMIT 3
+);
