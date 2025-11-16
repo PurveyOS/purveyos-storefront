@@ -2,6 +2,8 @@
 
 A modern, customizable storefront application for local food producers using the PurveyOS point-of-sale system.
 
+<!-- Trigger deployment -->
+
 ## Overview
 
 This storefront provides customers with a seamless online shopping experience while maintaining real-time integration with the PurveyOS inventory management system. Each farm gets their own branded subdomain storefront with customizable templates and full order management integration.
