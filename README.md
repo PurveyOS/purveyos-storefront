@@ -3,6 +3,7 @@
 A modern, customizable storefront application for local food producers using the PurveyOS point-of-sale system.
 
 <!-- Trigger deployment -->
+<!-- Updated with CF_PAGES_UPLOAD_DIR -->
 
 ## Overview
 
