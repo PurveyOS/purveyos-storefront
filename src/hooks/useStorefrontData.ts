@@ -152,7 +152,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('id, name, pricePer, unit, image, category, qty, notes')
+            .select('id, name, pricePer, unit, image, category, qty, online_description')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name')
@@ -189,24 +189,23 @@ export function useStorefrontData(tenantId: string): {
         const products: Product[] = productsResult.data.map(p => ({
           id: p.id,
           name: p.name,
-          description: p.notes || '', // Use notes as description since description column doesn't exist
-          pricePer: p.pricePer || 0, // Already in dollars from huckster-ui schema
+          description: p.online_description || '', // Use online_description column
+          pricePer: p.pricePer || 0,
           unit: p.unit || 'lb',
-          imageUrl: p.image || '/demo-product.svg',
-          categoryId: p.category || '',
+          imageUrl: p.image || '/demo-product.svg', // Use image column
+          categoryId: p.category || '', // Use category column
           available: true,
           inventory: p.qty || 0,
         }));
 
-        // Generate categories from products instead of querying separate table
-        const uniqueCategories = new Set(products.map(p => p.categoryId).filter(Boolean));
-        const categories: Category[] = Array.from(uniqueCategories).map((categoryName, index) => ({
-          id: categoryName,
-          name: categoryName.charAt(0).toUpperCase() + categoryName.slice(1),
-          description: `${categoryName} products`,
+        // Since we don't have category column yet, create a generic "Products" category
+        const categories: Category[] = products.length > 0 ? [{
+          id: 'all',
+          name: 'All Products',
+          description: 'All available products',
           imageUrl: '/demo-category.svg',
-          sortOrder: index + 1,
-        }));
+          sortOrder: 1,
+        }] : [];
 
         console.log('Generated categories from products:', categories);
         console.log('Products loaded:', products.length);
