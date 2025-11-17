@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Product } from '../types/product';
 import { WeightBinSelector } from './WeightBinSelector';
+import { isLowStock, formatRestockDate } from '../utils/inventory';
 
 // Existing interface for ClassicTemplate compatibility
 interface ClassicProductCardProps {
@@ -14,11 +15,12 @@ interface ClassicProductCardProps {
 interface ModernProductCardProps {
   product: Product;
   quantityInCart: number;
-  onAddToCart: () => void;
+  onAddToCart: (weight?: number) => void;
   onRemoveFromCart: () => void;
   primaryColor?: string;
   accentColor?: string;
   onAddBinToCart?: (binWeight: number, unitPriceCents: number) => void;
+  preOrdersEnabled?: boolean;
 }
 
 type ProductCardProps = ClassicProductCardProps | ModernProductCardProps;
@@ -103,7 +105,14 @@ export function ProductCard(props: ProductCardProps) {
   const { quantityInCart, onAddToCart, onRemoveFromCart, primaryColor = '#0f6fff', accentColor = '#ffcc00' } = props;
   const price = (product.pricePer ?? 0);
   const [showBinSelector, setShowBinSelector] = useState(false);
+  const [showWeightInput, setShowWeightInput] = useState(false);
+  const [weightAmount, setWeightAmount] = useState<string>('1');
   const hasBins = product.weightBins && product.weightBins.length > 0;
+  const isWeightBased = product.pricingMode === 'weight' && !hasBins;
+  const isSoldOut = product.isSoldOut || !product.available;
+  const canPreOrder = (props.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
+  const showLowStock = !isSoldOut && isLowStock(product);
+  const formattedRestockDate = formatRestockDate(product.restockDate);
 
     return (
   <div className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm border border-slate-100 hover:shadow-md transition-shadow duration-200 group" style={{ borderColor: primaryColor + '22' }}>
@@ -113,10 +122,31 @@ export function ProductCard(props: ProductCardProps) {
             alt={product.name}
             className="h-40 w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
           />
-          {!product.available && (
+          {isSoldOut && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <span className="bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium">
-                Out of Stock
+              <div className="text-center">
+                <span className="bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+                  Sold Out
+                </span>
+                {canPreOrder && (
+                  <div className="mt-2">
+                    <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-xs font-medium">
+                      Pre-order Available
+                    </span>
+                  </div>
+                )}
+                {formattedRestockDate && (
+                  <div className="mt-2 text-white text-xs bg-black/40 px-2 py-1 rounded">
+                    Back: {formattedRestockDate}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {showLowStock && (
+            <div className="absolute top-2 right-2">
+              <span className="bg-orange-500 text-white px-2 py-1 rounded-full text-xs font-medium shadow-lg">
+                Low Stock
               </span>
             </div>
           )}
@@ -128,13 +158,69 @@ export function ProductCard(props: ProductCardProps) {
           </h3>
           
           {product.description && (
-            <p className="text-sm text-slate-600 mb-3 line-clamp-2 flex-1">
+            <p className="text-sm text-slate-600 mb-2 line-clamp-2">
               {product.description}
             </p>
           )}
           
-          {/* Show weight bin selector if product has bins */}
-          {hasBins && showBinSelector ? (
+          {product.specialNotes && (
+            <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs text-amber-800 flex items-start gap-1">
+                <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{product.specialNotes}</span>
+              </p>
+            </div>
+          )}
+          
+          {/* Show weight input for weight-based products */}
+          {isWeightBased && showWeightInput ? (
+            <div className="mt-auto space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Enter weight ({product.unit})
+                </label>
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  value={weightAmount}
+                  onChange={(e) => setWeightAmount(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                  placeholder="e.g., 2.5"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  ${price.toFixed(2)} × {weightAmount || 0} {product.unit} = ${(price * parseFloat(weightAmount || '0')).toFixed(2)}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const weight = parseFloat(weightAmount);
+                    if (weight > 0) {
+                      onAddToCart(weight);
+                      setShowWeightInput(false);
+                      setWeightAmount('1');
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors duration-200"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  Add to cart
+                </button>
+                <button
+                  onClick={() => {
+                    setShowWeightInput(false);
+                    setWeightAmount('1');
+                  }}
+                  className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : hasBins && showBinSelector ? (
             <div className="mt-auto">
               <WeightBinSelector
                 bins={product.weightBins!}
@@ -158,50 +244,78 @@ export function ProductCard(props: ProductCardProps) {
             </div>
           ) : (
             <div className="flex items-center justify-between mt-auto">
-              <div className="flex items-baseline gap-1">
-                {hasBins ? (
-                  <span className="text-sm font-medium text-slate-700">
-                    Multiple sizes available
-                  </span>
-                ) : (
-                  <>
-                    <span className="text-lg font-bold" style={{ color: primaryColor }}>
-                      ${price.toFixed(2)}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-baseline gap-1">
+                  {hasBins ? (
+                    <span className="text-sm font-medium text-slate-700">
+                      Multiple sizes available
                     </span>
-                    {product.unit && (
-                      <span className="text-sm text-slate-500">
-                        /{product.unit}
+                  ) : (
+                    <>
+                      <span className="text-lg font-bold" style={{ color: primaryColor }}>
+                        ${price.toFixed(2)}
                       </span>
-                    )}
-                  </>
+                      {product.unit && (
+                        <span className="text-sm text-slate-500">
+                          /{product.unit}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+                {showLowStock && product.inventory && (
+                  <span className="text-xs text-orange-600 font-medium">
+                    Only {product.inventory} left
+                  </span>
+                )}
+                {isSoldOut && product.allowPreOrder && props.preOrdersEnabled === false && (
+                  <span className="text-xs text-slate-500">
+                    Pre-order available on PRO plans
+                  </span>
                 )}
               </div>
               
-            {product.available ? (
+            {!isSoldOut || canPreOrder ? (
               <div className="flex items-center gap-2">
                 {hasBins && quantityInCart === 0 ? (
                   <button
                     onClick={() => setShowBinSelector(true)}
                     className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: primaryColor }}
+                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
                   >
-                    Select size
+                    {canPreOrder ? 'Pre-order size' : 'Select size'}
                   </button>
                 ) : hasBins ? (
                   <button
                     onClick={() => setShowBinSelector(true)}
                     className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: primaryColor }}
+                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
                   >
-                    Add more sizes
+                    {canPreOrder ? 'Pre-order more' : 'Add more sizes'}
+                  </button>
+                ) : isWeightBased && quantityInCart === 0 ? (
+                  <button
+                    onClick={() => setShowWeightInput(true)}
+                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
+                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
+                  >
+                    {canPreOrder ? 'Pre-order weight' : 'Enter weight'}
+                  </button>
+                ) : isWeightBased ? (
+                  <button
+                    onClick={() => setShowWeightInput(true)}
+                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
+                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
+                  >
+                    {canPreOrder ? 'Pre-order more' : 'Add more'}
                   </button>
                 ) : quantityInCart === 0 ? (
                   <button
-                    onClick={onAddToCart}
+                    onClick={() => onAddToCart()}
                     className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: primaryColor }}
+                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
                   >
-                    Add to cart
+                    {canPreOrder ? 'Pre-order' : 'Add to cart'}
                   </button>
                 ) : (
                   <div className="flex items-center gap-2">
@@ -218,7 +332,7 @@ export function ProductCard(props: ProductCardProps) {
                       {quantityInCart}
                     </span>
                     <button
-                      onClick={onAddToCart}
+                      onClick={() => onAddToCart()}
                       className="w-8 h-8 text-white rounded-full flex items-center justify-center transition-colors duration-200"
                       style={{ backgroundColor: accentColor }}
                     >
@@ -230,7 +344,7 @@ export function ProductCard(props: ProductCardProps) {
                 )}
               </div>
             ) : (
-              <span className="text-sm text-slate-500">Out of stock</span>
+              <span className="text-sm text-slate-500">Sold out</span>
             )}
             </div>
           )}

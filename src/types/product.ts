@@ -3,7 +3,8 @@ export interface Product {
   name: string;
   description: string;
   pricePer: number;
-  unit: string; // e.g., "lb", "oz", "piece"
+  unit: string; // e.g., "lb", "oz", "piece", "dozen"
+  pricingMode?: 'fixed' | 'weight'; // fixed = sell by unit count, weight = sell by weight
   weightBins?: Array<{
     weightBtn: number;
     unitPriceCents: number;
@@ -13,4 +14,15 @@ export interface Product {
   categoryId: string;
   available: boolean;
   inventory?: number;
+  
+  // Sold-out and pre-order fields
+  isSoldOut?: boolean; // Product is currently out of stock
+  allowPreOrder?: boolean; // Allow customers to pre-order if sold out
+  restockDate?: string; // ISO date string for when product will be back in stock
+  
+  // Product notes
+  specialNotes?: string; // Special instructions or notes from farmer (e.g., "Frozen only", "Call ahead")
+  
+  // Inventory management
+  reminderThreshold?: number; // Notify owner when inventory falls below this amount
 }

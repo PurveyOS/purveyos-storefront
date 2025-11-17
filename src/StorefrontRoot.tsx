@@ -4,6 +4,8 @@ import { useStorefrontData } from './hooks/useStorefrontData';
 import { usePersistedCart } from './hooks/usePersistedCart';
 import { getTemplate } from './templates';
 import { TemplateSwitcher } from './components/TemplateSwitcher';
+import { trackEvent, setAnalyticsEnabled } from './utils/analytics';
+import { canUseAnalytics, canUseAdvancedThemes, canUsePreOrders, getAllowedTemplates } from './utils/subscription';
 
 export function StorefrontRoot() {
   const { tenant, loading: tenantLoading } = useTenantFromDomain();
@@ -19,12 +21,30 @@ export function StorefrontRoot() {
     updateCartTotal(storefrontData.products);
   }, [cart.items, storefrontData, updateCartTotal]);
 
-  // Set initial template from settings
+  // Set initial template from settings and configure analytics based on subscription tier
   useEffect(() => {
+    const tier = tenant?.subscription_tier;
+    // Configure analytics
+    setAnalyticsEnabled(canUseAnalytics(tier));
+
+    // Determine allowed templates for this tier
     if (storefrontData?.settings.templateId) {
-      setCurrentTemplate(storefrontData.settings.templateId);
+      const desired = storefrontData.settings.templateId;
+      const allowed = getAllowedTemplates(tier);
+      setCurrentTemplate(allowed.includes(desired) ? desired : allowed[0] || 'classic');
     }
-  }, [storefrontData?.settings.templateId]);
+
+    if (tenant?.id && storefrontData) {
+      try {
+        trackEvent('storefront_loaded', {
+          tenantId: tenant.id,
+          templateId: storefrontData.settings.templateId,
+          productsCount: storefrontData.products?.length || 0,
+          categoriesCount: storefrontData.categories?.length || 0,
+        });
+      } catch {}
+    }
+  }, [storefrontData, tenant?.id]);
 
   // Loading states
   if (tenantLoading || dataLoading) {
@@ -86,6 +106,12 @@ export function StorefrontRoot() {
 
   // Get and render the selected template
   const Template = getTemplate(currentTemplate);
+  const tier = tenant.subscription_tier;
+  const features = {
+    preOrdersEnabled: canUsePreOrders(tier),
+    advancedThemesEnabled: canUseAdvancedThemes(tier),
+    analyticsEnabled: canUseAnalytics(tier),
+  };
 
   return (
     <div className="relative">
@@ -97,13 +123,19 @@ export function StorefrontRoot() {
         onAddToCart={addToCart}
         onRemoveFromCart={removeFromCart}
         onAddBinToCart={addBinToCart}
+        features={features}
       />
       
-      {/* Template Switcher - for demonstration */}
-      <TemplateSwitcher 
-        currentTemplate={currentTemplate}
-        onTemplateChange={setCurrentTemplate}
-      />
+      {/* Template Switcher - gated by subscription tier */}
+      {features.advancedThemesEnabled && (
+        <TemplateSwitcher 
+          currentTemplate={currentTemplate}
+          onTemplateChange={(id) => {
+            const allowed = getAllowedTemplates(tier);
+            setCurrentTemplate(allowed.includes(id) ? id : currentTemplate);
+          }}
+        />
+      )}
     </div>
   );
 }

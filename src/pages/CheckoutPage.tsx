@@ -4,6 +4,7 @@ import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { usePersistedCart } from '../hooks/usePersistedCart';
 import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
+import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 
 export function CheckoutPage() {
   const navigate = useNavigate();
@@ -31,6 +32,14 @@ export function CheckoutPage() {
       updateCartTotal(storefrontData.products);
     }
   }, [storefrontData?.products, updateCartTotal]);
+
+  // Track begin_checkout when arriving at checkout with items
+  useEffect(() => {
+    if (cart.items.length > 0) {
+      trackBeginCheckout({ tenantId: tenant?.id, itemsCount: cart.items.length, value: cart.total, currency: 'USD' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Redirect if cart is empty
   useEffect(() => {
@@ -62,11 +71,15 @@ export function CheckoutPage() {
       return;
     }
 
+    const orderValue = cart.total;
     const result = await createOrder(tenant.id, cart, storefrontData.products, formData);
 
     if (result.success) {
       setOrderSuccess(true);
       setOrderId(result.orderId);
+      try {
+        trackPurchase({ orderId: result.orderId!, tenantId: tenant.id, value: orderValue, currency: 'USD', itemsCount: cart.items.length });
+      } catch {}
       clearCart();
     } else {
       alert(result.error || 'Failed to create order. Please try again.');

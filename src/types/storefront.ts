@@ -26,9 +26,13 @@ export interface StorefrontSettings {
 export interface CartItem {
   productId: string;
   quantity: number;
-  // Optional weight-bin selection
+  // Optional weight-bin selection (for pre-packaged items)
   binWeight?: number; // e.g., 1.0 lb, 2.5 lb
   unitPriceCents?: number; // price per unit (e.g., per lb) in cents
+  // Optional custom weight (for weight-based pricing)
+  weight?: number; // Custom weight amount for weight-based products
+  // Pre-order tracking
+  isPreOrder?: boolean; // Item is a pre-order
 }
 
 export interface Cart {
@@ -41,9 +45,15 @@ export interface StorefrontTemplateProps {
   products: Product[];
   categories: Category[];
   cart: Cart;
-  onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number }) => void;
+  onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean }) => void;
   onRemoveFromCart: (productId: string, options?: { binWeight?: number }) => void;
   onAddBinToCart?: (productId: string, binWeight: number, unitPriceCents: number) => void;
+  // Optional feature capability flags (based on subscription tier)
+  features?: {
+    preOrdersEnabled?: boolean;
+    advancedThemesEnabled?: boolean;
+    analyticsEnabled?: boolean;
+  };
 }
 
 export interface StorefrontData {

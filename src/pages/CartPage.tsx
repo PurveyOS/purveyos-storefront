@@ -1,12 +1,21 @@
 import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
 import { usePersistedCart } from '../hooks/usePersistedCart';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
+import { formatRestockDate } from '../utils/inventory';
+import { trackBeginCheckout, trackEvent } from '../utils/analytics';
 
 export function CartPage() {
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData } = useStorefrontData(tenant?.id || '');
   const { cart, addToCart, removeFromCart, clearCart } = usePersistedCart();
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+    trackEvent('view_cart', { tenantId: tenant.id, itemsCount: cart.items.length, value: cart.total });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenant?.id]);
 
   if (!storefrontData) {
     return (
@@ -60,13 +69,31 @@ export function CartPage() {
                   const { product, quantity } = item as any;
                   const binWeight: number | undefined = (item as any).binWeight;
                   const unitPriceCents: number | undefined = (item as any).unitPriceCents;
-                  const lineUnitPrice = binWeight && unitPriceCents
-                    ? (binWeight * (unitPriceCents / 100))
-                    : product.pricePer;
+                  const weight: number | undefined = (item as any).weight;
+                  const isPreOrder: boolean = (item as any).isPreOrder || false;
+                  
+                  // Calculate line item price based on pricing mode
+                  let lineUnitPrice: number;
+                  let displayInfo: string;
+                  
+                  if (binWeight && unitPriceCents) {
+                    // Pre-packaged weight bin
+                    lineUnitPrice = binWeight * (unitPriceCents / 100);
+                    displayInfo = `${binWeight} ${product.unit} package`;
+                  } else if (weight && product.pricingMode === 'weight') {
+                    // Weight-based pricing
+                    lineUnitPrice = product.pricePer * weight;
+                    displayInfo = `${weight} ${product.unit} @ $${product.pricePer.toFixed(2)}/${product.unit}`;
+                  } else {
+                    // Fixed pricing
+                    lineUnitPrice = product.pricePer;
+                    displayInfo = `$${product.pricePer.toFixed(2)} / ${product.unit}`;
+                  }
+                  
                   const itemTotal = lineUnitPrice * quantity;
                   
                   return (
-                    <div key={`${product.id}-${binWeight ?? 'no-bin'}`} className="flex items-center p-6 border-b border-gray-200 last:border-b-0">
+                    <div key={`${product.id}-${binWeight ?? weight ?? 'standard'}`} className="flex items-center p-6 border-b border-gray-200 last:border-b-0">
                       <img
                         src={product.imageUrl}
                         alt={product.name}
@@ -74,16 +101,26 @@ export function CartPage() {
                       />
                       
                       <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
+                          {isPreOrder && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                              Pre-order
+                            </span>
+                          )}
+                        </div>
                         <p className="text-gray-600">{product.description}</p>
-                        {binWeight ? (
-                          <div className="text-sm text-gray-600 mt-1">
-                            <div>Selected: {binWeight} {product.unit}</div>
-                            <div className="text-gray-500">${(lineUnitPrice).toFixed(2)} per item</div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-500 mt-1">${product.pricePer.toFixed(2)} per {product.unit}</p>
-                        )}
+                        <div className="text-sm text-gray-600 mt-1">
+                          <div>{displayInfo}</div>
+                          {quantity > 1 && (
+                            <div className="text-gray-500">${lineUnitPrice.toFixed(2)} × {quantity}</div>
+                          )}
+                          {isPreOrder && product.restockDate && (
+                            <div className="text-blue-600 text-xs mt-1">
+                              Expected: {formatRestockDate(product.restockDate)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="flex items-center space-x-3">
@@ -99,7 +136,7 @@ export function CartPage() {
                         <span className="w-8 text-center font-medium">{quantity}</span>
                         
                         <button
-                          onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents })}
+                          onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight })}
                           className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -133,6 +170,7 @@ export function CartPage() {
                   
                   <Link
                     to="/checkout"
+                    onClick={() => trackBeginCheckout({ tenantId: tenant?.id, itemsCount: cart.items.length, value: cart.total, currency: 'USD' })}
                     className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-center"
                   >
                     Proceed to Checkout

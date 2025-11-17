@@ -12,6 +12,7 @@ export function ModernFarmTemplate({
   onAddToCart,
   onRemoveFromCart,
   onAddBinToCart,
+  features,
 }: StorefrontTemplateProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const cartCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -24,14 +25,8 @@ export function ModernFarmTemplate({
     document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const isDark = settings.darkMode || false;
-  const bgColor = isDark ? 'bg-slate-900' : 'bg-slate-50';
-  const textColor = isDark ? 'text-slate-100' : 'text-slate-900';
-  const cardBg = isDark ? 'bg-slate-800' : 'bg-white';
-  const borderColor = isDark ? 'border-slate-700' : 'border-slate-100';
-
   return (
-    <div className={`flex min-h-screen flex-col ${bgColor} ${textColor}`}>
+    <div className="flex min-h-screen flex-col bg-slate-50">
       <Navbar 
         title={settings.heroHeading || settings.farmName}
         logoUrl={settings.logoUrl}
@@ -41,53 +36,57 @@ export function ModernFarmTemplate({
       />
       
       {/* Hero Section */}
-      <section className={`relative ${cardBg}`}>
-        {/* Background hero image with tinted overlay */}
+      <section className="relative bg-white">
+        {/* Background hero image with gradient overlay */}
         {settings.heroImageUrl && (
           <div className="absolute inset-0">
-            <img src={settings.heroImageUrl} alt={settings.heroHeading} className="w-full h-full object-cover" />
+            <img 
+              src={settings.heroImageUrl} 
+              alt={settings.heroHeading} 
+              className="w-full h-full object-cover" 
+            />
             <div
               className="absolute inset-0"
               style={{ 
-                background: isDark 
-                  ? `linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.5) 60%)`
-                  : `linear-gradient(135deg, ${settings.primaryColor}dd 0%, rgba(0,0,0,0.4) 60%)`
+                background: `linear-gradient(to right, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%)`
               }}
             />
           </div>
         )}
-        <div className="relative max-w-6xl mx-auto px-4 py-16 lg:py-28">
-          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
-            {/* Text Content */}
-            <div className="text-center lg:text-left">
-              <h1 className="text-4xl lg:text-5xl xl:text-6xl font-bold mb-6 leading-tight drop-shadow-sm" style={{ color: '#fff' }}>
-                {settings.heroHeading}
-              </h1>
-              <p className="text-xl mb-8 leading-relaxed max-w-xl mx-auto lg:mx-0" style={{ color: '#f5f5f5' }}>
-                {settings.heroSubtitle}
-              </p>
-              <button
-                onClick={scrollToProducts}
-                className="inline-flex items-center px-8 py-4 text-white font-semibold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                style={{ backgroundColor: settings.accentColor }}
-              >
-                Shop Now
-                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-            </div>
-            
-            {/* Hero Image */}
-            {!settings.heroImageUrl && (
-              <div className="order-first lg:order-last">
-                <div className={`relative overflow-hidden rounded-2xl shadow-2xl h-80 lg:h-96 flex items-center justify-center ${isDark ? 'bg-slate-700' : 'bg-slate-200'}`}>
-                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Add a hero image in settings</span>
-                </div>
-              </div>
-            )}
+        
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28 lg:py-32">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 text-white leading-tight">
+              {settings.heroHeading}
+            </h1>
+            <p className="text-lg sm:text-xl mb-8 text-white/90 leading-relaxed">
+              {settings.heroSubtitle}
+            </p>
+            <button
+              onClick={scrollToProducts}
+              className="inline-flex items-center px-8 py-4 text-lg font-semibold rounded-full transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+              style={{ 
+                backgroundColor: settings.accentColor || '#ffcc00',
+                color: '#000'
+              }}
+            >
+              Shop Now
+              <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
           </div>
         </div>
+
+        {/* If no hero image, show placeholder */}
+        {!settings.heroImageUrl && (
+          <div 
+            className="absolute inset-0 -z-10"
+            style={{ 
+              background: `linear-gradient(135deg, ${settings.primaryColor || '#0f6fff'} 0%, ${settings.primaryColor || '#0f6fff'}dd 100%)`
+            }}
+          />
+        )}
       </section>
 
       {/* Feature Sections */}
@@ -140,8 +139,8 @@ export function ModernFarmTemplate({
 
       {/* Category Strip */}
       {categories.length > 0 && (
-        <section className={`${cardBg} border-t ${borderColor}`}>
-          <div className="max-w-6xl mx-auto px-4 py-6">
+        <section className="bg-white border-b border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex gap-3 overflow-x-auto scrollbar-hide">
               <div className="flex gap-3 lg:justify-center lg:w-full">
                 <button
@@ -149,7 +148,7 @@ export function ModernFarmTemplate({
                   className={`flex-none px-6 py-3 border rounded-full transition-colors duration-200 cursor-pointer ${
                     selectedCategory === null
                       ? 'text-white'
-                      : `${isDark ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'}`
+                      : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
                   }`}
                   style={selectedCategory === null ? { backgroundColor: settings.primaryColor, borderColor: settings.primaryColor } : undefined}
                 >
@@ -164,7 +163,7 @@ export function ModernFarmTemplate({
                     className={`flex-none px-6 py-3 border rounded-full transition-colors duration-200 cursor-pointer ${
                       selectedCategory === category.id
                         ? 'text-white'
-                        : `${isDark ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'}`
+                        : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
                     }`}
                     style={selectedCategory === category.id ? { backgroundColor: settings.accentColor, borderColor: settings.accentColor } : undefined}
                   >
@@ -180,18 +179,18 @@ export function ModernFarmTemplate({
       )}
 
       {/* Products Grid */}
-      <section id="products" className="flex-1 py-12">
-        <div className="max-w-6xl mx-auto px-4">
+      <section id="products" className="flex-1 py-12 bg-slate-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
-            <h2 className={`text-3xl lg:text-4xl font-bold mb-4 ${textColor}`}>
+            <h2 className="text-3xl lg:text-4xl font-bold mb-4 text-slate-900">
               Our Products
             </h2>
-            <p className={`text-lg max-w-2xl mx-auto ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+            <p className="text-lg max-w-2xl mx-auto text-slate-600">
               Fresh, quality products from our farm to your table
             </p>
           </div>
           
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredProducts.map((product) => {
               const quantityInCart = cart.items
                 .filter((i) => i.productId === product.id)
@@ -202,13 +201,22 @@ export function ModernFarmTemplate({
                   key={product.id}
                   product={product}
                   quantityInCart={quantityInCart}
-                  onAddToCart={() => onAddToCart(product.id, 1)}
+                  onAddToCart={(weight?: number) => {
+                    const preOrdersEnabled = features?.preOrdersEnabled !== false;
+                    const isPreOrder = preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
+                    if (weight) {
+                      onAddToCart(product.id, 1, { weight, isPreOrder });
+                    } else {
+                      onAddToCart(product.id, 1, { isPreOrder });
+                    }
+                  }}
                   onRemoveFromCart={() => onRemoveFromCart(product.id)}
                   onAddBinToCart={(binWeight, unitPriceCents) => {
                     if (onAddBinToCart) onAddBinToCart(product.id, binWeight, unitPriceCents);
                   }}
                   primaryColor={settings.primaryColor}
                   accentColor={settings.accentColor}
+                  preOrdersEnabled={features?.preOrdersEnabled !== false}
                 />
               );
             })}

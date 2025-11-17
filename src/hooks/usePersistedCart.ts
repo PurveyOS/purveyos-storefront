@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Cart } from '../types/storefront';
+import { trackAddToCart, trackClearCart, trackRemoveFromCart } from '../utils/analytics';
 
 const CART_STORAGE_KEY = 'purveyos-cart';
 
@@ -27,25 +28,42 @@ export function usePersistedCart() {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number }) => {
+  const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean }) => {
     setCart(prev => {
-      const existingItem = prev.items.find(item => item.productId === productId && item.binWeight === options?.binWeight);
+      const existingItem = prev.items.find(item => 
+        item.productId === productId && 
+        item.binWeight === options?.binWeight &&
+        item.weight === options?.weight
+      );
       
       if (existingItem) {
-        return {
+        const updated = {
           ...prev,
           items: prev.items.map(item =>
-            item.productId === productId && item.binWeight === options?.binWeight
+            item.productId === productId && 
+            item.binWeight === options?.binWeight &&
+            item.weight === options?.weight
               ? { ...item, quantity: item.quantity + quantity }
               : item
           ),
         };
+        try { trackAddToCart({ productId, quantity, ...options }); } catch {}
+        return updated;
       }
 
-      return {
+      const next = {
         ...prev,
-        items: [...prev.items, { productId, quantity, binWeight: options?.binWeight, unitPriceCents: options?.unitPriceCents }],
+        items: [...prev.items, { 
+          productId, 
+          quantity, 
+          binWeight: options?.binWeight, 
+          unitPriceCents: options?.unitPriceCents,
+          weight: options?.weight,
+          isPreOrder: options?.isPreOrder
+        }],
       };
+      try { trackAddToCart({ productId, quantity, ...options }); } catch {}
+      return next;
     });
   };
 
@@ -56,13 +74,15 @@ export function usePersistedCart() {
       if (!existingItem) return prev;
       
       if (existingItem.quantity <= 1) {
-        return {
+        const updated = {
           ...prev,
           items: prev.items.filter(item => !(item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight))),
         };
+        try { trackRemoveFromCart({ productId, quantity: 1, binWeight: options?.binWeight }); } catch {}
+        return updated;
       }
 
-      return {
+      const next = {
         ...prev,
         items: prev.items.map(item =>
           item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight)
@@ -70,21 +90,34 @@ export function usePersistedCart() {
             : item
         ),
       };
+      try { trackRemoveFromCart({ productId, quantity: 1, binWeight: options?.binWeight }); } catch {}
+      return next;
     });
   };
 
   const clearCart = () => {
     setCart({ items: [], total: 0 });
+    try { trackClearCart(); } catch {}
   };
 
   const updateCartTotal = (products: any[]) => {
     const total = cart.items.reduce((sum, item) => {
       const product = products.find(p => p.id === item.productId);
       if (!product) return sum;
+      
+      // Handle pre-packaged weight bins
       if (item.binWeight && item.unitPriceCents) {
         const linePrice = (item.binWeight * (item.unitPriceCents / 100)) * item.quantity;
         return sum + linePrice;
       }
+      
+      // Handle weight-based pricing (custom weight entry)
+      if (item.weight && product.pricingMode === 'weight') {
+        const linePrice = (product.pricePer * item.weight) * item.quantity;
+        return sum + linePrice;
+      }
+      
+      // Handle fixed pricing (standard quantity-based)
       return sum + (product.pricePer * item.quantity);
     }, 0);
 

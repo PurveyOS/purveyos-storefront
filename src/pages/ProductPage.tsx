@@ -1,7 +1,25 @@
+import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
+import { useStorefrontData } from '../hooks/useStorefrontData';
+import { trackProductView } from '../utils/analytics';
 
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
+  const { tenant } = useTenantFromDomain();
+  const { data: storefrontData } = useStorefrontData(tenant?.id || '');
+
+  useEffect(() => {
+    if (!productId) return;
+    const product = storefrontData?.products.find(p => p.id === productId);
+    trackProductView({
+      productId,
+      name: product?.name,
+      price: product?.pricePer,
+      category: (product as any)?.category || (product as any)?.categoryId,
+      tenantId: tenant?.id,
+    });
+  }, [productId, storefrontData?.products, tenant?.id]);
 
   return (
     <div className="min-h-screen bg-gray-50">
