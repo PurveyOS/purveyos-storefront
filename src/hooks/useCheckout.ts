@@ -9,8 +9,8 @@ export interface CheckoutData {
   customerPhone: string;
   deliveryMethod: 'pickup' | 'delivery';
   deliveryAddress?: string;
-  paymentMethod: 'venmo' | 'zelle' | 'card';
-  paymentDetails?: string; // Venmo username, Zelle email/phone, or card token
+  paymentMethod: 'pay-later' | 'card';
+  paymentDetails?: string; // Card token or payment confirmation
   specialInstructions?: string;
 }
 
@@ -47,7 +47,14 @@ export function useCheckout() {
       // Calculate order totals
       const subtotal = cart.items.reduce((sum, item) => {
         const product = products.find(p => p.id === item.productId);
-        return sum + (product ? product.pricePer * item.quantity : 0);
+        if (!product) return sum;
+        
+        if (item.binWeight && item.unitPriceCents) {
+          const linePrice = (item.binWeight * (item.unitPriceCents / 100)) * item.quantity;
+          return sum + linePrice;
+        }
+        
+        return sum + (product.pricePer * item.quantity);
       }, 0);
 
       const tax = subtotal * 0.08; // 8% tax - this should be configurable
@@ -85,13 +92,19 @@ export function useCheckout() {
         const product = products.find(p => p.id === item.productId);
         if (!product) throw new Error(`Product not found: ${item.productId}`);
 
+        const pricePerUnit = item.binWeight && item.unitPriceCents
+          ? (item.binWeight * (item.unitPriceCents / 100))
+          : product.pricePer;
+
         return {
           order_id: orderId,
           product_id: item.productId,
-          product_name: product.name,
           quantity: item.quantity,
-          unit_price: product.pricePer,
-          line_total: product.pricePer * item.quantity,
+          price_per: pricePerUnit,
+          bin_weight: item.binWeight || null,
+          unit_price_cents: item.unitPriceCents || null,
+          tenant_id: tenantId,
+          created_at: new Date().toISOString(),
         };
       });
 

@@ -17,7 +17,7 @@ export function CheckoutPage() {
     customerEmail: '',
     customerPhone: '',
     deliveryMethod: 'pickup',
-    paymentMethod: 'venmo',
+    paymentMethod: 'pay-later',
   });
 
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -57,11 +57,6 @@ export function CheckoutPage() {
 
     if (formData.deliveryMethod === 'delivery' && !formData.deliveryAddress) {
       alert('Please provide a delivery address.');
-      return;
-    }
-
-    if ((formData.paymentMethod === 'venmo' || formData.paymentMethod === 'zelle') && !formData.paymentDetails) {
-      alert(`Please provide your ${formData.paymentMethod} information.`);
       return;
     }
 
@@ -245,29 +240,15 @@ export function CheckoutPage() {
                   <div className="flex items-center">
                     <input
                       type="radio"
-                      id="venmo"
+                      id="pay-later"
                       name="paymentMethod"
-                      value="venmo"
-                      checked={formData.paymentMethod === 'venmo'}
+                      value="pay-later"
+                      checked={formData.paymentMethod === 'pay-later'}
                       onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
                       className="h-4 w-4 text-blue-600"
                     />
-                    <label htmlFor="venmo" className="ml-3 text-sm font-medium text-gray-700">
-                      Venmo
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="zelle"
-                      name="paymentMethod"
-                      value="zelle"
-                      checked={formData.paymentMethod === 'zelle'}
-                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="zelle" className="ml-3 text-sm font-medium text-gray-700">
-                      Zelle
+                    <label htmlFor="pay-later" className="ml-3 text-sm font-medium text-gray-700">
+                      Pay Later (At Pickup/Delivery)
                     </label>
                   </div>
                   <div className="flex items-center">
@@ -281,30 +262,22 @@ export function CheckoutPage() {
                       className="h-4 w-4 text-blue-600"
                     />
                     <label htmlFor="card" className="ml-3 text-sm font-medium text-gray-700">
-                      Credit Card
+                      Credit Card (Coming Soon)
                     </label>
                   </div>
 
-                  {(formData.paymentMethod === 'venmo' || formData.paymentMethod === 'zelle') && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        {formData.paymentMethod === 'venmo' ? 'Venmo Username' : 'Zelle Email/Phone'} *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={formData.paymentDetails || ''}
-                        onChange={(e) => handleInputChange('paymentDetails', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder={formData.paymentMethod === 'venmo' ? '@username' : 'email@example.com or phone'}
-                      />
+                  {formData.paymentMethod === 'pay-later' && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                      <p className="text-sm text-blue-800">
+                        You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order. We accept cash, card, Venmo, and Zelle.
+                      </p>
                     </div>
                   )}
 
                   {formData.paymentMethod === 'card' && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
                       <p className="text-sm text-yellow-800">
-                        Credit card processing will be available soon. Please use Venmo or Zelle for now.
+                        Online card payment will be available soon. Please select "Pay Later" to complete your order.
                       </p>
                     </div>
                   )}
@@ -380,9 +353,9 @@ export function CheckoutPage() {
                 {checkoutLoading ? 'Processing...' : 'Place Order'}
               </button>
 
-              {formData.paymentMethod !== 'card' && cartItems.length > 0 && (
+              {formData.paymentMethod === 'pay-later' && cartItems.length > 0 && (
                 <p className="text-xs text-gray-500 mt-3 text-center">
-                  You'll receive payment instructions after placing your order.
+                  You'll receive an order confirmation email. Payment due at {formData.deliveryMethod === 'pickup' ? 'pickup' : 'delivery'}.
                 </p>
               )}
             </div>
