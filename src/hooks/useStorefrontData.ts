@@ -141,7 +141,9 @@ export function useStorefrontData(tenantId: string): {
         }
 
         // Fetch real data from Supabase
-        const [settingsResult, productsResult, categoriesResult] = await Promise.all([
+        console.log('Fetching data for tenant:', tenantId);
+        
+        const [settingsResult, productsResult] = await Promise.all([
           supabase
             .from('storefront_settings')
             .select('*')
@@ -150,22 +152,24 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('*')
+            .select('id, name, description, pricePer, unit, image, category, qty, notes')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
-            .order('name'),
-          
-          supabase
-            .from('categories')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .order('sort_order', { ascending: true })
+            .order('name')
         ]);
 
+        console.log('Settings result:', settingsResult);
+        console.log('Products result:', productsResult);
+
         // Check for errors
-        if (settingsResult.error) throw settingsResult.error;
-        if (productsResult.error) throw productsResult.error;
-        if (categoriesResult.error) throw categoriesResult.error;
+        if (settingsResult.error) {
+          console.error('Settings error:', settingsResult.error);
+          throw settingsResult.error;
+        }
+        if (productsResult.error) {
+          console.error('Products error:', productsResult.error);
+          throw productsResult.error;
+        }
 
         // Transform the data to match our interfaces
         const settings = settingsResult.data ? {
@@ -185,22 +189,27 @@ export function useStorefrontData(tenantId: string): {
         const products: Product[] = productsResult.data.map(p => ({
           id: p.id,
           name: p.name,
-          description: p.description || '',
-          pricePer: p.price_per,
-          unit: p.unit,
-          imageUrl: p.image_url || '/demo-product.svg',
-          categoryId: p.category_id || '',
+          description: p.description || p.notes || '',
+          pricePer: p.pricePer || 0, // Already in dollars from huckster-ui schema
+          unit: p.unit || 'lb',
+          imageUrl: p.image || '/demo-product.svg',
+          categoryId: p.category || '',
           available: true,
-          inventory: p.inventory_count || 0,
+          inventory: p.qty || 0,
         }));
 
-        const categories: Category[] = categoriesResult.data.map(c => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          imageUrl: c.image_url,
-          sortOrder: c.sort_order || 0,
+        // Generate categories from products instead of querying separate table
+        const uniqueCategories = new Set(products.map(p => p.categoryId).filter(Boolean));
+        const categories: Category[] = Array.from(uniqueCategories).map((categoryName, index) => ({
+          id: categoryName,
+          name: categoryName.charAt(0).toUpperCase() + categoryName.slice(1),
+          description: `${categoryName} products`,
+          imageUrl: '/demo-category.svg',
+          sortOrder: index + 1,
         }));
+
+        console.log('Generated categories from products:', categories);
+        console.log('Products loaded:', products.length);
 
         setData({
           settings,
@@ -209,19 +218,17 @@ export function useStorefrontData(tenantId: string): {
         });
       } catch (err) {
         console.error('Error loading storefront data:', err);
-        
-        // On error, fall back to mock data for development
-        console.log('Falling back to mock data due to error');
-        setData({
-          settings: MOCK_SETTINGS,
-          products: MOCK_PRODUCTS,
-          categories: MOCK_CATEGORIES,
+        console.error('Full error details:', {
+          error: err,
+          message: err instanceof Error ? err.message : 'Unknown error',
+          tenantId,
+          stack: err instanceof Error ? err.stack : undefined
         });
         
-        // Only set error for real issues, not missing tenant data
-        if (err instanceof Error && !err.message.includes('No rows returned')) {
-          setError(err.message);
-        }
+        // Don't fall back to mock data - show the actual error
+        setError(`Failed to load storefront data: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        
+        setData(null);
       } finally {
         setLoading(false);
       }
