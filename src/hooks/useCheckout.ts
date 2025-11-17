@@ -55,10 +55,11 @@ export function useCheckout() {
         
          return {
            productId: item.productId,
-           productName: product.name,
            qty: item.quantity,
            unitPrice,
            lineTotalCents,
+           binWeight: item.binWeight,
+           unitPriceCents: item.unitPriceCents,
          };
        });
 
