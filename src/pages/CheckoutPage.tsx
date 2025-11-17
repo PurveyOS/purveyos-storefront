@@ -17,7 +17,9 @@ export function CheckoutPage() {
     customerEmail: '',
     customerPhone: '',
     deliveryMethod: 'pickup',
-    paymentMethod: 'pay-later',
+    paymentMethod: 'cash',
+    deliveryAddress: '',
+    deliveryNotes: '',
   });
 
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -240,15 +242,15 @@ export function CheckoutPage() {
                   <div className="flex items-center">
                     <input
                       type="radio"
-                      id="pay-later"
+                      id="cash"
                       name="paymentMethod"
-                      value="pay-later"
-                      checked={formData.paymentMethod === 'pay-later'}
+                      value="cash"
+                      checked={formData.paymentMethod === 'cash'}
                       onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
                       className="h-4 w-4 text-blue-600"
                     />
-                    <label htmlFor="pay-later" className="ml-3 text-sm font-medium text-gray-700">
-                      Pay Later (At Pickup/Delivery)
+                    <label htmlFor="cash" className="ml-3 text-sm font-medium text-gray-700">
+                      Pay at Pickup/Delivery (Cash)
                     </label>
                   </div>
                   <div className="flex items-center">
@@ -265,11 +267,39 @@ export function CheckoutPage() {
                       Credit Card (Coming Soon)
                     </label>
                   </div>
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
+                      id="venmo"
+                      name="paymentMethod"
+                      value="venmo"
+                      checked={formData.paymentMethod === 'venmo'}
+                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                      className="h-4 w-4 text-blue-600"
+                    />
+                    <label htmlFor="venmo" className="ml-3 text-sm font-medium text-gray-700">
+                      Venmo (Pay Later)
+                    </label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="radio"
+                      id="zelle"
+                      name="paymentMethod"
+                      value="zelle"
+                      checked={formData.paymentMethod === 'zelle'}
+                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                      className="h-4 w-4 text-blue-600"
+                    />
+                    <label htmlFor="zelle" className="ml-3 text-sm font-medium text-gray-700">
+                      Zelle (Pay Later)
+                    </label>
+                  </div>
 
-                  {formData.paymentMethod === 'pay-later' && (
+                  {formData.paymentMethod !== 'card' && (
                     <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
                       <p className="text-sm text-blue-800">
-                        You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order. We accept cash, card, Venmo, and Zelle.
+                        You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order. We accept cash, and also Venmo or Zelle.
                       </p>
                     </div>
                   )}
@@ -285,11 +315,11 @@ export function CheckoutPage() {
 
                 <div className="mt-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Special Instructions
+                    Delivery Notes
                   </label>
                   <textarea
-                    value={formData.specialInstructions || ''}
-                    onChange={(e) => handleInputChange('specialInstructions', e.target.value)}
+                    value={formData.deliveryNotes || ''}
+                    onChange={(e) => handleInputChange('deliveryNotes', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={3}
                     placeholder="Any special requests or notes..."
@@ -353,7 +383,7 @@ export function CheckoutPage() {
                 {checkoutLoading ? 'Processing...' : 'Place Order'}
               </button>
 
-              {formData.paymentMethod === 'pay-later' && cartItems.length > 0 && (
+              {formData.paymentMethod !== 'card' && cartItems.length > 0 && (
                 <p className="text-xs text-gray-500 mt-3 text-center">
                   You'll receive an order confirmation email. Payment due at {formData.deliveryMethod === 'pickup' ? 'pickup' : 'delivery'}.
                 </p>
