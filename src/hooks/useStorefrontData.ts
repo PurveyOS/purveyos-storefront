@@ -152,7 +152,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('id, name, description, pricePer, unit, image, category, qty, notes')
+            .select('id, name, pricePer, unit, image, category, qty, notes')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name')
@@ -189,7 +189,7 @@ export function useStorefrontData(tenantId: string): {
         const products: Product[] = productsResult.data.map(p => ({
           id: p.id,
           name: p.name,
-          description: p.description || p.notes || '',
+          description: p.notes || '', // Use notes as description since description column doesn't exist
           pricePer: p.pricePer || 0, // Already in dollars from huckster-ui schema
           unit: p.unit || 'lb',
           imageUrl: p.image || '/demo-product.svg',
