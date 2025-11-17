@@ -7,7 +7,7 @@ interface WeightBin {
 interface WeightBinSelectorProps {
   bins: WeightBin[];
   unit: string;
-  onSelect: (binWeight: number) => void;
+  onSelect: (bin: { weightBtn: number; unitPriceCents: number }) => void;
   primaryColor?: string;
 }
 
@@ -24,14 +24,14 @@ export function WeightBinSelector({
     <div className="space-y-2">
       <p className="text-sm font-medium text-slate-700">Select weight:</p>
       <div className="grid grid-cols-2 gap-2">
-        {sortedBins.map((bin) => {
+  {sortedBins.map((bin) => {
           const pricePerUnit = bin.unitPriceCents / 100;
           const totalPrice = (bin.weightBtn * pricePerUnit).toFixed(2);
           
           return (
             <button
               key={bin.weightBtn}
-              onClick={() => onSelect(bin.weightBtn)}
+              onClick={() => onSelect({ weightBtn: bin.weightBtn, unitPriceCents: bin.unitPriceCents })}
               disabled={bin.qty === 0}
               className="relative flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               style={{

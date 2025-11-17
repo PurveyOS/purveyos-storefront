@@ -11,6 +11,7 @@ export function ModernFarmTemplate({
   cart,
   onAddToCart,
   onRemoveFromCart,
+  onAddBinToCart,
 }: StorefrontTemplateProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const cartCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -192,8 +193,9 @@ export function ModernFarmTemplate({
           
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {filteredProducts.map((product) => {
-              const itemInCart = cart.items.find((i) => i.productId === product.id);
-              const quantityInCart = itemInCart?.quantity ?? 0;
+              const quantityInCart = cart.items
+                .filter((i) => i.productId === product.id)
+                .reduce((sum, i) => sum + i.quantity, 0);
 
               return (
                 <ProductCard
@@ -202,6 +204,9 @@ export function ModernFarmTemplate({
                   quantityInCart={quantityInCart}
                   onAddToCart={() => onAddToCart(product.id, 1)}
                   onRemoveFromCart={() => onRemoveFromCart(product.id)}
+                  onAddBinToCart={(binWeight, unitPriceCents) => {
+                    if (onAddBinToCart) onAddBinToCart(product.id, binWeight, unitPriceCents);
+                  }}
                   primaryColor={settings.primaryColor}
                   accentColor={settings.accentColor}
                 />

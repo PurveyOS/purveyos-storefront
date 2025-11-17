@@ -57,11 +57,16 @@ export function CartPage() {
                 {cartItems.map((item) => {
                   if (!item?.product) return null;
                   
-                  const { product, quantity } = item;
-                  const itemTotal = product.pricePer * quantity;
+                  const { product, quantity } = item as any;
+                  const binWeight: number | undefined = (item as any).binWeight;
+                  const unitPriceCents: number | undefined = (item as any).unitPriceCents;
+                  const lineUnitPrice = binWeight && unitPriceCents
+                    ? (binWeight * (unitPriceCents / 100))
+                    : product.pricePer;
+                  const itemTotal = lineUnitPrice * quantity;
                   
                   return (
-                    <div key={product.id} className="flex items-center p-6 border-b border-gray-200 last:border-b-0">
+                    <div key={`${product.id}-${binWeight ?? 'no-bin'}`} className="flex items-center p-6 border-b border-gray-200 last:border-b-0">
                       <img
                         src={product.imageUrl}
                         alt={product.name}
@@ -71,12 +76,19 @@ export function CartPage() {
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
                         <p className="text-gray-600">{product.description}</p>
-                        <p className="text-sm text-gray-500 mt-1">${product.pricePer.toFixed(2)} per {product.unit}</p>
+                        {binWeight ? (
+                          <div className="text-sm text-gray-600 mt-1">
+                            <div>Selected: {binWeight} {product.unit}</div>
+                            <div className="text-gray-500">${(lineUnitPrice).toFixed(2)} per item</div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500 mt-1">${product.pricePer.toFixed(2)} per {product.unit}</p>
+                        )}
                       </div>
                       
                       <div className="flex items-center space-x-3">
                         <button
-                          onClick={() => removeFromCart(product.id)}
+                          onClick={() => removeFromCart(product.id, { binWeight })}
                           className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,7 +99,7 @@ export function CartPage() {
                         <span className="w-8 text-center font-medium">{quantity}</span>
                         
                         <button
-                          onClick={() => addToCart(product.id, 1)}
+                          onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents })}
                           className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

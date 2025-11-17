@@ -18,6 +18,7 @@ interface ModernProductCardProps {
   onRemoveFromCart: () => void;
   primaryColor?: string;
   accentColor?: string;
+  onAddBinToCart?: (binWeight: number, unitPriceCents: number) => void;
 }
 
 type ProductCardProps = ClassicProductCardProps | ModernProductCardProps;
@@ -138,8 +139,12 @@ export function ProductCard(props: ProductCardProps) {
               <WeightBinSelector
                 bins={product.weightBins!}
                 unit={product.unit}
-                onSelect={() => {
-                  onAddToCart();
+                onSelect={({ weightBtn, unitPriceCents }) => {
+                  if (props.onAddBinToCart) {
+                    props.onAddBinToCart(weightBtn, unitPriceCents);
+                  } else {
+                    onAddToCart();
+                  }
                   setShowBinSelector(false);
                 }}
                 primaryColor={primaryColor}
@@ -181,6 +186,14 @@ export function ProductCard(props: ProductCardProps) {
                     style={{ backgroundColor: primaryColor }}
                   >
                     Select size
+                  </button>
+                ) : hasBins ? (
+                  <button
+                    onClick={() => setShowBinSelector(true)}
+                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Add more sizes
                   </button>
                 ) : quantityInCart === 0 ? (
                   <button

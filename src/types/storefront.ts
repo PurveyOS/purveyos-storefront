@@ -26,6 +26,9 @@ export interface StorefrontSettings {
 export interface CartItem {
   productId: string;
   quantity: number;
+  // Optional weight-bin selection
+  binWeight?: number; // e.g., 1.0 lb, 2.5 lb
+  unitPriceCents?: number; // price per unit (e.g., per lb) in cents
 }
 
 export interface Cart {
@@ -38,8 +41,9 @@ export interface StorefrontTemplateProps {
   products: Product[];
   categories: Category[];
   cart: Cart;
-  onAddToCart: (productId: string, quantity?: number) => void;
-  onRemoveFromCart: (productId: string) => void;
+  onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number }) => void;
+  onRemoveFromCart: (productId: string, options?: { binWeight?: number }) => void;
+  onAddBinToCart?: (productId: string, binWeight: number, unitPriceCents: number) => void;
 }
 
 export interface StorefrontData {

@@ -10,7 +10,7 @@ export function StorefrontRoot() {
   const { data: storefrontData, loading: dataLoading, error } = useStorefrontData(tenant?.id || '');
   const [currentTemplate, setCurrentTemplate] = useState('modern');
   
-  const { cart, addToCart, removeFromCart, updateCartTotal } = usePersistedCart();
+  const { cart, addToCart, removeFromCart, updateCartTotal, addBinToCart } = usePersistedCart();
 
   
   // Calculate cart total whenever items change
@@ -96,6 +96,7 @@ export function StorefrontRoot() {
         cart={cart}
         onAddToCart={addToCart}
         onRemoveFromCart={removeFromCart}
+        onAddBinToCart={addBinToCart}
       />
       
       {/* Template Switcher - for demonstration */}

@@ -27,15 +27,15 @@ export function usePersistedCart() {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (productId: string, quantity: number = 1) => {
+  const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number }) => {
     setCart(prev => {
-      const existingItem = prev.items.find(item => item.productId === productId);
+      const existingItem = prev.items.find(item => item.productId === productId && item.binWeight === options?.binWeight);
       
       if (existingItem) {
         return {
           ...prev,
           items: prev.items.map(item =>
-            item.productId === productId
+            item.productId === productId && item.binWeight === options?.binWeight
               ? { ...item, quantity: item.quantity + quantity }
               : item
           ),
@@ -44,28 +44,28 @@ export function usePersistedCart() {
 
       return {
         ...prev,
-        items: [...prev.items, { productId, quantity }],
+        items: [...prev.items, { productId, quantity, binWeight: options?.binWeight, unitPriceCents: options?.unitPriceCents }],
       };
     });
   };
 
-  const removeFromCart = (productId: string) => {
+  const removeFromCart = (productId: string, options?: { binWeight?: number }) => {
     setCart(prev => {
-      const existingItem = prev.items.find(item => item.productId === productId);
+      const existingItem = prev.items.find(item => item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight));
       
       if (!existingItem) return prev;
       
       if (existingItem.quantity <= 1) {
         return {
           ...prev,
-          items: prev.items.filter(item => item.productId !== productId),
+          items: prev.items.filter(item => !(item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight))),
         };
       }
 
       return {
         ...prev,
         items: prev.items.map(item =>
-          item.productId === productId
+          item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight)
             ? { ...item, quantity: item.quantity - 1 }
             : item
         ),
@@ -80,7 +80,12 @@ export function usePersistedCart() {
   const updateCartTotal = (products: any[]) => {
     const total = cart.items.reduce((sum, item) => {
       const product = products.find(p => p.id === item.productId);
-      return sum + (product ? product.pricePer * item.quantity : 0);
+      if (!product) return sum;
+      if (item.binWeight && item.unitPriceCents) {
+        const linePrice = (item.binWeight * (item.unitPriceCents / 100)) * item.quantity;
+        return sum + linePrice;
+      }
+      return sum + (product.pricePer * item.quantity);
     }, 0);
 
     setCart(prev => ({ ...prev, total }));
@@ -92,5 +97,7 @@ export function usePersistedCart() {
     removeFromCart,
     clearCart,
     updateCartTotal,
+    // Convenience: explicit bin add helper
+    addBinToCart: (productId: string, binWeight: number, unitPriceCents: number) => addToCart(productId, 1, { binWeight, unitPriceCents }),
   };
 }
