@@ -9,9 +9,9 @@ export interface CheckoutData {
   customerPhone: string;
   deliveryMethod: 'pickup' | 'delivery';
   deliveryAddress?: string;
-  paymentMethod: 'pay-later' | 'card';
+   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
   paymentDetails?: string; // Card token or payment confirmation
-  specialInstructions?: string;
+   deliveryNotes?: string;
 }
 
 export interface CheckoutResult {
@@ -34,104 +34,74 @@ export function useCheckout() {
     setError(null);
 
     try {
-      // If Supabase is not configured, simulate success
       if (!supabase) {
-        console.log('Supabase not configured, simulating order creation');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return {
-          success: true,
-          orderId: 'mock-order-' + Date.now(),
-        };
+         throw new Error('Supabase client not configured');
       }
 
-      // Calculate order totals
-      const subtotal = cart.items.reduce((sum, item) => {
+       // Calculate order totals and build line items
+       const lines = cart.items.map(item => {
         const product = products.find(p => p.id === item.productId);
-        if (!product) return sum;
+         if (!product) throw new Error(`Product not found: ${item.productId}`);
         
+         let unitPrice = product.pricePer;
+         let lineTotalCents = 0;
+       
         if (item.binWeight && item.unitPriceCents) {
-          const linePrice = (item.binWeight * (item.unitPriceCents / 100)) * item.quantity;
-          return sum + linePrice;
+           unitPrice = item.binWeight * (item.unitPriceCents / 100);
+           lineTotalCents = Math.round(unitPrice * item.quantity * 100);
+         } else {
+           lineTotalCents = Math.round(unitPrice * item.quantity * 100);
         }
         
-        return sum + (product.pricePer * item.quantity);
-      }, 0);
+         return {
+           productId: item.productId,
+           productName: product.name,
+           qty: item.quantity,
+           unitPrice,
+           lineTotalCents,
+         };
+       });
 
-      const tax = subtotal * 0.08; // 8% tax - this should be configurable
-      const total = subtotal + tax;
+       const subtotalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
+       const taxCents = Math.round(subtotalCents * 0.08); // 8% tax
+       const totalCents = subtotalCents + taxCents;
 
-      // Create the order record
-      const { data: orderData, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          tenant_id: tenantId,
-          customer_name: checkoutData.customerName,
-          customer_email: checkoutData.customerEmail,
-          customer_phone: checkoutData.customerPhone,
-          delivery_method: checkoutData.deliveryMethod,
-          delivery_address: checkoutData.deliveryAddress,
-          payment_method: checkoutData.paymentMethod,
-          payment_details: checkoutData.paymentDetails,
-          special_instructions: checkoutData.specialInstructions,
-          subtotal,
-          tax,
-          total,
-          status: 'pending',
-          order_source: 'online',
-          created_at: new Date().toISOString(),
-        })
-        .select('id')
-        .single();
+       // Call Edge Function to create order securely (bypasses RLS)
+       console.log('Calling create-storefront-order Edge Function...');
+       const { data, error: functionError } = await supabase.functions.invoke(
+         'create-storefront-order',
+         {
+           body: {
+             tenantId,
+             customerName: checkoutData.customerName,
+             customerEmail: checkoutData.customerEmail,
+             customerPhone: checkoutData.customerPhone,
+             deliveryMethod: checkoutData.deliveryMethod,
+             deliveryAddress: checkoutData.deliveryAddress,
+             deliveryNotes: checkoutData.deliveryNotes,
+             paymentMethod: checkoutData.paymentMethod,
+             lines,
+             subtotalCents,
+             taxCents,
+             totalCents,
+           },
+         }
+       );
 
-      if (orderError) throw orderError;
+       if (functionError) {
+         console.error('Edge Function error:', functionError);
+         throw functionError;
+       }
 
-      const orderId = orderData.id;
+       if (!data?.success) {
+         throw new Error(data?.error || 'Failed to create order');
+       }
 
-      // Create order line items
-      const orderLines = cart.items.map(item => {
-        const product = products.find(p => p.id === item.productId);
-        if (!product) throw new Error(`Product not found: ${item.productId}`);
-
-        const pricePerUnit = item.binWeight && item.unitPriceCents
-          ? (item.binWeight * (item.unitPriceCents / 100))
-          : product.pricePer;
-
-        return {
-          order_id: orderId,
-          product_id: item.productId,
-          quantity: item.quantity,
-          price_per: pricePerUnit,
-          bin_weight: item.binWeight || null,
-          unit_price_cents: item.unitPriceCents || null,
-          tenant_id: tenantId,
-          created_at: new Date().toISOString(),
-        };
-      });
-
-      const { error: linesError } = await supabase
-        .from('order_lines')
-        .insert(orderLines);
-
-      if (linesError) throw linesError;
-
-      // Call edge function to send notification to tenant
-      try {
-        await supabase.functions.invoke('send-order-notification', {
-          body: {
-            tenant_id: tenantId,
-            order_id: orderId,
-            customer_name: checkoutData.customerName,
-            total,
-          },
-        });
-      } catch (notificationError) {
-        // Don't fail the order if notification fails
-        console.warn('Failed to send order notification:', notificationError);
-      }
+       console.log('Order created successfully:', data.orderId);
 
       return {
         success: true,
-        orderId,
+         orderId: data.orderId,
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to create order';
