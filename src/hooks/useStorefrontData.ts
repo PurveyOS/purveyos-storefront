@@ -143,7 +143,7 @@ export function useStorefrontData(tenantId: string): {
         // Fetch real data from Supabase
         console.log('Fetching data for tenant:', tenantId);
         
-        const [settingsResult, productsResult] = await Promise.all([
+  const [settingsResult, productsResult, binsResult] = await Promise.all([
           supabase
             .from('storefront_settings')
             .select('*')
@@ -155,11 +155,17 @@ export function useStorefrontData(tenantId: string): {
             .select('id, name, pricePer, unit, image, category, qty, online_description')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
-            .order('name')
+            .order('name'),
+          
+          supabase
+            .from('package_bins')
+            .select('product_id, weight_btn, unit_price_cents, qty')
+            .gt('qty', 0) // Only show bins with inventory
         ]);
 
         console.log('Settings result:', settingsResult);
         console.log('Products result:', productsResult);
+  console.log('Bins result:', binsResult);
 
         // Check for errors
         if (settingsResult.error) {
@@ -184,7 +190,32 @@ export function useStorefrontData(tenantId: string): {
           farmDescription: settingsResult.data.farm_description,
           contactEmail: settingsResult.data.contact_email,
           contactPhone: settingsResult.data.contact_phone,
+          darkMode: settingsResult.data.enable_dark_mode || false,
+          featureSections: Array.isArray(settingsResult.data.feature_sections)
+            ? settingsResult.data.feature_sections.map((s: any) => ({
+                imageUrl: s.image_url,
+                heading: s.heading,
+                subtitle: s.subtitle,
+                ctaText: s.cta_text,
+                ctaLink: s.cta_link,
+              }))
+            : []
         } : MOCK_SETTINGS;
+
+        // Group bins by product_id
+        const binsByProduct = new Map<string, Array<{ weightBtn: number; unitPriceCents: number; qty: number }>>();
+        if (binsResult.data) {
+          binsResult.data.forEach((bin: any) => {
+            if (!binsByProduct.has(bin.product_id)) {
+              binsByProduct.set(bin.product_id, []);
+            }
+            binsByProduct.get(bin.product_id)!.push({
+              weightBtn: bin.weight_btn,
+              unitPriceCents: bin.unit_price_cents,
+              qty: bin.qty,
+            });
+          });
+        }
 
         const products: Product[] = productsResult.data.map(p => ({
           id: p.id,
@@ -192,6 +223,7 @@ export function useStorefrontData(tenantId: string): {
           description: p.online_description || '', // Use online_description column
           pricePer: p.pricePer || 0,
           unit: p.unit || 'lb',
+          weightBins: binsByProduct.get(p.id),
           imageUrl: p.image || '/demo-product.svg', // Use image column
           categoryId: p.category || '', // Use category column
           available: true,

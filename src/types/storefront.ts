@@ -13,6 +13,14 @@ export interface StorefrontSettings {
   farmDescription?: string;
   contactEmail?: string;
   contactPhone?: string;
+  darkMode?: boolean;
+  featureSections?: Array<{
+    imageUrl: string;
+    heading?: string;
+    subtitle?: string;
+    ctaText?: string;
+    ctaLink?: string;
+  }>;
 }
 
 export interface CartItem {

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { Product } from '../types/product';
+import { WeightBinSelector } from './WeightBinSelector';
 
 // Existing interface for ClassicTemplate compatibility
 interface ClassicProductCardProps {
@@ -14,6 +16,8 @@ interface ModernProductCardProps {
   quantityInCart: number;
   onAddToCart: () => void;
   onRemoveFromCart: () => void;
+  primaryColor?: string;
+  accentColor?: string;
 }
 
 type ProductCardProps = ClassicProductCardProps | ModernProductCardProps;
@@ -95,16 +99,18 @@ export function ProductCard(props: ProductCardProps) {
     );
   } else {
     // Modern template product card
-    const { quantityInCart, onAddToCart, onRemoveFromCart } = props;
-    const price = (product.pricePer ?? 0);
+  const { quantityInCart, onAddToCart, onRemoveFromCart, primaryColor = '#0f6fff', accentColor = '#ffcc00' } = props;
+  const price = (product.pricePer ?? 0);
+  const [showBinSelector, setShowBinSelector] = useState(false);
+  const hasBins = product.weightBins && product.weightBins.length > 0;
 
     return (
-      <div className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm border border-slate-100 hover:shadow-md transition-shadow duration-200">
+  <div className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm border border-slate-100 hover:shadow-md transition-shadow duration-200 group" style={{ borderColor: primaryColor + '22' }}>
         <div className="relative">
           <img
             src={product.imageUrl}
             alt={product.name}
-            className="h-40 w-full object-cover"
+            className="h-40 w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
           />
           {!product.available && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -116,7 +122,7 @@ export function ProductCard(props: ProductCardProps) {
         </div>
         
         <div className="flex-1 p-4 flex flex-col">
-          <h3 className="text-base font-semibold text-slate-900 mb-1">
+          <h3 className="text-base font-semibold mb-1" style={{ color: primaryColor }}>
             {product.name}
           </h3>
           
@@ -126,24 +132,61 @@ export function ProductCard(props: ProductCardProps) {
             </p>
           )}
           
-          <div className="flex items-center justify-between mt-auto">
-            <div className="flex items-baseline gap-1">
-              <span className="text-lg font-bold text-slate-900">
-                ${price.toFixed(2)}
-              </span>
-              {product.unit && (
-                <span className="text-sm text-slate-500">
-                  /{product.unit}
-                </span>
-              )}
+          {/* Show weight bin selector if product has bins */}
+          {hasBins && showBinSelector ? (
+            <div className="mt-auto">
+              <WeightBinSelector
+                bins={product.weightBins!}
+                unit={product.unit}
+                onSelect={() => {
+                  onAddToCart();
+                  setShowBinSelector(false);
+                }}
+                primaryColor={primaryColor}
+              />
+              <button
+                onClick={() => setShowBinSelector(false)}
+                className="w-full mt-2 px-3 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Cancel
+              </button>
             </div>
-            
+          ) : (
+            <div className="flex items-center justify-between mt-auto">
+              <div className="flex items-baseline gap-1">
+                {hasBins ? (
+                  <span className="text-sm font-medium text-slate-700">
+                    Multiple sizes available
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-lg font-bold" style={{ color: primaryColor }}>
+                      ${price.toFixed(2)}
+                    </span>
+                    {product.unit && (
+                      <span className="text-sm text-slate-500">
+                        /{product.unit}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+              
             {product.available ? (
               <div className="flex items-center gap-2">
-                {quantityInCart === 0 ? (
+                {hasBins && quantityInCart === 0 ? (
+                  <button
+                    onClick={() => setShowBinSelector(true)}
+                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Select size
+                  </button>
+                ) : quantityInCart === 0 ? (
                   <button
                     onClick={onAddToCart}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-full transition-colors duration-200"
+                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
+                    style={{ backgroundColor: primaryColor }}
                   >
                     Add to cart
                   </button>
@@ -151,7 +194,8 @@ export function ProductCard(props: ProductCardProps) {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={onRemoveFromCart}
-                      className="w-8 h-8 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full flex items-center justify-center transition-colors duration-200"
+                      className="w-8 h-8 text-white rounded-full flex items-center justify-center transition-colors duration-200"
+                      style={{ backgroundColor: primaryColor }}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -162,7 +206,8 @@ export function ProductCard(props: ProductCardProps) {
                     </span>
                     <button
                       onClick={onAddToCart}
-                      className="w-8 h-8 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full flex items-center justify-center transition-colors duration-200"
+                      className="w-8 h-8 text-white rounded-full flex items-center justify-center transition-colors duration-200"
+                      style={{ backgroundColor: accentColor }}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -174,7 +219,8 @@ export function ProductCard(props: ProductCardProps) {
             ) : (
               <span className="text-sm text-slate-500">Out of stock</span>
             )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     );

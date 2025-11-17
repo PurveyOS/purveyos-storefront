@@ -12,6 +12,8 @@ interface ModernNavbarProps {
   title: string;
   logoUrl?: string | null;
   cartCount: number;
+  primaryColor?: string;
+  accentColor?: string;
 }
 
 type NavbarProps = ClassicNavbarProps | ModernNavbarProps;
@@ -105,7 +107,7 @@ export function Navbar(props: NavbarProps) {
     );
   } else {
     // Modern template navbar
-    const { title, logoUrl, cartCount } = props;
+    const { title, logoUrl, cartCount, primaryColor = '#0f6fff', accentColor = '#ffcc00' } = props;
 
     return (
       <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
@@ -130,17 +132,26 @@ export function Navbar(props: NavbarProps) {
             </div>
 
             {/* Right side */}
-            <button className="relative flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-full transition-colors duration-200">
-              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
-              </svg>
-              <span className="text-sm font-medium text-slate-700">Cart</span>
-              {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-emerald-600 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+            <Link to="/cart" className="relative inline-flex">
+              <button
+                className="relative flex items-center gap-2 px-4 py-2 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md"
+                style={{ backgroundColor: '#fff', border: `1px solid ${primaryColor}` }}
+                aria-label="Open cart"
+              >
+                <svg className="w-5 h-5" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
+                </svg>
+                <span className="text-sm font-medium" style={{ color: primaryColor }}>Cart</span>
+                {cartCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[20px] h-5 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            </Link>
           </div>
         </div>
       </nav>
