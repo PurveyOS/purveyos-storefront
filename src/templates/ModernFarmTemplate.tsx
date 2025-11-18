@@ -3,6 +3,7 @@ import type { StorefrontTemplateProps } from '../types/storefront';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { ProductCard } from '../components/ProductCard';
+import { CartDrawer } from '../components/CartDrawer';
 
 export function ModernFarmTemplate({
   settings,
@@ -43,7 +44,9 @@ export function ModernFarmTemplate({
             <img 
               src={settings.heroImageUrl} 
               alt={settings.heroHeading} 
-              className="w-full h-full object-cover" 
+              className="w-full h-full object-cover"
+              loading="eager"
+              style={{ aspectRatio: '21/9' }}
             />
             <div
               className="absolute inset-0"
@@ -95,7 +98,13 @@ export function ModernFarmTemplate({
           {settings.featureSections.map((section, idx) => (
             section.imageUrl ? (
               <section key={idx} className="relative w-full">
-                <img src={section.imageUrl} alt={section.heading || 'Feature'} className="w-full h-[480px] object-cover" />
+                <img 
+                  src={section.imageUrl} 
+                  alt={section.heading || 'Feature'} 
+                  className="w-full h-[480px] object-cover"
+                  loading="lazy"
+                  style={{ aspectRatio: '16/9' }}
+                />
                 <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${settings.primaryColor}dd 0%, rgba(0,0,0,0.55) 65%)` }} />
                 <div className="absolute inset-0 flex items-center justify-center px-6">
                   <div className="max-w-3xl text-center text-white space-y-6">
@@ -179,18 +188,18 @@ export function ModernFarmTemplate({
       )}
 
       {/* Products Grid */}
-      <section id="products" className="flex-1 py-12 bg-slate-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4 text-slate-900">
+      <section id="products" className="flex-1 py-8 md:py-12 bg-slate-50">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
+          <div className="text-center mb-8 md:mb-10">
+            <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-3 md:mb-4 text-slate-900">
               Our Products
             </h2>
-            <p className="text-lg max-w-2xl mx-auto text-slate-600">
+            <p className="text-base md:text-lg max-w-2xl mx-auto text-slate-600">
               Fresh, quality products from our farm to your table
             </p>
           </div>
           
-          <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 md:gap-6 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredProducts.map((product) => {
               const quantityInCart = cart.items
                 .filter((i) => i.productId === product.id)
@@ -225,6 +234,14 @@ export function ModernFarmTemplate({
       </section>
 
       <Footer storeName={settings.farmName} />
+      
+      {/* Mobile Cart Drawer */}
+      <CartDrawer 
+        cart={cart} 
+        products={products}
+        primaryColor={settings.primaryColor}
+        accentColor={settings.accentColor}
+      />
     </div>
   );
 }

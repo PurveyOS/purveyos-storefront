@@ -43,6 +43,8 @@ export function ProductCard(props: ProductCardProps) {
             src={product.imageUrl}
             alt={product.name}
             className="w-full h-48 object-cover transition-transform duration-300 hover:scale-105"
+            loading="lazy"
+            style={{ aspectRatio: '4/3' }}
           />
           {!product.available && (
             <div className="absolute inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
@@ -121,6 +123,8 @@ export function ProductCard(props: ProductCardProps) {
             src={product.imageUrl}
             alt={product.name}
             className="h-40 w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+            loading="lazy"
+            style={{ aspectRatio: '4/3' }}
           />
           {isSoldOut && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
