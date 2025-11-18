@@ -36,8 +36,8 @@ export function ModernFarmTemplate({
         accentColor={settings.accentColor}
       />
       
-      {/* Hero Section */}
-      <section className="relative bg-white">
+      {/* Hero Section (reduced padding for mobile) */}
+      <section className="relative bg-white pt-2">
         {/* Background hero image with gradient overlay */}
         {settings.heroImageUrl && (
           <div className="absolute inset-0">
@@ -57,17 +57,17 @@ export function ModernFarmTemplate({
           </div>
         )}
         
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28 lg:py-32">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14 lg:py-16">
           <div className="max-w-2xl">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 text-white leading-tight">
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 text-white leading-tight">
               {settings.heroHeading}
             </h1>
-            <p className="text-lg sm:text-xl mb-8 text-white/90 leading-relaxed">
+            <p className="text-base sm:text-lg mb-6 text-white/90 leading-relaxed">
               {settings.heroSubtitle}
             </p>
             <button
               onClick={scrollToProducts}
-              className="inline-flex items-center px-8 py-4 text-lg font-semibold rounded-full transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+              className="inline-flex items-center px-6 py-3 text-base font-semibold rounded-full transition-all duration-200 shadow-md hover:shadow-lg"
               style={{ 
                 backgroundColor: settings.accentColor || '#ffcc00',
                 color: '#000'
@@ -146,7 +146,7 @@ export function ModernFarmTemplate({
         </div>
       )}
 
-      {/* Category Strip */}
+      {/* Category Strip (filter out duplicate 'All Products') */}
       {categories.length > 0 && (
         <section className="bg-white border-b border-slate-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -165,7 +165,9 @@ export function ModernFarmTemplate({
                     All Products
                   </span>
                 </button>
-                {categories.map((category) => (
+                {categories
+                  .filter(c => c.id !== 'all' && c.name !== 'All Products')
+                  .map((category) => (
                   <button
                     key={category.id}
                     onClick={() => setSelectedCategory(category.id)}

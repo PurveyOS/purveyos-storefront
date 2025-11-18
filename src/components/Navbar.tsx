@@ -122,23 +122,23 @@ export function Navbar(props: NavbarProps) {
     const { title, logoUrl, cartCount, primaryColor = '#0f6fff', accentColor = '#ffcc00' } = props;
 
     return (
-      <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
+      <nav className="bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-3 py-2">
+          <div className="flex items-center justify-between gap-3">
             {/* Left side */}
             <div className="flex items-center gap-3">
               {logoUrl && (
                 <img
                   src={logoUrl}
                   alt={title}
-                  className="h-10 w-10 rounded-full object-cover"
+                  className="h-8 w-8 rounded-full object-cover"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     target.style.display = 'none';
                   }}
                 />
               )}
-              <h1 className="text-xl font-semibold text-slate-900 truncate">
+              <h1 className="text-base font-semibold text-slate-900 truncate">
                 {title}
               </h1>
             </div>
@@ -146,14 +146,14 @@ export function Navbar(props: NavbarProps) {
             {/* Right side */}
             <Link to="/cart" className="relative inline-flex">
               <button
-                className="relative flex items-center gap-2 px-4 py-2 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md"
+                className="relative flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md text-sm"
                 style={{ backgroundColor: '#fff', border: `1px solid ${primaryColor}` }}
                 aria-label="Open cart"
               >
-                <svg className="w-5 h-5" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
                 </svg>
-                <span className="text-sm font-medium" style={{ color: primaryColor }}>Cart</span>
+                <span className="font-medium" style={{ color: primaryColor }}>Cart</span>
                 {cartCount > 0 && (
                   <span
                     className="absolute -top-1 -right-1 min-w-[20px] h-5 text-white text-xs font-bold rounded-full flex items-center justify-center"

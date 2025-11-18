@@ -111,7 +111,7 @@ export function ProductCard(props: ProductCardProps) {
   const [weightAmount, setWeightAmount] = useState<string>('1');
   const hasBins = product.weightBins && product.weightBins.length > 0;
   const isWeightBased = product.pricingMode === 'weight' && !hasBins;
-  const isSoldOut = product.isSoldOut || !product.available;
+  const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
   const canPreOrder = (props.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
   const showLowStock = !isSoldOut && isLowStock(product);
   const formattedRestockDate = formatRestockDate(product.restockDate);
@@ -122,10 +122,15 @@ export function ProductCard(props: ProductCardProps) {
           <img
             src={product.imageUrl}
             alt={product.name}
-            className="h-40 w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+            className="h-36 w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
             loading="lazy"
             style={{ aspectRatio: '4/3' }}
           />
+          {hasBins && !isSoldOut && (
+            <div className="absolute bottom-2 left-2 bg-white/85 backdrop-blur px-2 py-1 rounded text-[11px] font-medium text-slate-600 shadow-sm">
+              Multiple sizes available
+            </div>
+          )}
           {isSoldOut && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
               <div className="text-center">
@@ -247,109 +252,99 @@ export function ProductCard(props: ProductCardProps) {
               </button>
             </div>
           ) : (
-            <div className="flex items-center justify-between mt-auto">
-              <div className="flex flex-col gap-1">
+            <div className="mt-auto space-y-2">
+              {/* Price */}
+              {!hasBins && (
                 <div className="flex items-baseline gap-1">
-                  {hasBins ? (
-                    <span className="text-sm font-medium text-slate-700">
-                      Multiple sizes available
-                    </span>
-                  ) : (
-                    <>
-                      <span className="text-lg font-bold" style={{ color: primaryColor }}>
-                        ${price.toFixed(2)}
-                      </span>
-                      {product.unit && (
-                        <span className="text-sm text-slate-500">
-                          /{product.unit}
-                        </span>
-                      )}
-                    </>
-                  )}
+                  <span className="text-lg font-bold" style={{ color: primaryColor }}>${price.toFixed(2)}</span>
+                  {product.unit && <span className="text-sm text-slate-500">/{product.unit}</span>}
                 </div>
-                {showLowStock && product.inventory && (
-                  <span className="text-xs text-orange-600 font-medium">
-                    Only {product.inventory} left
-                  </span>
+              )}
+              {showLowStock && product.inventory && (
+                <span className="text-xs text-orange-600 font-medium">Only {product.inventory} left</span>
+              )}
+              {/* Action Button Area */}
+              <div>
+                {isSoldOut && !canPreOrder && (
+                  <span className="text-sm text-red-600 font-medium">Out Of Stock</span>
                 )}
-                {isSoldOut && product.allowPreOrder && props.preOrdersEnabled === false && (
-                  <span className="text-xs text-slate-500">
-                    Pre-order available on PRO plans
-                  </span>
+                {isSoldOut && canPreOrder && (
+                  <span className="text-sm text-blue-700 font-medium">Out Of Stock (pre-order)</span>
+                )}
+                {!isSoldOut && (
+                  <>
+                    {hasBins && quantityInCart === 0 && (
+                      <button
+                        onClick={() => setShowBinSelector(true)}
+                        className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        Select Size
+                      </button>
+                    )}
+                    {hasBins && quantityInCart > 0 && (
+                      <button
+                        onClick={() => setShowBinSelector(true)}
+                        className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        Add More Sizes
+                      </button>
+                    )}
+                    {isWeightBased && quantityInCart === 0 && (
+                      <button
+                        onClick={() => setShowWeightInput(true)}
+                        className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        Enter Weight
+                      </button>
+                    )}
+                    {isWeightBased && quantityInCart > 0 && (
+                      <button
+                        onClick={() => setShowWeightInput(true)}
+                        className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        Add More Weight
+                      </button>
+                    )}
+                    {!hasBins && !isWeightBased && quantityInCart === 0 && (
+                      <button
+                        onClick={() => onAddToCart()}
+                        className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                        style={{ backgroundColor: primaryColor }}
+                      >
+                        Add to Cart
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
-              
-            {!isSoldOut || canPreOrder ? (
-              <div className="flex items-center gap-2">
-                {hasBins && quantityInCart === 0 ? (
+              {/* Quantity controls (normal products) */}
+              {!isSoldOut && quantityInCart > 0 && !hasBins && !isWeightBased && (
+                <div className="flex items-center gap-2 pt-1">
                   <button
-                    onClick={() => setShowBinSelector(true)}
-                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
+                    onClick={onRemoveFromCart}
+                    className="w-8 h-8 text-white rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: primaryColor }}
                   >
-                    {canPreOrder ? 'Pre-order size' : 'Select size'}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                    </svg>
                   </button>
-                ) : hasBins ? (
-                  <button
-                    onClick={() => setShowBinSelector(true)}
-                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
-                  >
-                    {canPreOrder ? 'Pre-order more' : 'Add more sizes'}
-                  </button>
-                ) : isWeightBased && quantityInCart === 0 ? (
-                  <button
-                    onClick={() => setShowWeightInput(true)}
-                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
-                  >
-                    {canPreOrder ? 'Pre-order weight' : 'Enter weight'}
-                  </button>
-                ) : isWeightBased ? (
-                  <button
-                    onClick={() => setShowWeightInput(true)}
-                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
-                  >
-                    {canPreOrder ? 'Pre-order more' : 'Add more'}
-                  </button>
-                ) : quantityInCart === 0 ? (
+                  <span className="text-sm font-medium text-slate-900 min-w-[20px] text-center">{quantityInCart}</span>
                   <button
                     onClick={() => onAddToCart()}
-                    className="px-4 py-2 text-white text-sm font-medium rounded-full transition-colors duration-200 shadow"
-                    style={{ backgroundColor: canPreOrder ? '#1e40af' : primaryColor }}
+                    className="w-8 h-8 text-white rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: accentColor }}
                   >
-                    {canPreOrder ? 'Pre-order' : 'Add to cart'}
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
                   </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={onRemoveFromCart}
-                      className="w-8 h-8 text-white rounded-full flex items-center justify-center transition-colors duration-200"
-                      style={{ backgroundColor: primaryColor }}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                      </svg>
-                    </button>
-                    <span className="text-sm font-medium text-slate-900 min-w-[20px] text-center">
-                      {quantityInCart}
-                    </span>
-                    <button
-                      onClick={() => onAddToCart()}
-                      className="w-8 h-8 text-white rounded-full flex items-center justify-center transition-colors duration-200"
-                      style={{ backgroundColor: accentColor }}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <span className="text-sm text-slate-500">Sold out</span>
-            )}
+                </div>
+              )}
             </div>
           )}
         </div>

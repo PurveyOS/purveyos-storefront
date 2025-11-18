@@ -13,8 +13,7 @@ interface CartDrawerProps {
 export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentColor = '#ffcc00' }: CartDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const cartCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
-
-  if (cartCount === 0) return null;
+  // Show floating button even if cart empty so users know where the cart lives
 
   return (
     <>
