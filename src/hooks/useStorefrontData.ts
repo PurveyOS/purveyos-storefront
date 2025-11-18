@@ -255,11 +255,20 @@ export function useStorefrontData(tenantId: string): {
           tenantId,
           stack: err instanceof Error ? err.stack : undefined
         });
-        
-        // Don't fall back to mock data - show the actual error
-        setError(`Failed to load storefront data: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        
-        setData(null);
+
+        const enableMockFallback = (import.meta as any).env?.VITE_ENABLE_MOCK_FALLBACK === 'true';
+        if (enableMockFallback) {
+          console.log('🛟 VITE_ENABLE_MOCK_FALLBACK enabled — serving mock data instead of failing');
+          setData({
+            settings: MOCK_SETTINGS,
+            products: MOCK_PRODUCTS,
+            categories: MOCK_CATEGORIES,
+          });
+          setError(null);
+        } else {
+          setError(`Failed to load storefront data: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          setData(null);
+        }
       } finally {
         setLoading(false);
       }

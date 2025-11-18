@@ -23,14 +23,27 @@ export function useTenantFromDomain(): {
         const hostname = window.location.hostname;
         let slug: string | null = null;
 
+        // Environment override (useful for local dev & preview deployments)
+        const envSlug = (import.meta as any).env?.VITE_TENANT_SLUG as string | undefined;
+        const forceDemo = (import.meta as any).env?.VITE_FORCE_DEMO === 'true';
+
+        if (envSlug) {
+          console.log('🔧 Using VITE_TENANT_SLUG override:', envSlug);
+          slug = envSlug;
+        }
+
         console.log('🔍 Resolving tenant for hostname:', hostname);
 
         // Extract subdomain
-        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.')) {
-          // Development mode - check for ?tenant=xxx query param or use demo
+        if (!slug && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.'))) {
+          // Development mode - check for ?tenant=xxx query param or fallback
           const params = new URLSearchParams(window.location.search);
-          slug = params.get('tenant') || 'demo-farm';
-          console.log('🏠 Development mode, using slug:', slug);
+          slug = params.get('tenant') || (forceDemo ? 'demo-farm' : slug);
+          if (!slug) {
+            // If still null and no override, default to demo to avoid blank screen
+            slug = 'demo-farm';
+          }
+          console.log('🏠 Development mode, resolved slug:', slug);
         } else if (hostname.endsWith('.purveyos.store')) {
           // Production storefront domain - extract subdomain
           // sweetppastures.purveyos.store -> "sweet-p-pastures"
@@ -58,9 +71,15 @@ export function useTenantFromDomain(): {
         }
 
         if (!slug) {
-          setError('No tenant found in domain');
-          setLoading(false);
-          return;
+          // Last resort: demo mode if forceDemo flag is set
+          if (forceDemo) {
+            slug = 'demo-farm';
+            console.log('🛟 forceDemo enabled, using demo-farm');
+          } else {
+            setError('No tenant id provided');
+            setLoading(false);
+            return;
+          }
         }
 
         // For development, return mock data if no Supabase connection
@@ -93,18 +112,52 @@ export function useTenantFromDomain(): {
 
               if (tenantError || !tenantData) {
                 console.error('❌ Tenant not found or disabled:', tenantError);
-                setError(`Storefront "${slug}" not found or disabled`);
+                // Allow demo fallback if flag enabled
+                if (forceDemo) {
+                  console.log('🛟 Falling back to demo-farm due to missing tenant and forceDemo enabled');
+                  setTenant({
+                    id: 'demo-tenant-id',
+                    slug: 'demo-farm',
+                    name: 'Demo Farm',
+                    storefront_enabled: true,
+                    subscription_tier: 'pro_webhosting'
+                  });
+                } else {
+                  setError(`Storefront "${slug}" not found or disabled`);
+                }
               } else {
                 console.log('✅ Tenant found:', tenantData);
                 setTenant(tenantData);
               }
             } else {
               console.error('❌ Supabase client is null');
-              setError(`Tenant "${slug}" - Supabase not configured, using demo mode`);
+              if (forceDemo || slug === 'demo-farm') {
+                console.log('🛟 Supabase not configured, using demo tenant');
+                setTenant({
+                  id: 'demo-tenant-id',
+                  slug: 'demo-farm',
+                  name: 'Demo Farm',
+                  storefront_enabled: true,
+                  subscription_tier: 'pro_webhosting'
+                });
+              } else {
+                setError(`Tenant "${slug}" - Supabase not configured`);
+              }
             }
           } catch (supabaseError) {
             console.error('❌ Supabase query failed:', supabaseError);
-            setError(`Failed to load storefront "${slug}"`);
+            if (forceDemo) {
+              console.log('🛟 Falling back to demo due to Supabase error');
+              setTenant({
+                id: 'demo-tenant-id',
+                slug: 'demo-farm',
+                name: 'Demo Farm',
+                storefront_enabled: true,
+                subscription_tier: 'pro_webhosting'
+              });
+            } else {
+              setError(`Failed to load storefront "${slug}"`);
+            }
           }
         }
       } catch (err) {
