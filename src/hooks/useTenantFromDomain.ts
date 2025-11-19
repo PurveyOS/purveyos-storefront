@@ -46,7 +46,7 @@ export function useTenantFromDomain(): UseTenantResult {
 
         // 1) Decide which slug to use
         const devSlug =
-          import.meta.env.VITE_DEV_TENANT_SLUG || "sweet-p-pastures"; // 👈 CHANGE this to your real slug
+          import.meta.env.VITE_DEV_TENANT_SLUG || "sweetppastures"; // 👈 CHANGE this to your real slug (compressed, no hyphens)
 
         let slug: string;
 
