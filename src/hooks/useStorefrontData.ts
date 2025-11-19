@@ -152,7 +152,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('id, name, pricePer, unit, image, category, qty, online_description')
+            .select('id, name, pricePer, unit, image, category, qty, online_description, allow_pre_order')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name'),
@@ -228,6 +228,7 @@ export function useStorefrontData(tenantId: string): {
           categoryId: p.category || '', // Use category column
           available: true,
           inventory: p.qty || 0,
+          allowPreOrder: p.allow_pre_order === true,
         }));
 
         // Since we don't have category column yet, create a generic "Products" category
