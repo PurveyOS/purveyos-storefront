@@ -172,9 +172,29 @@ export function useStorefrontData(tenantId: string): {
           console.error('Settings error:', settingsResult.error);
           throw settingsResult.error;
         }
+        // Handle missing column fallback (e.g., allow_pre_order not present)
+        let productsRows: any[] | null = null;
         if (productsResult.error) {
           console.error('Products error:', productsResult.error);
-          throw productsResult.error;
+          if ((productsResult.error as any).code === '42703') {
+            // Retry without the optional column to avoid breaking the site
+            console.warn('Retrying products query without allow_pre_order column');
+            const retryProducts = await supabase
+              .from('products')
+              .select('id, name, pricePer, unit, image, category, qty, online_description')
+              .eq('tenant_id', tenantId)
+              .eq('is_online', true)
+              .order('name');
+            if (retryProducts.error) {
+              console.error('Products retry error:', retryProducts.error);
+              throw retryProducts.error;
+            }
+            productsRows = retryProducts.data ?? [];
+          } else {
+            throw productsResult.error;
+          }
+        } else {
+          productsRows = productsResult.data ?? [];
         }
 
         // Transform the data to match our interfaces
@@ -217,7 +237,7 @@ export function useStorefrontData(tenantId: string): {
           });
         }
 
-        const products: Product[] = productsResult.data.map(p => ({
+        const products: Product[] = (productsRows || []).map(p => ({
           id: p.id,
           name: p.name,
           description: p.online_description || '', // Use online_description column
