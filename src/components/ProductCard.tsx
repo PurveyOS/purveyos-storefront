@@ -215,7 +215,7 @@ export function ProductCard(props: ProductCardProps) {
               Sold Out
             </span>
             {canPreOrder && (
-              <span className="bg-blue-600 text-white px-2 py-1 rounded-full text-[11px] font-medium">
+              <span className="bg-gold-600 text-black px-2 py-1 rounded-full text-[11px] font-medium">
                 Pre-order Available
               </span>
             )}
