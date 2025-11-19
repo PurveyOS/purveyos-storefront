@@ -56,7 +56,7 @@ const filteredProducts =
       
       {/* Hero Section - hidden when feature sections are enabled */}
       {showHero && (
-        <section className="relative bg-white pt-2 overflow-hidden">
+        <section className="relative w-full bg-white pt-2 overflow-hidden">
           {/* Background hero image with gradient overlay */}
 <img
   src={settings.heroImageUrl}
