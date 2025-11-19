@@ -1,173 +1,118 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from "react";
+import { supabase } from "../lib/supabaseClient"; // 👈 adjust path if yours is different
 
-export interface TenantInfo {
+
+// Minimal shape that matches how the rest of your app uses `tenant`
+export interface Tenant {
   id: string;
   slug: string;
   name: string;
+  subscription_tier: string | null;
   storefront_enabled: boolean;
-  subscription_tier: string;
 }
 
-export function useTenantFromDomain(): {
-  tenant: TenantInfo | null;
+interface UseTenantResult {
+  tenant: Tenant | null;
   loading: boolean;
   error: string | null;
-} {
-  const [tenant, setTenant] = useState<TenantInfo | null>(null);
+}
+
+/**
+ * Resolves the current tenant based on the hostname.
+ *
+ * - In development (localhost / 127.0.0.1 / *.pages.dev) it uses a fixed dev slug.
+ * - In production it uses the subdomain as the slug (e.g. sweetp.purveyos.store → "sweetp").
+ * - Then it looks up the tenant row in Supabase by slug and returns the full tenant object.
+ */
+export function useTenantFromDomain(): UseTenantResult {
+  const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
+  const client = supabase!;
+  
   useEffect(() => {
-    const resolveTenant = async () => {
+    let cancelled = false;
+
+    async function resolveTenant() {
       try {
-        const hostname = window.location.hostname;
-        let slug: string | null = null;
+        setLoading(true);
+        setError(null);
 
-        // Environment override (useful for local dev & preview deployments)
-        const envSlug = (import.meta as any).env?.VITE_TENANT_SLUG as string | undefined;
-        const forceDemo = (import.meta as any).env?.VITE_FORCE_DEMO === 'true';
-
-        if (envSlug) {
-          console.log('🔧 Using VITE_TENANT_SLUG override:', envSlug);
-          slug = envSlug;
+        let host = "";
+        if (typeof window !== "undefined") {
+          host = window.location.host.toLowerCase();
+          console.log("🔍 Resolving tenant for hostname:", host);
         }
 
-        console.log('🔍 Resolving tenant for hostname:', hostname);
+        // 1) Decide which slug to use
+        const devSlug =
+          import.meta.env.VITE_DEV_TENANT_SLUG || "sweet-p-pastures"; // 👈 CHANGE this to your real slug
 
-        // Extract subdomain
-        if (!slug && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.'))) {
-          // Development mode - check for ?tenant=xxx query param or fallback
-          const params = new URLSearchParams(window.location.search);
-          slug = params.get('tenant') || (forceDemo ? 'demo-farm' : slug);
-          if (!slug) {
-            // If still null and no override, default to demo to avoid blank screen
-            slug = 'demo-farm';
-          }
-          console.log('🏠 Development mode, resolved slug:', slug);
-        } else if (hostname.endsWith('.purveyos.store')) {
-          // Production storefront domain - extract subdomain
-          // sweetppastures.purveyos.store -> "sweet-p-pastures"
-          const extractedSlug = hostname.replace('.purveyos.store', '');
-          console.log('🌐 Extracted slug from domain:', extractedSlug);
-          
-          // Convert domain format to database slug format
-          // "sweetppastures" -> "sweet-p-pastures"
-          if (extractedSlug === 'sweetppastures') {
-            slug = 'sweet-p-pastures';
-            console.log('✅ Converted to database slug:', slug);
-          } else {
-            slug = extractedSlug;
-            console.log('📝 Using extracted slug as-is:', slug);
-          }
-        } else if (hostname === 'purveyos.store') {
-          // Root storefront domain - redirect to marketing
-          window.location.href = 'https://purveyos.com';
-          return;
+        let slug: string;
+
+        if (!host) {
+          // SSR or weird environment – fall back to dev slug
+          slug = devSlug;
+        } else if (
+          host.startsWith("localhost") ||
+          host.startsWith("127.0.0.1") ||
+          host.endsWith(".pages.dev")
+        ) {
+          // Local dev & Cloudflare preview
+          console.log("🏠 Development/preview mode, using slug:", devSlug);
+          slug = devSlug;
         } else {
-          // Not a valid storefront domain
-          setError('Invalid storefront domain. Expected format: yourfarm.purveyos.store');
-          setLoading(false);
-          return;
+          // Production: subdomain is the slug
+          const [subdomain] = host.split(".");
+          slug = subdomain;
+          console.log("🌐 Production mode, subdomain slug:", slug);
         }
 
         if (!slug) {
-          // Last resort: demo mode if forceDemo flag is set
-          if (forceDemo) {
-            slug = 'demo-farm';
-            console.log('🛟 forceDemo enabled, using demo-farm');
-          } else {
-            setError('No tenant id provided');
-            setLoading(false);
-            return;
-          }
+          throw new Error("Could not resolve tenant slug from hostname");
         }
 
-        // For development, return mock data if no Supabase connection
-        // TODO: Replace with real Supabase query when properly configured
-        if (slug === 'demo-farm') {
-          setTenant({
-            id: 'demo-tenant-id',
-            slug: 'demo-farm',
-            name: 'Demo Farm',
-            storefront_enabled: true,
-            subscription_tier: 'pro_webhosting'
-          });
+        // 2) Look up tenant in Supabase by slug
+        console.log("🔎 Looking up tenant with slug:", slug);
+        const { data, error: supaError } = await client
+          .from("tenants")
+          .select("id, slug, name, subscription_tier, storefront_enabled")
+          .eq("slug", slug)
+          .single();
+
+        if (cancelled) return;
+
+        if (supaError) {
+          console.error("❌ Supabase tenant lookup error:", supaError);
+          setError("Unable to find storefront for this domain.");
+          setTenant(null);
+        } else if (!data) {
+          console.warn("⚠ No tenant found for slug:", slug);
+          setError("Storefront not configured for this domain.");
+          setTenant(null);
         } else {
-          // Try real Supabase query
-          console.log('🔍 Looking up tenant in database:', slug);
-          try {
-            const { supabase } = await import('../lib/supabaseClient');
-            console.log('📊 Supabase client loaded:', !!supabase);
-            
-            if (supabase) {
-              console.log('🔎 Querying tenants table for slug:', slug);
-              const { data: tenantData, error: tenantError } = await supabase
-                .from('tenants')
-                .select('id, slug, name, storefront_enabled, subscription_tier')
-                .eq('slug', slug)
-                .eq('storefront_enabled', true)
-                .single();
-
-              console.log('📋 Query result:', { tenantData, tenantError });
-
-              if (tenantError || !tenantData) {
-                console.error('❌ Tenant not found or disabled:', tenantError);
-                // Allow demo fallback if flag enabled
-                if (forceDemo) {
-                  console.log('🛟 Falling back to demo-farm due to missing tenant and forceDemo enabled');
-                  setTenant({
-                    id: 'demo-tenant-id',
-                    slug: 'demo-farm',
-                    name: 'Demo Farm',
-                    storefront_enabled: true,
-                    subscription_tier: 'pro_webhosting'
-                  });
-                } else {
-                  setError(`Storefront "${slug}" not found or disabled`);
-                }
-              } else {
-                console.log('✅ Tenant found:', tenantData);
-                setTenant(tenantData);
-              }
-            } else {
-              console.error('❌ Supabase client is null');
-              if (forceDemo || slug === 'demo-farm') {
-                console.log('🛟 Supabase not configured, using demo tenant');
-                setTenant({
-                  id: 'demo-tenant-id',
-                  slug: 'demo-farm',
-                  name: 'Demo Farm',
-                  storefront_enabled: true,
-                  subscription_tier: 'pro_webhosting'
-                });
-              } else {
-                setError(`Tenant "${slug}" - Supabase not configured`);
-              }
-            }
-          } catch (supabaseError) {
-            console.error('❌ Supabase query failed:', supabaseError);
-            if (forceDemo) {
-              console.log('🛟 Falling back to demo due to Supabase error');
-              setTenant({
-                id: 'demo-tenant-id',
-                slug: 'demo-farm',
-                name: 'Demo Farm',
-                storefront_enabled: true,
-                subscription_tier: 'pro_webhosting'
-              });
-            } else {
-              setError(`Failed to load storefront "${slug}"`);
-            }
-          }
+          console.log("✅ Resolved tenant:", data);
+          setTenant(data as Tenant);
+          setError(null);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to resolve tenant');
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error("❌ Error resolving tenant:", err);
+          setError(err.message ?? "Unknown tenant error.");
+          setTenant(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    };
+    }
 
     resolveTenant();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return { tenant, loading, error };

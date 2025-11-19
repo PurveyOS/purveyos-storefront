@@ -22,7 +22,8 @@ export function WeightBinSelector({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-slate-700">Select weight:</p>
+      <p className="text-sm font-medium text-slate-700 mb-1">
+        Choose package size</p>
       <div className="grid grid-cols-2 gap-2">
   {sortedBins.map((bin) => {
           const pricePerUnit = bin.unitPriceCents / 100;

@@ -8,7 +8,6 @@ import { CartDrawer } from '../components/CartDrawer';
 export function ModernFarmTemplate({
   settings,
   products,
-  categories,
   cart,
   onAddToCart,
   onRemoveFromCart,
@@ -16,81 +15,110 @@ export function ModernFarmTemplate({
   features,
 }: StorefrontTemplateProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const cartCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+ 
 
-  const filteredProducts = selectedCategory 
-    ? products.filter(product => product.categoryId === selectedCategory)
+const categoryLabels = Array.from(
+  new Set(
+    products
+      .map((p) => p.categoryId) // 👈 if your field is categoryName, change this
+      .filter((c): c is string => Boolean(c && c.trim()))
+  )
+);
+
+// Filter products by selected category label
+const filteredProducts =
+  selectedCategory && selectedCategory !== "all"
+    ? products.filter((product) => product.categoryId === selectedCategory)
     : products;
-
   const scrollToProducts = () => {
     document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
   };
+ const cartCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+   
+  const hasFeatureSections =
+    Array.isArray(settings.featureSections) &&
+    settings.featureSections.length > 0;
 
+  // Hide hero when a feature section is active
+  const showHero = !hasFeatureSections;
+
+  const heroHeading = settings.heroHeading ?? settings.farmName;
+  const heroSubtitle = settings.heroSubtitle ?? "";
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <Navbar 
-        title={settings.heroHeading || settings.farmName}
+     <div className="flex min-h-screen flex-col bg-slate-50 overflow-x-hidden">
+    <Navbar 
+        title={heroHeading || settings.farmName}
         logoUrl={settings.logoUrl}
         cartCount={cartCount}
         primaryColor={settings.primaryColor}
         accentColor={settings.accentColor}
       />
       
-      {/* Hero Section (reduced padding for mobile) */}
-      <section className="relative bg-white pt-2">
-        {/* Background hero image with gradient overlay */}
-        {settings.heroImageUrl && (
-          <div className="absolute inset-0">
-            <img 
-              src={settings.heroImageUrl} 
-              alt={settings.heroHeading} 
-              className="w-full h-full object-cover"
-              loading="eager"
-              style={{ aspectRatio: '21/9' }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{ 
-                background: `linear-gradient(to right, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 50%, rgba(0,0,0,0.5) 100%)`
-              }}
-            />
-          </div>
-        )}
-        
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14 lg:py-16">
-          <div className="max-w-2xl">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 text-white leading-tight">
-              {settings.heroHeading}
-            </h1>
-            <p className="text-base sm:text-lg mb-6 text-white/90 leading-relaxed">
-              {settings.heroSubtitle}
-            </p>
-            <button
-              onClick={scrollToProducts}
-              className="inline-flex items-center px-6 py-3 text-base font-semibold rounded-full transition-all duration-200 shadow-md hover:shadow-lg"
-              style={{ 
-                backgroundColor: settings.accentColor || '#ffcc00',
-                color: '#000'
-              }}
-            >
-              Shop Now
-              <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-          </div>
-        </div>
+      {/* Hero Section - hidden when feature sections are enabled */}
+      {showHero && (
+        <section className="relative bg-white pt-2 overflow-hidden">
+          {/* Background hero image with gradient overlay */}
+<img
+  src={settings.heroImageUrl}
+  alt={heroHeading || "Storefront hero"}
+  className="w-full h-48 sm:h-56 md:h-64 lg:h-72 object-cover"
+  loading="eager"
+/>
 
-        {/* If no hero image, show placeholder */}
-        {!settings.heroImageUrl && (
-          <div 
-            className="absolute inset-0 -z-10"
-            style={{ 
-              background: `linear-gradient(135deg, ${settings.primaryColor || '#0f6fff'} 0%, ${settings.primaryColor || '#0f6fff'}dd 100%)`
-            }}
-          />
-        )}
-      </section>
+
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-14 lg:py-16">
+            <div className="max-w-2xl">
+              {/* Only render heading if not an empty string */}
+              {heroHeading && (
+                <h1
+                  className="text-balance text-3xl sm:text-4xl md:text-5xl font-bold leading-tight max-w-[18ch]"
+                  style={{ color: settings.heroImageUrl ? "#fff" : "#000" }}
+                >
+                  {heroHeading}
+                </h1>
+              )}
+
+              {/* Only render subtitle if not empty */}
+              {heroSubtitle && (
+                <p
+                  className={`text-base sm:text-lg mb-6 leading-relaxed ${
+                    settings.heroImageUrl ? "text-white/90" : "text-slate-700"
+                  }`}
+                >
+                  {heroSubtitle}
+                </p>
+              )}
+
+              {/* Only show button if we have some text */}
+              {(heroHeading || heroSubtitle) && (
+                <button
+                  onClick={scrollToProducts}
+                  className="inline-flex items-center px-6 py-3 text-base font-semibold rounded-full transition-all duration-200 shadow-md hover:shadow-lg"
+                  style={{
+                    backgroundColor: settings.accentColor || "#ffcc00",
+                    color: "#000",
+                  }}
+                >
+                  Shop Now
+                  <svg
+                    className="ml-2 w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Feature Sections */}
       {Array.isArray(settings.featureSections) && settings.featureSections.length > 0 && (
@@ -146,96 +174,95 @@ export function ModernFarmTemplate({
         </div>
       )}
 
-      {/* Category Strip (filter out duplicate 'All Products') */}
-      {categories.length > 0 && (
-        <section className="bg-white border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="flex gap-3 overflow-x-auto scrollbar-hide">
-              <div className="flex gap-3 lg:justify-center lg:w-full">
-                <button
-                  onClick={() => setSelectedCategory(null)}
-                  className={`flex-none px-6 py-3 border rounded-full transition-colors duration-200 cursor-pointer ${
-                    selectedCategory === null
-                      ? 'text-white'
-                      : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                  }`}
-                  style={selectedCategory === null ? { backgroundColor: settings.primaryColor, borderColor: settings.primaryColor } : undefined}
-                >
-                  <span className="text-sm font-medium whitespace-nowrap">
-                    All Products
-                  </span>
-                </button>
-                {categories
-                  .filter(c => c.id !== 'all' && c.name !== 'All Products')
-                  .map((category) => (
-                  <button
-                    key={category.id}
-                    onClick={() => setSelectedCategory(category.id)}
-                    className={`flex-none px-6 py-3 border rounded-full transition-colors duration-200 cursor-pointer ${
-                      selectedCategory === category.id
-                        ? 'text-white'
-                        : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                    }`}
-                    style={selectedCategory === category.id ? { backgroundColor: settings.accentColor, borderColor: settings.accentColor } : undefined}
-                  >
-                    <span className="text-sm font-medium whitespace-nowrap">
-                      {category.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
 
-      {/* Products Grid */}
-      <section id="products" className="flex-1 py-8 md:py-12 bg-slate-50">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
-          <div className="text-center mb-8 md:mb-10">
-            <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-3 md:mb-4 text-slate-900">
-              Our Products
-            </h2>
-            <p className="text-base md:text-lg max-w-2xl mx-auto text-slate-600">
-              Fresh, quality products from our farm to your table
-            </p>
-          </div>
-          
-          <div className="grid gap-4 md:gap-6 grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredProducts.map((product) => {
-              const quantityInCart = cart.items
-                .filter((i) => i.productId === product.id)
-                .reduce((sum, i) => sum + i.quantity, 0);
+{/* Products Grid + Category Navigation */}
+<section id="products" className="flex-1 py-8 md:py-12 bg-slate-50">
+  <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
+    {/* Section heading */}
+    <div className="text-center mb-6 md:mb-8">
+      <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold mb-2 md:mb-3 text-slate-900">
+        Our Products
+      </h2>
+      <p className="text-base md:text-lg max-w-2xl mx-auto text-slate-600">
+        Fresh, quality products from our farm to your table
+      </p>
+    </div>
 
-              return (
-              <ProductCard
-  key={product.id}
-  product={product}
-  quantityInCart={quantityInCart}
-  onAddToCart={(options) => {
-    const preOrdersEnabled = features?.preOrdersEnabled !== false;
-    const isPreOrder =
-      preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
+    {/* Category pills built from product.categoryId (text) */}
+    {categoryLabels.length > 0 && (
+      <div className="flex flex-wrap justify-center gap-2 mb-6 md:mb-8">
+        {/* All Products pill */}
+        <button
+          type="button"
+          onClick={() => setSelectedCategory(null)}
+          className={[
+            "px-4 py-2 rounded-full text-sm md:text-base font-medium border transition-all",
+            selectedCategory === null
+              ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+              : "bg-white text-slate-700 border-slate-200 hover:border-slate-400",
+          ].join(" ")}
+        >
+          All Products
+        </button>
 
-    const weight = options?.weight;
-    const quantity = options?.quantity ?? 1;
+        {/* One pill per category label */}
+        {categoryLabels.map((label) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setSelectedCategory(label)}
+            className={[
+              "px-4 py-2 rounded-full text-sm md:text-base font-medium border transition-all",
+              selectedCategory === label
+                ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                : "bg-white text-slate-700 border-slate-200 hover:border-slate-400",
+            ].join(" ")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    )}
 
-    onAddToCart(product.id, quantity, { weight, isPreOrder });
-  }}
-  onRemoveFromCart={() => onRemoveFromCart(product.id)}
-  onAddBinToCart={(binWeight, unitPriceCents) => {
-    if (onAddBinToCart) onAddBinToCart(product.id, binWeight, unitPriceCents);
-  }}
-  primaryColor={settings.primaryColor}
-  accentColor={settings.accentColor}
-  preOrdersEnabled={features?.preOrdersEnabled !== false}
-/>
+    {/* Product cards */}
+    <div className="grid gap-4 md:gap-6 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
 
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      {filteredProducts.map((product) => {
+        const quantityInCart = cart.items
+          .filter((i) => i.productId === product.id)
+          .reduce((sum, i) => sum + i.quantity, 0);
+
+        return (
+          <ProductCard
+            key={product.id}
+            product={product}
+            quantityInCart={quantityInCart}
+            onAddToCart={(options) => {
+              const preOrdersEnabled = features?.preOrdersEnabled !== false;
+              const isPreOrder =
+                preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
+
+              const weight = options?.weight;
+              const quantity = options?.quantity ?? 1;
+
+              onAddToCart(product.id, quantity, { weight, isPreOrder });
+            }}
+            onRemoveFromCart={() => onRemoveFromCart(product.id)}
+            onAddBinToCart={(binWeight, unitPriceCents) => {
+              if (onAddBinToCart) {
+                onAddBinToCart(product.id, binWeight, unitPriceCents);
+              }
+            }}
+            primaryColor={settings.primaryColor}
+            accentColor={settings.accentColor}
+            preOrdersEnabled={features?.preOrdersEnabled !== false}
+          />
+        );
+      })}
+    </div>
+  </div>
+</section>
+
 
       <Footer storeName={settings.farmName} />
       

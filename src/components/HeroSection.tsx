@@ -18,9 +18,11 @@ export function HeroSection({ settings }: HeroSectionProps) {
       <div className="absolute inset-0 bg-gradient-to-r from-black/50 to-black/30"></div>
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 w-full">
         <div className="max-w-4xl mx-auto text-center text-white">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight tracking-tight">
+          <h1
+            className="text-balance text-3xl sm:text-4xl md:text-5xl font-bold leading-tight max-w-[18ch]"
+              >
             {settings.heroHeading}
-          </h1>
+            </h1>
           <p className="text-xl md:text-2xl mb-8 opacity-90 leading-relaxed max-w-2xl mx-auto font-medium">
             {settings.heroSubtitle}
           </p>
