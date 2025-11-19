@@ -208,27 +208,29 @@ export function ModernFarmTemplate({
                 .reduce((sum, i) => sum + i.quantity, 0);
 
               return (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  quantityInCart={quantityInCart}
-                  onAddToCart={(weight?: number) => {
-                    const preOrdersEnabled = features?.preOrdersEnabled !== false;
-                    const isPreOrder = preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
-                    if (weight) {
-                      onAddToCart(product.id, 1, { weight, isPreOrder });
-                    } else {
-                      onAddToCart(product.id, 1, { isPreOrder });
-                    }
-                  }}
-                  onRemoveFromCart={() => onRemoveFromCart(product.id)}
-                  onAddBinToCart={(binWeight, unitPriceCents) => {
-                    if (onAddBinToCart) onAddBinToCart(product.id, binWeight, unitPriceCents);
-                  }}
-                  primaryColor={settings.primaryColor}
-                  accentColor={settings.accentColor}
-                  preOrdersEnabled={features?.preOrdersEnabled !== false}
-                />
+              <ProductCard
+  key={product.id}
+  product={product}
+  quantityInCart={quantityInCart}
+  onAddToCart={(options) => {
+    const preOrdersEnabled = features?.preOrdersEnabled !== false;
+    const isPreOrder =
+      preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
+
+    const weight = options?.weight;
+    const quantity = options?.quantity ?? 1;
+
+    onAddToCart(product.id, quantity, { weight, isPreOrder });
+  }}
+  onRemoveFromCart={() => onRemoveFromCart(product.id)}
+  onAddBinToCart={(binWeight, unitPriceCents) => {
+    if (onAddBinToCart) onAddBinToCart(product.id, binWeight, unitPriceCents);
+  }}
+  primaryColor={settings.primaryColor}
+  accentColor={settings.accentColor}
+  preOrdersEnabled={features?.preOrdersEnabled !== false}
+/>
+
               );
             })}
           </div>

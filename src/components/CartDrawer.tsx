@@ -13,6 +13,8 @@ interface CartDrawerProps {
 export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentColor = '#ffcc00' }: CartDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const cartCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+  const hasPreOrders = cart.items.some((item) => (item as any).isPreOrder);
+
   // Show floating button even if cart empty so users know where the cart lives
 
   return (
@@ -105,7 +107,14 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
 
             {/* Footer */}
             <div className="border-t border-slate-200 p-5 space-y-3">
-              <div className="flex items-center justify-between">
+              
+                 {hasPreOrders && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Some items are <span className="font-semibold">pre-orders</span> and may
+                not be ready on your pickup date. We’ll confirm availability before pickup.
+                 </p>
+                   )}
+                   <div className="flex items-center justify-between">
                 <span className="text-base font-medium text-slate-700">Total</span>
                 <span className="text-xl font-bold" style={{ color: primaryColor }}>
                   ${cart.total.toFixed(2)}
