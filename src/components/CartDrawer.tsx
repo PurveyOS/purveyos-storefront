@@ -72,11 +72,25 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
                 <div className="space-y-3">
                   {cart.items.slice(0, 5).map((item, idx) => {
                     const product = products.find(p => p.id === item.productId);
-                    const itemPrice = item.weight 
-                      ? (item.unitPriceCents || product?.pricePer || 0) * item.weight / 100
-                      : item.binWeight
-                      ? (item.unitPriceCents || 0) / 100
-                      : (product?.pricePer || 0) * item.quantity;
+                    const itemPrice = (() => {
+  if (!product) return 0;
+
+  // Pre-packaged bin item
+  if (item.binWeight && item.unitPriceCents) {
+    const unitPrice = item.unitPriceCents / 100; // dollars per lb
+    return item.binWeight * unitPrice * item.quantity;
+  }
+
+  // Weight-based (pre-order or in-stock by weight)
+  if (item.weight && product.pricingMode === "weight") {
+    const unitPrice = product.pricePer; // dollars per lb
+    return unitPrice * item.weight * item.quantity;
+  }
+
+  // Fixed-price (ea)
+  return product.pricePer * item.quantity;
+})();
+
                     
                     return (
                       <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">

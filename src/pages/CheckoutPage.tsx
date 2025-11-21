@@ -72,7 +72,17 @@ export function CheckoutPage() {
     }
 
     const orderValue = cart.total;
-    const result = await createOrder(tenant.id, cart, storefrontData.products, formData);
+const result = await createOrder(
+  tenant.id,
+  cart,
+  storefrontData.products,
+  formData,
+  {
+    taxRate: tenant?.tax_rate ?? 0,
+    taxIncluded: !!tenant?.tax_included,
+    chargeTaxOnOnline: tenant?.charge_tax_on_online ?? true,
+  }
+);
 
     if (result.success) {
       setOrderSuccess(true);

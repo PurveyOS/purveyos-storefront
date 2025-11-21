@@ -225,8 +225,8 @@ const filteredProducts =
     )}
 
     {/* Product cards */}
-    <div className="grid gap-4 md:gap-6 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-
+    <div className="grid gap-4 sm:gap-5 md:gap-6 grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+     
       {filteredProducts.map((product) => {
         const quantityInCart = cart.items
           .filter((i) => i.productId === product.id)

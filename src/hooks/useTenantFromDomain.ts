@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient"; // 👈 adjust path if yours is different
 
-
 // Minimal shape that matches how the rest of your app uses `tenant`
 export interface Tenant {
   id: string;
@@ -9,6 +8,11 @@ export interface Tenant {
   name: string;
   subscription_tier: string | null;
   storefront_enabled: boolean;
+
+  // Tax-related settings (optional so existing rows don't break)
+  tax_rate?: number | null;               // e.g. 0.0825 for 8.25%
+  tax_included?: boolean | null;         // true if prices already include tax
+  charge_tax_on_online?: boolean | null; // allow disabling tax for online orders
 }
 
 interface UseTenantResult {
@@ -46,7 +50,7 @@ export function useTenantFromDomain(): UseTenantResult {
 
         // 1) Decide which slug to use
         const devSlug =
-          import.meta.env.VITE_DEV_TENANT_SLUG || "sweetppastures"; // 👈 CHANGE this to your real slug (compressed, no hyphens)
+          import.meta.env.VITE_DEV_TENANT_SLUG || "sweetppastures"; // dev fallback
 
         let slug: string;
 
@@ -76,7 +80,9 @@ export function useTenantFromDomain(): UseTenantResult {
         console.log("🔎 Looking up tenant with slug:", slug);
         const { data, error: supaError } = await client
           .from("tenants")
-          .select("id, slug, name, subscription_tier, storefront_enabled")
+          .select(
+            "id, slug, name, subscription_tier, storefront_enabled, tax_rate, tax_included, charge_tax_on_online"
+          )
           .eq("slug", slug)
           .single();
 
@@ -117,3 +123,4 @@ export function useTenantFromDomain(): UseTenantResult {
 
   return { tenant, loading, error };
 }
+

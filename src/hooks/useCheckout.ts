@@ -9,15 +9,71 @@ export interface CheckoutData {
   customerPhone: string;
   deliveryMethod: 'pickup' | 'delivery';
   deliveryAddress?: string;
-   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
+  paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
   paymentDetails?: string; // Card token or payment confirmation
-   deliveryNotes?: string;
+  deliveryNotes?: string;
 }
 
 export interface CheckoutResult {
   orderId?: string;
   success: boolean;
   error?: string;
+}
+
+export interface TenantTaxConfig {
+  taxRate?: number;              // e.g. 0.0825 for 8.25%
+  taxIncluded?: boolean;         // true if prices already include tax
+  chargeTaxOnOnline?: boolean;   // allow disabling tax for online orders
+}
+
+/**
+ * Compute subtotal/tax/total in cents from line totals and tenant tax config.
+ */
+function calculateTotalsFromCents(
+  lineTotalsCents: number[],
+  taxConfig?: TenantTaxConfig
+) {
+  const subtotalCents = lineTotalsCents.reduce(
+    (sum, cents) => sum + (cents || 0),
+    0
+  );
+
+  const rate = taxConfig?.taxRate ?? 0;
+  const chargeTax =
+    taxConfig?.chargeTaxOnOnline !== undefined
+      ? taxConfig.chargeTaxOnOnline
+      : true;
+
+  if (!chargeTax || rate <= 0) {
+    return {
+      subtotalCents,
+      taxCents: 0,
+      totalCents: subtotalCents,
+    };
+  }
+
+  const taxIncluded = !!taxConfig?.taxIncluded;
+
+  if (taxIncluded) {
+    // Prices already include tax: back out the net subtotal.
+    const gross = subtotalCents;
+    const net = Math.round(gross / (1 + rate));
+    const taxCents = gross - net;
+
+    return {
+      subtotalCents: net,
+      taxCents,
+      totalCents: gross,
+    };
+  } else {
+    // Prices are before tax: add tax on top.
+    const taxCents = Math.round(subtotalCents * rate);
+    return {
+      subtotalCents,
+      taxCents,
+      totalCents: subtotalCents + taxCents,
+    };
+  }
 }
 
 export function useCheckout() {
@@ -28,84 +84,90 @@ export function useCheckout() {
     tenantId: string,
     cart: Cart,
     products: Product[],
-    checkoutData: CheckoutData
+    checkoutData: CheckoutData,
+    taxConfig?: TenantTaxConfig
   ): Promise<CheckoutResult> => {
     setLoading(true);
     setError(null);
 
     try {
       if (!supabase) {
-         throw new Error('Supabase client not configured');
+        throw new Error('Supabase client not configured');
       }
 
-       // Calculate order totals and build line items
-       const lines = cart.items.map(item => {
+      // 1) Calculate order line totals
+      const lines = cart.items.map(item => {
         const product = products.find(p => p.id === item.productId);
-         if (!product) throw new Error(`Product not found: ${item.productId}`);
-        
-         let unitPrice = product.pricePer;
-         let lineTotalCents = 0;
-       
+        if (!product) throw new Error(`Product not found: ${item.productId}`);
+
+        let unitPrice = product.pricePer;
+        let lineTotalCents = 0;
+
         if (item.binWeight && item.unitPriceCents) {
-           unitPrice = item.binWeight * (item.unitPriceCents / 100);
-           lineTotalCents = Math.round(unitPrice * item.quantity * 100);
-         } else {
-           lineTotalCents = Math.round(unitPrice * item.quantity * 100);
+          // Pre-packed bin: unitPriceCents is per lb, multiply by bin size
+          unitPrice = item.binWeight * (item.unitPriceCents / 100);
+          lineTotalCents = Math.round(unitPrice * item.quantity * 100);
+        } else {
+          // Simple fixed/weight price: pricePer * quantity
+          lineTotalCents = Math.round(unitPrice * item.quantity * 100);
         }
-        
-         return {
-           productId: item.productId,
-           qty: item.quantity,
-           unitPrice,
-           lineTotalCents,
-           binWeight: item.binWeight,
-           unitPriceCents: item.unitPriceCents,
-         };
-       });
 
-       const subtotalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0);
-       const taxCents = Math.round(subtotalCents * 0.08); // 8% tax
-       const totalCents = subtotalCents + taxCents;
+        return {
+          productId: item.productId,
+          qty: item.quantity,
+          unitPrice,
+          lineTotalCents,
+          binWeight: item.binWeight,
+          unitPriceCents: item.unitPriceCents,
+        };
+      });
 
-       // Call Edge Function to create order securely (bypasses RLS)
-       console.log('Calling create-storefront-order Edge Function...');
-       const { data, error: functionError } = await supabase.functions.invoke(
-         'create-storefront-order',
-         {
-           body: {
-             tenantId,
-             customerName: checkoutData.customerName,
-             customerEmail: checkoutData.customerEmail,
-             customerPhone: checkoutData.customerPhone,
-             deliveryMethod: checkoutData.deliveryMethod,
-             deliveryAddress: checkoutData.deliveryAddress,
-             deliveryNotes: checkoutData.deliveryNotes,
-             paymentMethod: checkoutData.paymentMethod,
-             lines,
-             subtotalCents,
-             taxCents,
-             totalCents,
-           },
-         }
-       );
+      // 2) Compute subtotal / tax / total in cents using tenant tax config
+      const { subtotalCents, taxCents, totalCents } = calculateTotalsFromCents(
+        lines.map(line => line.lineTotalCents),
+        taxConfig
+      );
 
-       if (functionError) {
-         console.error('Edge Function error:', functionError);
-         throw functionError;
-       }
+      // 3) Call Edge Function to create order securely (bypasses RLS)
+      console.log('Calling create-storefront-order Edge Function...');
+      const { data, error: functionError } = await supabase.functions.invoke(
+        'create-storefront-order',
+        {
+          body: {
+            tenantId,
+            customerName: checkoutData.customerName,
+            customerEmail: checkoutData.customerEmail,
+            customerPhone: checkoutData.customerPhone,
+            deliveryMethod: checkoutData.deliveryMethod,
+            deliveryAddress: checkoutData.deliveryAddress,
+            deliveryNotes: checkoutData.deliveryNotes,
+            paymentMethod: checkoutData.paymentMethod,
+            lines,
+            subtotalCents,
+            taxCents,
+            totalCents,
+          },
+        }
+      );
 
-       if (!data?.success) {
-         throw new Error(data?.error || 'Failed to create order');
-       }
+      if (functionError) {
+        console.error('Edge Function error:', functionError);
+        throw functionError;
+      }
 
-       console.log('Order created successfully:', data.orderId);
+      if (!data?.success) {
+        throw new Error(data?.error || 'Failed to create order');
+      }
+
+      console.log('Order created successfully:', data.orderId);
 
       return {
         success: true,
-         orderId: data.orderId,
+        orderId: data.orderId,
       };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create order';
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to create order';
       setError(errorMessage);
       return {
         success: false,
