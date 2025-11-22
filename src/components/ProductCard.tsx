@@ -178,12 +178,6 @@ export function ProductCard(props: ProductCardProps) {
     setFixedQty(1);
   };
 
-  const handleAddWeightPreorder = () => {
-    const weight = parseFloat(weightAmount);
-    if (!weight || weight <= 0) return;
-    onAddToCart({ weight });
-    setWeightAmount("1");
-  };
 
   const handleAddWeightInStock = () => {
     const weight = parseFloat(weightAmount);
@@ -315,20 +309,29 @@ export function ProductCard(props: ProductCardProps) {
             </label>
             <input
               type="number"
-              min="0.1"
-              step="0.1"
+              min="1"
+              step="1"
               value={weightAmount}
-              onChange={(e) => setWeightAmount(e.target.value)}
+              onChange={(e) => {
+                // Only allow whole numbers
+                const val = e.target.value.replace(/[^\d]/g, "");
+                setWeightAmount(val);
+              }}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
-              placeholder="e.g., 2.5"
+              placeholder="e.g., 10"
             />
             <p className="text-xs text-slate-500 mt-1">
-              ${price.toFixed(2)} × {weightAmount || 0} lb = $
-              {(price * parseFloat(weightAmount || "0")).toFixed(2)}
+              ${price.toFixed(2)} × {parseInt(weightAmount || "0", 10)} lb = $
+              {(price * parseInt(weightAmount || "0", 10)).toFixed(2)}
             </p>
           </div>
           <button
-            onClick={handleAddWeightPreorder}
+            onClick={() => {
+              const weight = parseInt(weightAmount, 10);
+              if (!weight || weight < 1) return;
+              onAddToCart({ weight });
+              setWeightAmount("1");
+            }}
             className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
             style={{ backgroundColor: primaryColor }}
           >
