@@ -7,6 +7,7 @@ import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 
 export function CheckoutPage() {
+  
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
@@ -23,6 +24,7 @@ export function CheckoutPage() {
     deliveryNotes: '',
   });
 
+  
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderId, setOrderId] = useState<string>();
 
@@ -377,13 +379,27 @@ const result = await createOrder(
                       <span>${cart.total.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-gray-600">
-                      <span>Tax (8%):</span>
-                      <span>${(cart.total * 0.08).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
-                      <span>Total:</span>
-                      <span>${(cart.total * 1.08).toFixed(2)}</span>
-                    </div>
+  <span>Tax:</span>
+  <span>
+    {tenant?.charge_tax_on_online === false
+      ? '$0.00'
+      : tenant?.tax_included
+      ? 'Included in price'
+      : `$${(cart.total * (tenant?.tax_rate ?? 0)).toFixed(2)}`}
+  </span>
+</div>
+
+<div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
+  <span>Total:</span>
+  <span>
+    {tenant?.charge_tax_on_online === false
+      ? `$${cart.total.toFixed(2)}`
+      : tenant?.tax_included
+      ? `$${cart.total.toFixed(2)}`
+      : `$${(cart.total * (1 + (tenant?.tax_rate ?? 0))).toFixed(2)}`}
+  </span>
+</div>
+
                   </div>
                 </div>
               ) : (

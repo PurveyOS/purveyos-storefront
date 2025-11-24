@@ -3,6 +3,18 @@ import { supabase } from '../lib/supabaseClient';
 import type { Cart } from '../types/storefront';
 import type { Product } from '../types/product';
 
+export interface SubscriptionRequest {
+  enabled: boolean;
+  cadence?: 'weekly' | 'biweekly' | 'monthly';
+  startDate?: string; // ISO date
+  isCsaBox?: boolean;
+  targetWeightLbs?: number; // for weight-based items (CSA box), optional
+
+  // Optional extra fields to support product-specific subscriptions
+  productId?: string;
+  quantity?: number;
+}
+
 export interface CheckoutData {
   customerName: string;
   customerEmail: string;
@@ -12,6 +24,7 @@ export interface CheckoutData {
   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
   paymentDetails?: string; // Card token or payment confirmation
   deliveryNotes?: string;
+  subscription?: SubscriptionRequest;
 }
 
 export interface CheckoutResult {
@@ -26,13 +39,16 @@ export interface TenantTaxConfig {
   chargeTaxOnOnline?: boolean;   // allow disabling tax for online orders
 }
 
-/**
- * Compute subtotal/tax/total in cents from line totals and tenant tax config.
- */
+interface TotalsResult {
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+}
+
 function calculateTotalsFromCents(
   lineTotalsCents: number[],
   taxConfig?: TenantTaxConfig
-) {
+): TotalsResult {
   const subtotalCents = lineTotalsCents.reduce(
     (sum, cents) => sum + (cents || 0),
     0
@@ -52,7 +68,7 @@ function calculateTotalsFromCents(
     };
   }
 
-  const taxIncluded = !!taxConfig?.taxIncluded;
+  const taxIncluded = taxConfig?.taxIncluded ?? false;
 
   if (taxIncluded) {
     // Prices already include tax: back out the net subtotal.
@@ -76,6 +92,18 @@ function calculateTotalsFromCents(
   }
 }
 
+interface OutgoingOrderLine {
+  productId: string;
+  productName: string;
+  qty: number;
+  unitPriceCents: number;
+  lineTotalCents: number;
+  binWeight?: number | null;
+  weightLbs?: number | null;
+  isPreOrder?: boolean;
+  pricePer?: 'weight' | 'fixed' | 'unit' | 'lb' | string;
+}
+
 export function useCheckout() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,44 +120,80 @@ export function useCheckout() {
 
     try {
       if (!supabase) {
-        throw new Error('Supabase client not configured');
+        throw new Error('Supabase client not initialized');
       }
 
-      // 1) Calculate order line totals
-      const lines = cart.items.map(item => {
-        const product = products.find(p => p.id === item.productId);
-        if (!product) throw new Error(`Product not found: ${item.productId}`);
+      if (!tenantId) {
+        throw new Error('Tenant ID is required');
+      }
 
-        let unitPrice = product.pricePer;
-        let lineTotalCents = 0;
+      if (!cart.items || cart.items.length === 0) {
+        throw new Error('Cart is empty');
+      }
 
-        if (item.binWeight && item.unitPriceCents) {
-          // Pre-packed bin: unitPriceCents is per lb, multiply by bin size
-          unitPrice = item.binWeight * (item.unitPriceCents / 100);
-          lineTotalCents = Math.round(unitPrice * item.quantity * 100);
-        } else {
-          // Simple fixed/weight price: pricePer * quantity
-          lineTotalCents = Math.round(unitPrice * item.quantity * 100);
+      // 1) Map cart items → unified line model
+      const lines: OutgoingOrderLine[] = cart.items.map((item: any) => {
+        const product = products.find((p) => p.id === item.productId);
+        if (!product) {
+          throw new Error(`Product not found: ${item.productId}`);
         }
+
+        const quantity: number = item.quantity ?? 1;
+        const binWeight: number | null =
+          typeof item.binWeight === 'number' ? item.binWeight : null;
+        const weightLbs: number | null =
+          typeof item.weight === 'number' ? item.weight : null;
+        const isPreOrder: boolean = !!item.isPreOrder;
+
+        const pricingMode: 'weight' | 'fixed' | undefined = (product as any).pricingMode;
+
+        let unitPrice: number; // dollars per lb or per item
+        let lineTotal: number; // dollars
+
+        if (binWeight && typeof item.unitPriceCents === 'number') {
+          // Pre-packaged bin: unitPriceCents is per lb; apply to bin weight
+          unitPrice = item.unitPriceCents / 100;
+          lineTotal = unitPrice * binWeight * quantity;
+        } else if (pricingMode === 'weight' && weightLbs) {
+          // Weight-based pricing (by lb)
+          unitPrice = (product as any).pricePer;
+          lineTotal = unitPrice * weightLbs * quantity;
+        } else {
+          // Fixed price item
+          unitPrice = (product as any).pricePer;
+          lineTotal = unitPrice * quantity;
+        }
+
+        const unitPriceCents = Math.round(unitPrice * 100);
+        const lineTotalCents = Math.round(lineTotal * 100);
+
+        const pricePerLabel: OutgoingOrderLine['pricePer'] =
+          pricingMode === 'weight' ? 'lb' : 'unit';
 
         return {
           productId: item.productId,
-          qty: item.quantity,
-          unitPrice,
+          productName: (product as any).name ?? (product as any).productName ?? '',
+          qty: quantity,
+          unitPriceCents,
           lineTotalCents,
-          binWeight: item.binWeight,
-          unitPriceCents: item.unitPriceCents,
+          binWeight,
+          weightLbs,
+          isPreOrder,
+          pricePer: pricePerLabel,
         };
       });
 
-      // 2) Compute subtotal / tax / total in cents using tenant tax config
-      const { subtotalCents, taxCents, totalCents } = calculateTotalsFromCents(
-        lines.map(line => line.lineTotalCents),
+      // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
+      const totals = calculateTotalsFromCents(
+        lines.map((line) => line.lineTotalCents),
         taxConfig
       );
 
+      const subtotalCents = totals.subtotalCents;
+      const taxCents = totals.taxCents;
+      const totalCents = totals.totalCents;
+
       // 3) Call Edge Function to create order securely (bypasses RLS)
-      console.log('Calling create-storefront-order Edge Function...');
       const { data, error: functionError } = await supabase.functions.invoke(
         'create-storefront-order',
         {
@@ -142,28 +206,30 @@ export function useCheckout() {
             deliveryAddress: checkoutData.deliveryAddress,
             deliveryNotes: checkoutData.deliveryNotes,
             paymentMethod: checkoutData.paymentMethod,
+
+            // Canonical line structure
             lines,
             subtotalCents,
             taxCents,
             totalCents,
+
+            // Optional subscription payload (for storefront_subscriptions)
+            subscription: checkoutData.subscription,
           },
         }
       );
 
       if (functionError) {
-        console.error('Edge Function error:', functionError);
         throw functionError;
       }
 
-      if (!data?.success) {
-        throw new Error(data?.error || 'Failed to create order');
+      if (!(data as any)?.success) {
+        throw new Error((data as any)?.error || 'Failed to create order');
       }
-
-      console.log('Order created successfully:', data.orderId);
 
       return {
         success: true,
-        orderId: data.orderId,
+        orderId: (data as any).orderId,
       };
     } catch (err) {
       const errorMessage =
@@ -184,37 +250,46 @@ export function useCheckout() {
     connectedAccountId: string
   ): Promise<{ success: boolean; error?: string; paymentIntentId?: string }> => {
     try {
-      // If Supabase is not configured, simulate success
       if (!supabase) {
-        console.log('Supabase not configured, simulating card payment');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return {
-          success: true,
-          paymentIntentId: 'mock-pi-' + Date.now(),
-        };
+        throw new Error('Supabase client not initialized');
+      }
+
+      if (!cardToken) {
+        throw new Error('Missing card token');
+      }
+
+      if (!amount || amount <= 0) {
+        throw new Error('Amount must be greater than zero');
       }
 
       // Call edge function to process payment via Stripe
-      const { data, error } = await supabase.functions.invoke('process-payment', {
-        body: {
-          amount: Math.round(amount * 100), // Convert to cents
-          payment_method: cardToken,
-          connected_account_id: connectedAccountId,
-          currency: 'usd',
-        },
-      });
+      const { data, error } = await supabase.functions.invoke(
+        'process-payment',
+        {
+          body: {
+            amount: Math.round(amount * 100), // dollars → cents
+            payment_method: cardToken,
+            connected_account_id: connectedAccountId,
+            currency: 'usd',
+          },
+        }
+      );
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       return {
-        success: data.success,
-        paymentIntentId: data.payment_intent_id,
-        error: data.error,
+        success: true,
+        paymentIntentId: (data as any)?.paymentIntentId,
       };
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : 'Payment processing failed',
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Payment processing failed',
       };
     }
   };
