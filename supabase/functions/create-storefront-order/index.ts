@@ -138,7 +138,6 @@ serve(async (req) => {
           bin_weight: line.binWeight ?? null,
           weight_lbs: line.weightLbs ?? null,
           is_pre_order: line.isPreOrder ?? false,
-          weight_bin_id: line.weightBinId ?? null,
           created_at: new Date().toISOString(),
         })
 
