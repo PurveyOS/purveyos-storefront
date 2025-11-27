@@ -80,8 +80,8 @@ export function CartPage() {
                     // Pre-packaged weight bin
                     lineUnitPrice = binWeight * (unitPriceCents / 100);
                     displayInfo = `${binWeight} ${product.unit} package`;
-                  } else if (weight && product.pricingMode === 'weight') {
-                    // Weight-based pricing
+                  } else if (weight && weight > 0) {
+                    // Weight-based pricing (check weight first, don't rely on pricingMode)
                     lineUnitPrice = product.pricePer * weight;
                     displayInfo = `${weight} ${product.unit} @ $${product.pricePer.toFixed(2)}/${product.unit}`;
                   } else {

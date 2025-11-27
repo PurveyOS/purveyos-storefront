@@ -245,7 +245,12 @@ const filteredProducts =
               const weight = options?.weight;
               const quantity = options?.quantity ?? 1;
 
-              onAddToCart(product.id, quantity, { weight, isPreOrder });
+              // For weight-based products, pass weight; for quantity-based, just pass quantity
+              if (weight && weight > 0) {
+                onAddToCart(product.id, 1, { weight, isPreOrder });
+              } else {
+                onAddToCart(product.id, quantity, { isPreOrder });
+              }
             }}
             onRemoveFromCart={() => onRemoveFromCart(product.id)}
             onAddBinToCart={(binWeight, unitPriceCents) => {
