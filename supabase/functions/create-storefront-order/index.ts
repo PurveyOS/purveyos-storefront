@@ -192,16 +192,19 @@ serve(async (req) => {
           // Weight-based: decrement specific weight bin
           // Use binWeight for pre-packaged bins, weightLbs for custom weight orders
           const weight = line.binWeight ?? line.weightLbs ?? 0
+          // Round to 2 decimals to match package_bins weight_btn precision
           const weightBtn = Math.round(weight * 100) / 100
-          const packageKey = `${product.id}|${weightBtn.toFixed(2)}`
+          // Remove trailing zeros: 1.30 -> 1.3, 1.00 -> 1, 1.56 -> 1.56
+          const weightStr = weightBtn.toString().replace(/\.?0+$/, '')
+          const packageKey = `${product.id}|${weightStr}`
 
-          console.log(`Looking up package_bin: ${packageKey}, binWeight=${line.binWeight}, weightLbs=${line.weightLbs}, qty=${line.qty}`)
+          console.log(`Looking up package_bin: ${packageKey}, binWeight=${line.binWeight}, weightLbs=${line.weightLbs}, qty=${line.qty}, raw weight=${weight}`)
 
           const { data: bin, error: binQueryError } = await supabaseAdmin
             .from('package_bins')
             .select('qty')
             .eq('package_key', packageKey)
-            .single()
+            .maybeSingle()
 
           if (binQueryError) {
             console.error(`Error querying package_bins for ${packageKey}:`, binQueryError)
@@ -233,7 +236,7 @@ serve(async (req) => {
             .from('package_bins')
             .select('qty')
             .eq('package_key', packageKey)
-            .single()
+            .maybeSingle()
 
           if (binQueryError) {
             console.error(`Error querying package_bins for ${packageKey}:`, binQueryError)

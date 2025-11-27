@@ -481,7 +481,7 @@ export function ProductCard(props: ProductCardProps) {
                     className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
                     style={{ backgroundColor: primaryColor }}
                   >
-                    Pre-Order
+                    Add to Cart
                   </button>
                 </div>
               )}
