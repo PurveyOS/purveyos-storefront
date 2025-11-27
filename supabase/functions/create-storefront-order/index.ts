@@ -191,7 +191,8 @@ serve(async (req) => {
         // 2. Decrement package_bins (authoritative inventory)
         if (product.unit === 'lb') {
           // Weight-based: decrement specific weight bin
-          const weight = line.weightLbs ?? (line.binWeight ? line.binWeight * line.qty : 0)
+          // Use binWeight for pre-packaged bins, weightLbs for custom weight orders
+          const weight = line.binWeight ?? line.weightLbs ?? 0
           const weightBtn = Math.round(weight * 100) / 100
           const packageKey = `${product.id}|${weightBtn.toFixed(2)}`
 
