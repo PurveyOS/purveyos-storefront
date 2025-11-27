@@ -10,8 +10,12 @@ interface OrderLine {
   productId: string
   productName: string
   qty: number
-  unitPrice: number
+  unitPriceCents: number
   lineTotalCents: number
+  binWeight?: number | null
+  weightLbs?: number | null
+  isPreOrder?: boolean
+  pricePer?: string
   weightBinId?: string
 }
 
@@ -28,6 +32,15 @@ interface OrderRequest {
   subtotalCents: number
   taxCents: number
   totalCents: number
+  subscription?: {
+    enabled: boolean
+    cadence?: 'weekly' | 'biweekly' | 'monthly'
+    startDate?: string
+    isCsaBox?: boolean
+    targetWeightLbs?: number
+    productId?: string
+    quantity?: number
+  }
 }
 
 serve(async (req) => {
@@ -63,6 +76,20 @@ serve(async (req) => {
     // Start a transaction by using multiple operations
     // 1. Create the order
     const orderId = crypto.randomUUID()
+    
+    // Build note field with delivery/payment info
+    const noteParts = []
+    if (orderRequest.deliveryMethod) {
+      noteParts.push(`delivery: ${orderRequest.deliveryMethod}`)
+    }
+    if (orderRequest.deliveryAddress) {
+      noteParts.push(`address: ${orderRequest.deliveryAddress}`)
+    }
+    if (orderRequest.paymentMethod) {
+      noteParts.push(`payment: ${orderRequest.paymentMethod}`)
+    }
+    const note = noteParts.join(' | ')
+    
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .insert({
@@ -71,13 +98,11 @@ serve(async (req) => {
         customer_name: orderRequest.customerName,
         customer_email: orderRequest.customerEmail,
         customer_phone: orderRequest.customerPhone,
-        delivery_method: orderRequest.deliveryMethod,
-        delivery_address: orderRequest.deliveryAddress,
-        delivery_notes: orderRequest.deliveryNotes,
-        payment_method: orderRequest.paymentMethod,
+        note: note || null,
         subtotal_cents: orderRequest.subtotalCents,
         tax_cents: orderRequest.taxCents,
         total_cents: orderRequest.totalCents,
+        source: 'storefront',
         status: 'pending',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -94,6 +119,9 @@ serve(async (req) => {
 
     // 2. Create order lines and decrement inventory
     for (const line of orderRequest.lines) {
+      // Convert unitPriceCents to dollars for price_per field
+      const pricePerDollars = line.unitPriceCents / 100
+
       // Insert order line
       const { error: lineError } = await supabaseAdmin
         .from('order_lines')
@@ -104,9 +132,13 @@ serve(async (req) => {
           product_id: line.productId,
           product_name: line.productName,
           quantity: line.qty,
-          price_per: line.unitPrice,
+          unit_price_cents: line.unitPriceCents,
+          price_per: pricePerDollars,
           line_total_cents: line.lineTotalCents,
-          weight_bin_id: line.weightBinId,
+          bin_weight: line.binWeight ?? null,
+          weight_lbs: line.weightLbs ?? null,
+          is_pre_order: line.isPreOrder ?? false,
+          weight_bin_id: line.weightBinId ?? null,
           created_at: new Date().toISOString(),
         })
 
@@ -115,10 +147,10 @@ serve(async (req) => {
         throw lineError
       }
 
-      // Decrement product inventory
+      // Fetch product to determine unit type (lb vs ea)
       const { data: product, error: productError } = await supabaseAdmin
         .from('products')
-        .select('qty')
+        .select('id, unit, qty')
         .eq('id', line.productId)
         .single()
 
@@ -127,21 +159,97 @@ serve(async (req) => {
         throw productError
       }
 
-      const newQty = (product.qty || 0) - line.qty
-      const { error: updateError } = await supabaseAdmin
-        .from('products')
-        .update({
-          qty: newQty,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', line.productId)
-
-      if (updateError) {
-        console.error('Error updating product inventory:', updateError)
-        throw updateError
+      // Calculate quantity to deduct based on product unit
+      let qtyToDeduct = 0
+      if (product.unit === 'lb') {
+        // Weight-based: use weightLbs or binWeight * qty
+        const weight = line.weightLbs ?? (line.binWeight ? line.binWeight * line.qty : 0)
+        if (weight > 0) {
+          qtyToDeduct = weight
+        }
+      } else {
+        // Each-based: use quantity
+        qtyToDeduct = line.qty
       }
 
-      console.log(`Decremented inventory for ${line.productName}: ${product.qty} -> ${newQty}`)
+      if (qtyToDeduct > 0) {
+        // 1. Update legacy product.qty for compatibility
+        const newProductQty = Math.max(0, (product.qty || 0) - qtyToDeduct)
+        const { error: updateError } = await supabaseAdmin
+          .from('products')
+          .update({
+            qty: newProductQty,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', line.productId)
+
+        if (updateError) {
+          console.error('Error updating product.qty:', updateError)
+          throw updateError
+        }
+
+        // 2. Decrement package_bins (authoritative inventory)
+        if (product.unit === 'lb') {
+          // Weight-based: decrement specific weight bin
+          const weight = line.weightLbs ?? (line.binWeight ? line.binWeight * line.qty : 0)
+          const weightBtn = Math.round(weight * 100) / 100
+          const packageKey = `${product.id}|${weightBtn.toFixed(2)}`
+
+          const { data: bin } = await supabaseAdmin
+            .from('package_bins')
+            .select('qty')
+            .eq('package_key', packageKey)
+            .single()
+
+          if (bin && bin.qty > 0) {
+            const newBinQty = Math.max(0, bin.qty - 1)
+            await supabaseAdmin
+              .from('package_bins')
+              .update({
+                qty: newBinQty,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('package_key', packageKey)
+          }
+        } else {
+          // Each-based: decrement EA bin (weightBtn = 0)
+          const packageKey = `${product.id}|0.00`
+
+          const { data: bin } = await supabaseAdmin
+            .from('package_bins')
+            .select('qty')
+            .eq('package_key', packageKey)
+            .single()
+
+          if (bin && bin.qty > 0) {
+            const newBinQty = Math.max(0, bin.qty - line.qty)
+            await supabaseAdmin
+              .from('package_bins')
+              .update({
+                qty: newBinQty,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('package_key', packageKey)
+          }
+        }
+
+        // 3. Create inventory_txns audit record
+        const txnId = `order-${orderId}-${line.productId}-${Date.now()}`
+        await supabaseAdmin
+          .from('inventory_txns')
+          .insert({
+            id: txnId,
+            product_id: line.productId,
+            type: 'OUT',
+            qty_lbs: qtyToDeduct,
+            reason: 'storefront_order',
+            meta_json: { orderId, customerEmail: orderRequest.customerEmail },
+            tenant_id: orderRequest.tenantId,
+            created_at: new Date().toISOString(),
+          })
+
+        console.log(`Decremented inventory for ${line.productName}: product.qty ${product.qty} -> ${newProductQty}, qtyLbs: ${qtyToDeduct}`)
+      }
     }
 
     // Return success response

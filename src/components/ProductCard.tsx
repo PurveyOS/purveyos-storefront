@@ -202,12 +202,18 @@ export function ProductCard(props: ProductCardProps) {
           />
         )}
 
+        {/* Sold Out Overlay */}
+        {isSoldOut && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <span className="bg-red-600 text-white px-4 py-2 rounded-lg text-lg font-bold shadow-lg">
+              SOLD OUT
+            </span>
+          </div>
+        )}
+
         {/* Sold out / preorder badges */}
         {isSoldOut && (
           <div className="absolute top-2 left-2 flex flex-col gap-1">
-            <span className="bg-red-600 text-white px-3 py-1 rounded-full text-xs font-medium">
-              Sold Out
-            </span>
             {canPreOrder && (
               <span className="bg-black-600 text-white px-2 py-1 rounded-full text-[11px] font-medium">
                 Pre-order Available
@@ -327,8 +333,8 @@ export function ProductCard(props: ProductCardProps) {
           </div>
           <button
             onClick={() => {
-              const weight = parseInt(weightAmount, 10);
-              if (!weight || weight < 1) return;
+              const weight = parseFloat(weightAmount);
+              if (!weight || weight < 0.1) return;
               onAddToCart({ weight });
               setWeightAmount("1");
             }}
