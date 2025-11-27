@@ -162,10 +162,10 @@ serve(async (req) => {
       // Calculate quantity to deduct based on product unit
       let qtyToDeduct = 0
       if (product.unit === 'lb') {
-        // Weight-based: use weightLbs or binWeight * qty
-        const weight = line.weightLbs ?? (line.binWeight ? line.binWeight * line.qty : 0)
+        // Weight-based: use binWeight for pre-packaged bins, weightLbs for custom weight
+        const weight = line.binWeight ?? line.weightLbs ?? 0
         if (weight > 0) {
-          qtyToDeduct = weight
+          qtyToDeduct = weight * line.qty
         }
       } else {
         // Each-based: use quantity
@@ -203,14 +203,22 @@ serve(async (req) => {
             .single()
 
           if (bin && bin.qty > 0) {
-            const newBinQty = Math.max(0, bin.qty - 1)
-            await supabaseAdmin
+            const newBinQty = Math.max(0, bin.qty - line.qty)
+            const { error: binUpdateError } = await supabaseAdmin
               .from('package_bins')
               .update({
                 qty: newBinQty,
                 updated_at: new Date().toISOString(),
               })
               .eq('package_key', packageKey)
+            
+            if (binUpdateError) {
+              console.error('Error updating package_bins:', binUpdateError)
+            } else {
+              console.log(`Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
+            }
+          } else {
+            console.log(`Skipping package_bins update for ${packageKey}: bin not found or qty = 0`)
           }
         } else {
           // Each-based: decrement EA bin (weightBtn = 0)
@@ -224,13 +232,21 @@ serve(async (req) => {
 
           if (bin && bin.qty > 0) {
             const newBinQty = Math.max(0, bin.qty - line.qty)
-            await supabaseAdmin
+            const { error: binUpdateError } = await supabaseAdmin
               .from('package_bins')
               .update({
                 qty: newBinQty,
                 updated_at: new Date().toISOString(),
               })
               .eq('package_key', packageKey)
+            
+            if (binUpdateError) {
+              console.error('Error updating package_bins:', binUpdateError)
+            } else {
+              console.log(`Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
+            }
+          } else {
+            console.log(`Skipping package_bins update for ${packageKey}: bin not found or qty = 0`)
           }
         }
 
