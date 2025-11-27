@@ -32,6 +32,31 @@ export function CartPage() {
 
   const isEmpty = cartItems.length === 0;
 
+  // Calculate actual cart total based on items
+  const cartTotal = cartItems.reduce((sum, item) => {
+    if (!item?.product) return sum;
+    
+    const { product, quantity } = item as any;
+    const binWeight: number | undefined = (item as any).binWeight;
+    const unitPriceCents: number | undefined = (item as any).unitPriceCents;
+    const weight: number | undefined = (item as any).weight;
+    
+    let lineUnitPrice: number;
+    
+    if (binWeight && unitPriceCents) {
+      // Pre-packaged weight bin
+      lineUnitPrice = binWeight * (unitPriceCents / 100);
+    } else if (weight && weight > 0) {
+      // Weight-based pricing
+      lineUnitPrice = product.pricePer * weight;
+    } else {
+      // Fixed pricing
+      lineUnitPrice = product.pricePer;
+    }
+    
+    return sum + (lineUnitPrice * quantity);
+  }, 0);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
@@ -157,7 +182,7 @@ export function CartPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex justify-between items-center mb-4">
                   <span className="text-lg font-medium">Total:</span>
-                  <span className="text-2xl font-bold text-green-600">${cart.total.toFixed(2)}</span>
+                  <span className="text-2xl font-bold text-green-600">${cartTotal.toFixed(2)}</span>
                 </div>
                 
                 <div className="flex space-x-4">
@@ -170,7 +195,7 @@ export function CartPage() {
                   
                   <Link
                     to="/checkout"
-                    onClick={() => trackBeginCheckout({ tenantId: tenant?.id, itemsCount: cart.items.length, value: cart.total, currency: 'USD' })}
+                    onClick={() => trackBeginCheckout({ tenantId: tenant?.id, itemsCount: cart.items.length, value: cartTotal, currency: 'USD' })}
                     className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-center"
                   >
                     Proceed to Checkout

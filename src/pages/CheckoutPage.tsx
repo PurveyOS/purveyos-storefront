@@ -145,6 +145,28 @@ const result = await createOrder(
     return product ? { ...item, product } : null;
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 
+  // Calculate actual cart total based on items
+  const cartTotal = cartItems.reduce((sum, item) => {
+    if (!item?.product) return sum;
+    
+    const weight = (item as any).weight;
+    const binWeight = (item as any).binWeight;
+    const unitPriceCents = (item as any).unitPriceCents;
+    const quantity = item.quantity;
+    
+    let itemTotal = 0;
+    
+    if (binWeight && unitPriceCents) {
+      itemTotal = binWeight * (unitPriceCents / 100) * quantity;
+    } else if (weight && weight > 0) {
+      itemTotal = item.product.pricePer * weight * quantity;
+    } else {
+      itemTotal = item.product.pricePer * quantity;
+    }
+    
+    return sum + itemTotal;
+  }, 0);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
@@ -359,24 +381,47 @@ const result = await createOrder(
               
               {cartItems.length > 0 ? (
                 <div className="space-y-4">
-                  {cartItems.map((item) => (
-                    <div key={item.productId} className="flex justify-between items-center py-2 border-b">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-800">{item.product.name}</h4>
-                        <p className="text-sm text-gray-600">
-                          {item.quantity} × ${item.product.pricePer.toFixed(2)} / {item.product.unit}
-                        </p>
+                  {cartItems.map((item) => {
+                    const weight = (item as any).weight;
+                    const binWeight = (item as any).binWeight;
+                    const unitPriceCents = (item as any).unitPriceCents;
+                    
+                    let displayText = '';
+                    let itemTotal = 0;
+                    
+                    if (binWeight && unitPriceCents) {
+                      // Pre-packaged bin
+                      displayText = `${binWeight} ${item.product.unit} package @ $${(unitPriceCents / 100).toFixed(2)}/${item.product.unit}`;
+                      itemTotal = binWeight * (unitPriceCents / 100) * item.quantity;
+                    } else if (weight && weight > 0) {
+                      // Weight-based
+                      displayText = `${weight} ${item.product.unit} @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;
+                      itemTotal = item.product.pricePer * weight;
+                    } else {
+                      // Fixed price
+                      displayText = `${item.quantity} × $${item.product.pricePer.toFixed(2)}`;
+                      itemTotal = item.product.pricePer * item.quantity;
+                    }
+                    
+                    return (
+                      <div key={`${item.productId}-${binWeight ?? weight ?? 'std'}`} className="flex justify-between items-center py-2 border-b">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-gray-800">{item.product.name}</h4>
+                          <p className="text-sm text-gray-600">
+                            {displayText}
+                          </p>
+                        </div>
+                        <span className="font-medium text-gray-800">
+                          ${itemTotal.toFixed(2)}
+                        </span>
                       </div>
-                      <span className="font-medium text-gray-800">
-                        ${(item.product.pricePer * item.quantity).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                   
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between text-gray-600">
                       <span>Subtotal:</span>
-                      <span>${cart.total.toFixed(2)}</span>
+                      <span>${cartTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-gray-600">
   <span>Tax:</span>
@@ -385,7 +430,7 @@ const result = await createOrder(
       ? '$0.00'
       : tenant?.tax_included
       ? 'Included in price'
-      : `$${(cart.total * (tenant?.tax_rate ?? 0)).toFixed(2)}`}
+      : `$${(cartTotal * (tenant?.tax_rate ?? 0)).toFixed(2)}`}
   </span>
 </div>
 
@@ -393,10 +438,10 @@ const result = await createOrder(
   <span>Total:</span>
   <span>
     {tenant?.charge_tax_on_online === false
-      ? `$${cart.total.toFixed(2)}`
+      ? `$${cartTotal.toFixed(2)}`
       : tenant?.tax_included
-      ? `$${cart.total.toFixed(2)}`
-      : `$${(cart.total * (1 + (tenant?.tax_rate ?? 0))).toFixed(2)}`}
+      ? `$${cartTotal.toFixed(2)}`
+      : `$${(cartTotal * (1 + (tenant?.tax_rate ?? 0))).toFixed(2)}`}
   </span>
 </div>
 
