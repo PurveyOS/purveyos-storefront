@@ -228,7 +228,7 @@ serve(async (req) => {
           }
         } else {
           // Each-based: decrement EA bin (weightBtn = 0)
-          const packageKey = `${product.id}|0.00`
+          const packageKey = `${product.id}|0`
 
           console.log(`Looking up package_bin (EA): ${packageKey}, qty=${line.qty}`)
 
