@@ -195,13 +195,17 @@ serve(async (req) => {
           const weightBtn = Math.round(weight * 100) / 100
           const packageKey = `${product.id}|${weightBtn.toFixed(2)}`
 
-          const { data: bin } = await supabaseAdmin
+          console.log(`Looking up package_bin: ${packageKey}, binWeight=${line.binWeight}, weightLbs=${line.weightLbs}, qty=${line.qty}`)
+
+          const { data: bin, error: binQueryError } = await supabaseAdmin
             .from('package_bins')
             .select('qty')
             .eq('package_key', packageKey)
             .single()
 
-          if (bin && bin.qty > 0) {
+          if (binQueryError) {
+            console.error(`Error querying package_bins for ${packageKey}:`, binQueryError)
+          } else if (bin && bin.qty > 0) {
             const newBinQty = Math.max(0, bin.qty - line.qty)
             const { error: binUpdateError } = await supabaseAdmin
               .from('package_bins')
@@ -214,22 +218,26 @@ serve(async (req) => {
             if (binUpdateError) {
               console.error('Error updating package_bins:', binUpdateError)
             } else {
-              console.log(`Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
+              console.log(`✓ Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
             }
           } else {
-            console.log(`Skipping package_bins update for ${packageKey}: bin not found or qty = 0`)
+            console.log(`⚠ Skipping package_bins update for ${packageKey}: bin=${JSON.stringify(bin)}`)
           }
         } else {
           // Each-based: decrement EA bin (weightBtn = 0)
           const packageKey = `${product.id}|0.00`
 
-          const { data: bin } = await supabaseAdmin
+          console.log(`Looking up package_bin (EA): ${packageKey}, qty=${line.qty}`)
+
+          const { data: bin, error: binQueryError } = await supabaseAdmin
             .from('package_bins')
             .select('qty')
             .eq('package_key', packageKey)
             .single()
 
-          if (bin && bin.qty > 0) {
+          if (binQueryError) {
+            console.error(`Error querying package_bins for ${packageKey}:`, binQueryError)
+          } else if (bin && bin.qty > 0) {
             const newBinQty = Math.max(0, bin.qty - line.qty)
             const { error: binUpdateError } = await supabaseAdmin
               .from('package_bins')
@@ -242,10 +250,10 @@ serve(async (req) => {
             if (binUpdateError) {
               console.error('Error updating package_bins:', binUpdateError)
             } else {
-              console.log(`Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
+              console.log(`✓ Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
             }
           } else {
-            console.log(`Skipping package_bins update for ${packageKey}: bin not found or qty = 0`)
+            console.log(`⚠ Skipping package_bins update for ${packageKey}: bin=${JSON.stringify(bin)}`)
           }
         }
 
