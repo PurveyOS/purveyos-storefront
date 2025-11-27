@@ -88,6 +88,9 @@ serve(async (req) => {
     if (orderRequest.paymentMethod) {
       noteParts.push(`payment: ${orderRequest.paymentMethod}`)
     }
+    if (orderRequest.deliveryNotes) {
+      noteParts.push(`notes: ${orderRequest.deliveryNotes}`)
+    }
     const note = noteParts.join(' | ')
     
     const { data: order, error: orderError } = await supabaseAdmin
