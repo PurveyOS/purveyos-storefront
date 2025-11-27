@@ -237,19 +237,27 @@ export function useStorefrontData(tenantId: string): {
           });
         }
 
-        const products: Product[] = (productsRows || []).map(p => ({
-          id: p.id,
-          name: p.name,
-          description: p.online_description || '', // Use online_description column
-          pricePer: p.pricePer || 0,
-          unit: p.unit || 'lb',
-          weightBins: binsByProduct.get(p.id),
-          imageUrl: p.image || '/demo-product.svg', // Use image column
-          categoryId: p.category || '', // Use category column
-          available: true,
-          inventory: p.qty || 0,
-          allowPreOrder: p.allow_pre_order === true,
-        }));
+        const products: Product[] = (productsRows || []).map(p => {
+          const bins = binsByProduct.get(p.id);
+          // Calculate total inventory from package_bins (authoritative source)
+          const totalInventory = bins 
+            ? bins.reduce((sum, bin) => sum + (bin.qty || 0), 0)
+            : 0;
+          
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.online_description || '', // Use online_description column
+            pricePer: p.pricePer || 0,
+            unit: p.unit || 'lb',
+            weightBins: bins,
+            imageUrl: p.image || '/demo-product.svg', // Use image column
+            categoryId: p.category || '', // Use category column
+            available: true,
+            inventory: totalInventory, // Use package_bins total, not products.qty
+            allowPreOrder: p.allow_pre_order === true,
+          };
+        });
 
         // Since we don't have category column yet, create a generic "Products" category
         const categories: Category[] = products.length > 0 ? [{
