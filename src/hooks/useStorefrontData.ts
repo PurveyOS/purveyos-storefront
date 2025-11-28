@@ -245,8 +245,10 @@ export function useStorefrontData(tenantId: string): {
 
         // Group subscriptions by product_id
         const subscriptionsByProduct = new Map<string, any>();
+        console.log('Subscription products fetched:', subscriptionsResult.data?.length || 0);
         if (subscriptionsResult.data) {
           subscriptionsResult.data.forEach((sub: any) => {
+            console.log('Mapping subscription:', sub.product_id, sub);
             subscriptionsByProduct.set(sub.product_id, {
               id: sub.id,
               price_per_interval: sub.price_per_interval,
@@ -257,10 +259,15 @@ export function useStorefrontData(tenantId: string): {
             });
           });
         }
+        console.log('Subscriptions by product map:', subscriptionsByProduct);
 
         const products: Product[] = (productsRows || []).map(p => {
           const bins = binsByProduct.get(p.id);
           const subscription = subscriptionsByProduct.get(p.id);
+          
+          if (subscription) {
+            console.log('Product', p.name, 'is a subscription with data:', subscription);
+          }
           
           // Calculate total inventory from package_bins (authoritative source)
           const totalInventory = bins 

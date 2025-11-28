@@ -242,8 +242,12 @@ const filteredProducts =
             product={product}
             quantityInCart={quantityInCart}
             onAddToCart={(options) => {
+              // Debug logging
+              console.log('Product clicked:', product.name, 'isSubscription:', product.isSubscription, 'subscriptionData:', product.subscriptionData);
+              
               // If this is a subscription product, show modal instead
               if (product.isSubscription && product.subscriptionData) {
+                console.log('Opening subscription modal for:', product.name);
                 setSelectedSubscriptionProduct(product);
                 setShowSubscriptionModal(true);
                 return;
