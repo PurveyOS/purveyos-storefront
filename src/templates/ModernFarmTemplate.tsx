@@ -4,6 +4,8 @@ import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { ProductCard } from '../components/ProductCard';
 import { CartDrawer } from '../components/CartDrawer';
+import SubscriptionSelectorModal from '../components/SubscriptionSelectorModal';
+import type { Product } from '../types/product';
 
 export function ModernFarmTemplate({
   settings,
@@ -15,6 +17,8 @@ export function ModernFarmTemplate({
   features,
 }: StorefrontTemplateProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [selectedSubscriptionProduct, setSelectedSubscriptionProduct] = useState<Product | null>(null);
  
 
 const categoryLabels = Array.from(
@@ -238,6 +242,13 @@ const filteredProducts =
             product={product}
             quantityInCart={quantityInCart}
             onAddToCart={(options) => {
+              // If this is a subscription product, show modal instead
+              if (product.isSubscription && product.subscriptionData) {
+                setSelectedSubscriptionProduct(product);
+                setShowSubscriptionModal(true);
+                return;
+              }
+
               const preOrdersEnabled = features?.preOrdersEnabled !== false;
               const isPreOrder =
                 preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
@@ -270,6 +281,34 @@ const filteredProducts =
 
 
       <Footer storeName={settings.farmName} />
+      
+      {/* Subscription Modal */}
+      {showSubscriptionModal && selectedSubscriptionProduct?.subscriptionData && (
+        <SubscriptionSelectorModal
+          subscriptionName={selectedSubscriptionProduct.name}
+          basePrice={selectedSubscriptionProduct.subscriptionData.price_per_interval}
+          defaultInterval={selectedSubscriptionProduct.subscriptionData.interval_type}
+          durationType={selectedSubscriptionProduct.subscriptionData.duration_type}
+          seasonStartDate={selectedSubscriptionProduct.subscriptionData.season_start_date}
+          seasonEndDate={selectedSubscriptionProduct.subscriptionData.season_end_date}
+          onConfirm={(config) => {
+            // Add subscription to cart with metadata
+            onAddToCart(selectedSubscriptionProduct.id, 1, {
+              isSubscription: true,
+              subscriptionInterval: config.interval,
+              subscriptionDuration: config.duration,
+              subscriptionDurationIntervals: config.durationIntervals,
+              subscriptionTotalPrice: config.totalPrice,
+            } as any);
+            setShowSubscriptionModal(false);
+            setSelectedSubscriptionProduct(null);
+          }}
+          onCancel={() => {
+            setShowSubscriptionModal(false);
+            setSelectedSubscriptionProduct(null);
+          }}
+        />
+      )}
       
       {/* Mobile Cart Drawer */}
       <CartDrawer 

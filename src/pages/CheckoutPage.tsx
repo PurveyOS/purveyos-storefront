@@ -74,11 +74,29 @@ export function CheckoutPage() {
     }
 
     const orderValue = cart.total;
+    // Check if cart contains a subscription item
+    const subscriptionItem = cart.items.find((item: any) => item.metadata?.isSubscription);
+    let subscriptionPayload = undefined;
+    
+    if (subscriptionItem) {
+      const metadata = (subscriptionItem as any).metadata;
+      subscriptionPayload = {
+        enabled: true,
+        cadence: metadata.subscriptionInterval as 'weekly' | 'biweekly' | 'monthly',
+        startDate: new Date().toISOString(),
+        productId: subscriptionItem.productId,
+        quantity: subscriptionItem.quantity,
+      };
+    }
+
 const result = await createOrder(
   tenant.id,
   cart,
   storefrontData.products,
-  formData,
+  {
+    ...formData,
+    subscription: subscriptionPayload,
+  },
   {
     taxRate: tenant?.tax_rate ?? 0,
     taxIncluded: !!tenant?.tax_included,

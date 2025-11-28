@@ -282,6 +282,70 @@ serve(async (req) => {
       }
     }
 
+    // 3. Create customer_subscription if subscription is enabled
+    if (orderRequest.subscription?.enabled) {
+      const sub = orderRequest.subscription
+      console.log('Creating customer subscription:', sub)
+      
+      // Calculate next delivery date based on cadence
+      const startDate = sub.startDate ? new Date(sub.startDate) : new Date()
+      const nextDeliveryDate = new Date(startDate)
+      
+      if (sub.cadence === 'weekly') {
+        nextDeliveryDate.setDate(nextDeliveryDate.getDate() + 7)
+      } else if (sub.cadence === 'biweekly') {
+        nextDeliveryDate.setDate(nextDeliveryDate.getDate() + 14)
+      } else if (sub.cadence === 'monthly') {
+        nextDeliveryDate.setMonth(nextDeliveryDate.getMonth() + 1)
+      }
+      
+      // Get subscription product details
+      const { data: subscriptionProduct, error: subProductError } = await supabaseAdmin
+        .from('subscription_products')
+        .select('*')
+        .eq('id', sub.productId)
+        .single()
+      
+      if (subProductError) {
+        console.error('Error fetching subscription product:', subProductError)
+        // Don't fail the order, but log it
+      } else {
+        // Create customer_subscription record
+        const { error: subscriptionError } = await supabaseAdmin
+          .from('customer_subscriptions')
+          .insert({
+            id: crypto.randomUUID(),
+            tenant_id: orderRequest.tenantId,
+            subscription_product_id: sub.productId!,
+            customer_name: orderRequest.customerName,
+            customer_email: orderRequest.customerEmail,
+            customer_phone: orderRequest.customerPhone || null,
+            status: 'active',
+            start_date: startDate.toISOString().split('T')[0], // DATE field, not TIMESTAMPTZ
+            next_delivery_date: nextDeliveryDate.toISOString().split('T')[0], // DATE field
+            price_per_interval: subscriptionProduct.price_per_interval,
+            interval_type: sub.cadence!,
+            interval_count: subscriptionProduct.interval_count || 1,
+            total_deliveries_expected: subscriptionProduct.duration_type === 'fixed_duration' 
+              ? subscriptionProduct.duration_intervals 
+              : null,
+            end_date: subscriptionProduct.duration_type === 'seasonal' && subscriptionProduct.season_end_date
+              ? subscriptionProduct.season_end_date
+              : null,
+            deliveries_fulfilled: 1, // This first order counts as delivery #1
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+        
+        if (subscriptionError) {
+          console.error('Error creating customer subscription:', subscriptionError)
+          // Don't fail the order, but log it
+        } else {
+          console.log('✓ Customer subscription created successfully')
+        }
+      }
+    }
+
     // Send notification to tenant (don't fail order if notification fails)
     try {
       await supabaseAdmin.functions.invoke('order-created-notify', {

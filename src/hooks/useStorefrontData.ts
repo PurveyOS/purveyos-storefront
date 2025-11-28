@@ -143,7 +143,7 @@ export function useStorefrontData(tenantId: string): {
         // Fetch real data from Supabase
         console.log('Fetching data for tenant:', tenantId);
         
-  const [settingsResult, productsResult, binsResult] = await Promise.all([
+  const [settingsResult, productsResult, binsResult, subscriptionsResult] = await Promise.all([
           supabase
             .from('storefront_settings')
             .select('*')
@@ -160,7 +160,13 @@ export function useStorefrontData(tenantId: string): {
           supabase
             .from('package_bins')
             .select('product_id, weight_btn, unit_price_cents, qty')
-            .gt('qty', 0) // Only show bins with inventory
+            .gt('qty', 0), // Only show bins with inventory
+          
+          supabase
+            .from('subscription_products')
+            .select('*')
+            .eq('tenant_id', tenantId)
+            .eq('is_active', true)
         ]);
 
         console.log('Settings result:', settingsResult);
@@ -237,8 +243,25 @@ export function useStorefrontData(tenantId: string): {
           });
         }
 
+        // Group subscriptions by product_id
+        const subscriptionsByProduct = new Map<string, any>();
+        if (subscriptionsResult.data) {
+          subscriptionsResult.data.forEach((sub: any) => {
+            subscriptionsByProduct.set(sub.product_id, {
+              id: sub.id,
+              price_per_interval: sub.price_per_interval,
+              interval_type: sub.interval_type,
+              duration_type: sub.duration_type,
+              season_start_date: sub.season_start_date,
+              season_end_date: sub.season_end_date,
+            });
+          });
+        }
+
         const products: Product[] = (productsRows || []).map(p => {
           const bins = binsByProduct.get(p.id);
+          const subscription = subscriptionsByProduct.get(p.id);
+          
           // Calculate total inventory from package_bins (authoritative source)
           const totalInventory = bins 
             ? bins.reduce((sum, bin) => sum + (bin.qty || 0), 0)
@@ -248,7 +271,7 @@ export function useStorefrontData(tenantId: string): {
             id: p.id,
             name: p.name,
             description: p.online_description || '', // Use online_description column
-            pricePer: p.pricePer || 0,
+            pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0), // Use subscription price if available
             unit: p.unit || 'lb',
             weightBins: bins,
             imageUrl: p.image || '/demo-product.svg', // Use image column
@@ -256,6 +279,8 @@ export function useStorefrontData(tenantId: string): {
             available: true,
             inventory: totalInventory, // Use package_bins total, not products.qty
             allowPreOrder: p.allow_pre_order === true,
+            isSubscription: !!subscription,
+            subscriptionData: subscription,
           };
         });
 
