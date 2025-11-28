@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Cart } from '../types/storefront';
 import { trackAddToCart, trackClearCart, trackRemoveFromCart } from '../utils/analytics';
+import toast from 'react-hot-toast';
 
 const CART_STORAGE_KEY = 'purveyos-cart';
 
@@ -48,6 +49,15 @@ export function usePersistedCart() {
           ),
         };
         try { trackAddToCart({ productId, quantity, ...options }); } catch {}
+        
+        // Show toast notification
+        const itemDesc = options?.binWeight 
+          ? `${options.binWeight} lb package` 
+          : options?.weight 
+          ? `${options.weight} lb` 
+          : `${quantity} item${quantity > 1 ? 's' : ''}`;
+        toast.success(`Added ${itemDesc} to cart`);
+        
         return updated;
       }
 
@@ -63,6 +73,15 @@ export function usePersistedCart() {
         }],
       };
       try { trackAddToCart({ productId, quantity, ...options }); } catch {}
+      
+      // Show toast notification
+      const itemDesc = options?.binWeight 
+        ? `${options.binWeight} lb package` 
+        : options?.weight 
+        ? `${options.weight} lb` 
+        : `${quantity} item${quantity > 1 ? 's' : ''}`;
+      toast.success(`Added ${itemDesc} to cart`);
+      
       return next;
     });
   };

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Product } from "../types/product";
 import { WeightBinSelector } from "./WeightBinSelector";
 import { isLowStock, formatRestockDate } from "../utils/inventory";
@@ -144,6 +144,16 @@ export function ProductCard(props: ProductCardProps) {
   const [weightAmount, setWeightAmount] = useState<string>("1");
   const [fixedQty, setFixedQty] = useState<number>(1);
   const [showBinModal, setShowBinModal] = useState(false);
+  
+  // Track local bin quantities to reflect cart additions
+  const [localBins, setLocalBins] = useState(product.weightBins || []);
+  
+  // Reset local bins when modal opens
+  useEffect(() => {
+    if (showBinModal) {
+      setLocalBins(product.weightBins || []);
+    }
+  }, [showBinModal, product.weightBins]);
 
   // Your rule: unit drives behavior
   const unit = (product.unit || "").toLowerCase();
@@ -365,8 +375,14 @@ export function ProductCard(props: ProductCardProps) {
         </p>
 
         {showBinModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto">
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+            onClick={() => setShowBinModal(false)}
+          >
+            <div 
+              className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-semibold text-slate-900">
                   Choose package size
@@ -380,7 +396,7 @@ export function ProductCard(props: ProductCardProps) {
                 </button>
               </div>
               <WeightBinSelector
-                bins={product.weightBins!}
+                bins={localBins}
                 unit={product.unit}
                 primaryColor={primaryColor}
                 onSelect={({ weightBtn, unitPriceCents }) => {
@@ -389,7 +405,16 @@ export function ProductCard(props: ProductCardProps) {
                   } else {
                     onAddToCart({ quantity: 1 });
                   }
-                  setShowBinModal(false);
+                  
+                  // Decrement the local bin quantity to prevent overselling
+                  setLocalBins(prev => 
+                    prev.map(bin => 
+                      bin.weightBtn === weightBtn 
+                        ? { ...bin, qty: Math.max(0, bin.qty - 1) }
+                        : bin
+                    )
+                  );
+                  // Modal stays open - user clicks X or outside to close
                 }}
               />
             </div>

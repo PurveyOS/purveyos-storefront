@@ -6,6 +6,7 @@ import { getTemplate } from './templates';
 import { TemplateSwitcher } from './components/TemplateSwitcher';
 import { trackEvent, setAnalyticsEnabled } from './utils/analytics';
 import { canUseAnalytics, canUseAdvancedThemes, canUsePreOrders, getAllowedTemplates } from './utils/subscription';
+import { Toaster } from 'react-hot-toast';
 
 export function StorefrontRoot() {
   const { tenant, loading: tenantLoading } = useTenantFromDomain();
@@ -115,6 +116,23 @@ export function StorefrontRoot() {
 
   return (
     <div className="relative">
+      <Toaster 
+        position="bottom-center"
+        toastOptions={{
+          duration: 2000,
+          style: {
+            background: storefrontData.settings.primaryColor || '#0f6fff',
+            color: '#fff',
+            fontWeight: '500',
+          },
+          success: {
+            iconTheme: {
+              primary: '#fff',
+              secondary: storefrontData.settings.primaryColor || '#0f6fff',
+            },
+          },
+        }}
+      />
       <Template
         settings={storefrontData.settings}
         products={storefrontData.products}
