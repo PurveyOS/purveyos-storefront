@@ -230,7 +230,7 @@ serve(async (req) => {
             console.log(`⚠ Skipping package_bins update for ${packageKey}: bin=${JSON.stringify(bin)}`)
           }
         } else {
-          // Each-based: decrement EA bin (weightBtn = 0)
+          // Each-based: decrement EA bin (weightBtn = 0, not 0.00)
           const packageKey = `${product.id}|0`
 
           console.log(`Looking up package_bin (EA): ${packageKey}, qty=${line.qty}`)
