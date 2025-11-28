@@ -169,6 +169,22 @@ export function useStorefrontData(tenantId: string): {
             .eq('is_active', true)
         ]);
 
+        // Debug subscription fetch
+        if (subscriptionsResult.error) {
+          console.error('❌ Error fetching subscription_products:', subscriptionsResult.error);
+        }
+        console.log('🔍 Subscription query filter:', { tenant_id: tenantId, is_active: true });
+        console.log('📦 Raw subscription result:', subscriptionsResult);
+        
+        // Try fetching ALL subscriptions without filters to debug
+        const { data: allSubs, error: allSubsError } = await supabase
+          .from('subscription_products')
+          .select('*');
+        console.log('🌐 ALL subscription_products (no filter):', allSubs?.length || 0, allSubs);
+        if (allSubsError) {
+          console.error('❌ Error fetching ALL subscriptions:', allSubsError);
+        }
+
         console.log('Settings result:', settingsResult);
         console.log('Products result:', productsResult);
   console.log('Bins result:', binsResult);
