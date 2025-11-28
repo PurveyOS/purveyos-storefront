@@ -282,6 +282,24 @@ serve(async (req) => {
       }
     }
 
+    // Send notification to tenant (don't fail order if notification fails)
+    try {
+      await supabaseAdmin.functions.invoke('order-created-notify', {
+        body: {
+          orderId,
+          tenantId: orderRequest.tenantId,
+          customerName: orderRequest.customerName,
+          customerEmail: orderRequest.customerEmail,
+          customerPhone: orderRequest.customerPhone,
+          totalCents: orderRequest.totalCents,
+          source: 'storefront'
+        }
+      });
+      console.log('Notification sent successfully');
+    } catch (notifyError) {
+      console.error('Failed to send notification (non-fatal):', notifyError);
+    }
+
     // Return success response
     return new Response(
       JSON.stringify({
