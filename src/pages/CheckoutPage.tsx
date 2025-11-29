@@ -84,7 +84,7 @@ export function CheckoutPage() {
         enabled: true,
         cadence: metadata.subscriptionInterval as 'weekly' | 'biweekly' | 'monthly',
         startDate: new Date().toISOString(),
-        productId: subscriptionItem.productId,
+        subscriptionProductId: metadata.subscriptionProductId, // subscription_products.id
         quantity: subscriptionItem.quantity,
       };
     }

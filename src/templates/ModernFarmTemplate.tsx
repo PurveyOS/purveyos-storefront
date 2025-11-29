@@ -296,9 +296,10 @@ const filteredProducts =
           seasonStartDate={selectedSubscriptionProduct.subscriptionData.season_start_date}
           seasonEndDate={selectedSubscriptionProduct.subscriptionData.season_end_date}
           onConfirm={(config) => {
-            // Add subscription to cart with metadata
+            // Add subscription to cart with metadata including subscription_product_id
             onAddToCart(selectedSubscriptionProduct.id, 1, {
               isSubscription: true,
+              subscriptionProductId: selectedSubscriptionProduct.subscriptionData!.id, // subscription_products.id
               subscriptionInterval: config.interval,
               subscriptionDuration: config.duration,
               subscriptionDurationIntervals: config.durationIntervals,

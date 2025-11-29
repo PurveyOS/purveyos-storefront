@@ -303,7 +303,7 @@ serve(async (req) => {
       const { data: subscriptionProduct, error: subProductError } = await supabaseAdmin
         .from('subscription_products')
         .select('*')
-        .eq('id', sub.productId)
+        .eq('id', sub.subscriptionProductId)
         .single()
       
       if (subProductError) {
@@ -316,7 +316,7 @@ serve(async (req) => {
           .insert({
             id: crypto.randomUUID(),
             tenant_id: orderRequest.tenantId,
-            subscription_product_id: sub.productId!,
+            subscription_product_id: sub.subscriptionProductId!,
             customer_name: orderRequest.customerName,
             customer_email: orderRequest.customerEmail,
             customer_phone: orderRequest.customerPhone || null,
