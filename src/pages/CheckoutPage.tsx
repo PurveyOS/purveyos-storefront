@@ -75,11 +75,14 @@ export function CheckoutPage() {
 
     const orderValue = cart.total;
     // Check if cart contains a subscription item
+    console.log('🔍 Checking cart for subscription items:', cart.items);
     const subscriptionItem = cart.items.find((item: any) => item.metadata?.isSubscription);
+    console.log('🔍 Found subscription item:', subscriptionItem);
     let subscriptionPayload = undefined;
     
     if (subscriptionItem) {
       const metadata = (subscriptionItem as any).metadata;
+      console.log('🔍 Subscription metadata:', metadata);
       subscriptionPayload = {
         enabled: true,
         cadence: metadata.subscriptionInterval as 'weekly' | 'biweekly' | 'monthly',
@@ -87,6 +90,9 @@ export function CheckoutPage() {
         subscriptionProductId: metadata.subscriptionProductId, // subscription_products.id
         quantity: subscriptionItem.quantity,
       };
+      console.log('🔍 Subscription payload created:', subscriptionPayload);
+    } else {
+      console.log('⚠️ No subscription item found in cart');
     }
 
 const result = await createOrder(
