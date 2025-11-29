@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, Pause, Play, MapPin, FileText, Calendar, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Pause, Play, MapPin, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface Subscription {
   id: string;

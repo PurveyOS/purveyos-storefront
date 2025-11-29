@@ -12,6 +12,7 @@ export interface SubscriptionRequest {
 
   // Optional extra fields to support product-specific subscriptions
   productId?: string;
+  subscriptionProductId?: string; // subscription_products.id
   quantity?: number;
 }
 
