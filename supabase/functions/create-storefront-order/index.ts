@@ -65,6 +65,7 @@ serve(async (req) => {
 
     const orderRequest: OrderRequest = await req.json()
     console.log('Creating storefront order:', orderRequest)
+    console.log('🔍 Subscription payload received:', JSON.stringify(orderRequest.subscription, null, 2))
 
     // Validate request
     if (!orderRequest.tenantId || !orderRequest.customerEmail || !orderRequest.lines.length) {
