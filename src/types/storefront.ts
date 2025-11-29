@@ -33,6 +33,15 @@ export interface CartItem {
   weight?: number; // Custom weight amount for weight-based products
   // Pre-order tracking
   isPreOrder?: boolean; // Item is a pre-order
+  // Subscription metadata
+  metadata?: {
+    isSubscription?: boolean;
+    subscriptionProductId?: string;
+    subscriptionInterval?: 'weekly' | 'biweekly' | 'monthly';
+    subscriptionDuration?: string;
+    subscriptionDurationIntervals?: number;
+    subscriptionTotalPrice?: number;
+  };
 }
 
 export interface Cart {
@@ -45,7 +54,7 @@ export interface StorefrontTemplateProps {
   products: Product[];
   categories: Category[];
   cart: Cart;
-  onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean }) => void;
+  onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean; metadata?: any }) => void;
   onRemoveFromCart: (productId: string, options?: { binWeight?: number }) => void;
   onAddBinToCart?: (productId: string, binWeight: number, unitPriceCents: number) => void;
   // Optional feature capability flags (based on subscription tier)

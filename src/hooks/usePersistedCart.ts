@@ -29,12 +29,13 @@ export function usePersistedCart() {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   }, [cart]);
 
-  const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean }) => {
+  const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean; metadata?: any }) => {
     setCart(prev => {
       const existingItem = prev.items.find(item => 
         item.productId === productId && 
         item.binWeight === options?.binWeight &&
-        item.weight === options?.weight
+        item.weight === options?.weight &&
+        !options?.metadata?.isSubscription // Don't merge subscription items
       );
       
       if (existingItem) {
@@ -69,13 +70,16 @@ export function usePersistedCart() {
           binWeight: options?.binWeight, 
           unitPriceCents: options?.unitPriceCents,
           weight: options?.weight,
-          isPreOrder: options?.isPreOrder
+          isPreOrder: options?.isPreOrder,
+          metadata: options?.metadata
         }],
       };
       try { trackAddToCart({ productId, quantity, ...options }); } catch {}
       
       // Show toast notification
-      const itemDesc = options?.binWeight 
+      const itemDesc = options?.metadata?.isSubscription
+        ? 'subscription'
+        : options?.binWeight 
         ? `${options.binWeight} lb package` 
         : options?.weight 
         ? `${options.weight} lb` 
