@@ -12,6 +12,8 @@ export function CustomerLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
 
   // Check if Supabase is configured
   if (!supabase) {
@@ -90,6 +92,30 @@ export function CustomerLogin() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/account`,
+      });
+
+      if (error) throw error;
+
+      setMessage('Password reset email sent! Check your inbox.');
+      setShowForgotPassword(false);
+      setResetEmail('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to send reset email');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center px-4">
       <div className="max-w-md w-full">
@@ -106,8 +132,66 @@ export function CustomerLogin() {
 
         {/* Form Card */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Tabs */}
-          <div className="flex gap-2 mb-6 p-1 bg-gray-100 rounded-lg">
+          {showForgotPassword ? (
+            <>
+              <button
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setError(null);
+                  setResetEmail('');
+                }}
+                className="mb-4 text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
+              >
+                ← Back to Sign In
+              </button>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Reset Password</h2>
+              <p className="text-gray-600 mb-6">Enter your email to receive a password reset link.</p>
+
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">{error}</p>
+                </div>
+              )}
+
+              {message && (
+                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800">{message}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      required
+                      autoComplete="email"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Sending...' : 'Send Reset Link'}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              {/* Tabs */}
+              <div className="flex gap-2 mb-6 p-1 bg-gray-100 rounded-lg">
             <button
               onClick={() => {
                 setMode('login');
@@ -183,10 +267,21 @@ export function CustomerLogin() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    autoComplete="current-password"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="••••••••"
                   />
                 </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-sm text-green-600 hover:text-green-700 font-medium"
+                >
+                  Forgot password?
+                </button>
               </div>
 
               <button
@@ -213,6 +308,7 @@ export function CustomerLogin() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required
+                    autoComplete="name"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="John Doe"
                   />
@@ -248,6 +344,7 @@ export function CustomerLogin() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     minLength={6}
+                    autoComplete="new-password"
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="••••••••"
                   />
@@ -265,15 +362,17 @@ export function CustomerLogin() {
             </form>
           )}
 
-          {/* Back to Store Link */}
-          <div className="mt-6 pt-6 border-t border-gray-200 text-center">
-            <button
-              onClick={() => navigate('/')}
-              className="text-sm text-gray-600 hover:text-gray-900 transition"
-            >
-              ← Back to Store
-            </button>
-          </div>
+              {/* Back to Store Link */}
+              <div className="mt-6 pt-6 border-t border-gray-200 text-center">
+                <button
+                  onClick={() => navigate('/')}
+                  className="text-sm text-gray-600 hover:text-gray-900 transition"
+                >
+                  ← Back to Store
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
