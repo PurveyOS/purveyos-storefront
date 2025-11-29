@@ -84,7 +84,22 @@ export function CustomerPortal() {
 
       const { data, error } = await supabase
         .from('orders')
-        .select('id, status, total_cents, created_at, source')
+        .select(`
+          id, 
+          status, 
+          total_cents, 
+          created_at, 
+          source, 
+          fulfillment_method,
+          pickup_location,
+          notified_ready_at,
+          order_lines(
+            id,
+            quantity,
+            price_cents,
+            products(id, name, image_url)
+          )
+        `)
         .eq('customer_email', user.email)
         .order('created_at', { ascending: false })
         .limit(20);
@@ -294,61 +309,113 @@ export function CustomerPortal() {
           <div className="space-y-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Order History</h2>
-              <p className="text-gray-600">View your past orders</p>
+              <p className="text-gray-600">View your past orders and reorder favorites</p>
             </div>
 
             {orders.length === 0 ? (
               <div className="bg-white rounded-lg shadow-sm p-12 text-center">
                 <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No orders yet</h3>
-                <p className="text-gray-600">Your order history will appear here</p>
+                <p className="text-gray-600 mb-6">Your order history will appear here</p>
+                <button
+                  onClick={() => navigate('/')}
+                  className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                >
+                  Start Shopping
+                </button>
               </div>
             ) : (
-              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Order ID
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Source
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Total
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {orders.map((order) => (
-                      <tr key={order.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          #{order.id.slice(0, 8)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {new Date(order.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(order.status)}`}>
-                            {order.status}
+              <div className="space-y-4">
+                {orders.map((order: any) => (
+                  <div key={order.id} className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition">
+                    {/* Order Header */}
+                    <div className="flex items-start justify-between mb-4 pb-4 border-b border-gray-100">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            Order #{order.id.slice(0, 8)}
+                          </h3>
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(order.status)}`}>
+                            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                           </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                          {order.source === 'subscription' ? '🔄 Subscription' : '🛒 Store'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
-                          ${(order.total_cents / 100).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          {order.source === 'subscription' && (
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              🔄 Subscription
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <span>📅 {new Date(order.created_at).toLocaleDateString('en-US', { 
+                            weekday: 'short', 
+                            year: 'numeric', 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}</span>
+                          <span>
+                            {order.fulfillment_method === 'delivery' ? '🚚 Delivery' : '📦 Pickup'}
+                            {order.pickup_location && ` - ${order.pickup_location}`}
+                          </span>
+                          {order.notified_ready_at && (
+                            <span className="text-green-600 font-medium">
+                              ✅ Ready {new Date(order.notified_ready_at).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-gray-900">${(order.total_cents / 100).toFixed(2)}</p>
+                        <p className="text-sm text-gray-600">Total</p>
+                      </div>
+                    </div>
+
+                    {/* Order Items */}
+                    {order.order_lines && order.order_lines.length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Items</h4>
+                        <div className="space-y-2">
+                          {order.order_lines.map((line: any) => (
+                            <div key={line.id} className="flex items-center gap-3 py-2">
+                              {line.products?.image_url && (
+                                <img 
+                                  src={line.products.image_url} 
+                                  alt={line.products.name}
+                                  className="w-12 h-12 object-cover rounded"
+                                />
+                              )}
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900">{line.products?.name || 'Product'}</p>
+                                <p className="text-sm text-gray-600">Qty: {line.quantity}</p>
+                              </div>
+                              <p className="font-medium text-gray-900">${(line.price_cents / 100).toFixed(2)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 pt-4 border-t border-gray-100">
+                      <button
+                        onClick={() => {
+                          // TODO: Implement reorder functionality
+                          alert('Reorder feature coming soon! This will add all items from this order to your cart.');
+                        }}
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+                      >
+                        🔄 Reorder
+                      </button>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(order.id);
+                          alert('Order ID copied to clipboard!');
+                        }}
+                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
+                      >
+                        📋 Copy ID
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

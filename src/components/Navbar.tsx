@@ -71,6 +71,12 @@ export function Navbar(props: NavbarProps) {
                 Products
               </button>
               <Link
+                to="/login"
+                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-3 py-2 rounded-md text-sm"
+              >
+                My Account
+              </Link>
+              <Link
                 to="/cart"
                 className="relative inline-flex items-center"
               >
@@ -145,26 +151,40 @@ export function Navbar(props: NavbarProps) {
             </div>
 
             {/* Right side */}
-            <Link to="/cart" className="relative inline-flex">
-              <button
-                className="relative flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md text-sm"
-                style={{ backgroundColor: '#fff', border: `1px solid ${primaryColor}` }}
-                aria-label="Open cart"
-              >
-                <svg className="w-4 h-4" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
-                </svg>
-                <span className="font-medium" style={{ color: primaryColor }}>Cart</span>
-                {cartCount > 0 && (
-                  <span
-                    className="absolute -top-1 -right-1 min-w-[20px] h-5 text-white text-xs font-bold rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: accentColor }}
-                  >
-                    {cartCount}
-                  </span>
-                )}
-              </button>
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link to="/login" className="inline-flex">
+                <button
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors duration-200 text-sm font-medium"
+                  style={{ color: primaryColor }}
+                  aria-label="My Account"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                  </svg>
+                  <span className="hidden sm:inline">Account</span>
+                </button>
+              </Link>
+              <Link to="/cart" className="relative inline-flex">
+                <button
+                  className="relative flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md text-sm"
+                  style={{ backgroundColor: '#fff', border: `1px solid ${primaryColor}` }}
+                  aria-label="Open cart"
+                >
+                  <svg className="w-4 h-4" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
+                  </svg>
+                  <span className="font-medium" style={{ color: primaryColor }}>Cart</span>
+                  {cartCount > 0 && (
+                    <span
+                      className="absolute -top-1 -right-1 min-w-[20px] h-5 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: accentColor }}
+                    >
+                      {cartCount}
+                    </span>
+                  )}
+                </button>
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
