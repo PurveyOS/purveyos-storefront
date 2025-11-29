@@ -36,7 +36,10 @@ interface OrderRequest {
     enabled: boolean
     cadence?: 'weekly' | 'biweekly' | 'monthly'
     startDate?: string
-    subscriptionProductId?: string
+    subscriptionProductId?: string  // used by purveyos-storefront
+    productId?: string              // used by huckster-ui
+    isCsaBox?: boolean              // huckster-ui specific
+    targetWeightLbs?: number        // huckster-ui specific
     quantity?: number
   }
 }
@@ -283,35 +286,42 @@ serve(async (req) => {
     // 3. Create customer_subscription if subscription is enabled
     if (orderRequest.subscription?.enabled) {
       const sub = orderRequest.subscription
-      console.log('Creating customer subscription:', sub)
+      console.log('Creating customer subscription:', JSON.stringify(sub, null, 2))
       
-      // Calculate next delivery date based on cadence
-      const startDate = sub.startDate ? new Date(sub.startDate) : new Date()
-      const nextDeliveryDate = new Date(startDate)
-      
-      if (sub.cadence === 'weekly') {
-        nextDeliveryDate.setDate(nextDeliveryDate.getDate() + 7)
-      } else if (sub.cadence === 'biweekly') {
-        nextDeliveryDate.setDate(nextDeliveryDate.getDate() + 14)
-      } else if (sub.cadence === 'monthly') {
-        nextDeliveryDate.setMonth(nextDeliveryDate.getMonth() + 1)
-      }
-      
-      // Get subscription product details
-      const { data: subscriptionProduct, error: subProductError } = await supabaseAdmin
-        .from('subscription_products')
-        .select('*')
-        .eq('id', sub.subscriptionProductId)
-        .single()
-      
-      if (subProductError) {
-        console.error('Error fetching subscription product:', subProductError)
-        // Don't fail the order, but log it
+      if (!sub.subscriptionProductId) {
+        console.error('⚠️ subscriptionProductId is missing from subscription payload!');
+        console.error('Full subscription object:', sub);
       } else {
-        // Create customer_subscription record
-        const { error: subscriptionError } = await supabaseAdmin
-          .from('customer_subscriptions')
-          .insert({
+        // Calculate next delivery date based on cadence
+        const startDate = sub.startDate ? new Date(sub.startDate) : new Date()
+        const nextDeliveryDate = new Date(startDate)
+        
+        if (sub.cadence === 'weekly') {
+          nextDeliveryDate.setDate(nextDeliveryDate.getDate() + 7)
+        } else if (sub.cadence === 'biweekly') {
+          nextDeliveryDate.setDate(nextDeliveryDate.getDate() + 14)
+        } else if (sub.cadence === 'monthly') {
+          nextDeliveryDate.setMonth(nextDeliveryDate.getMonth() + 1)
+        }
+        
+        // Get subscription product details
+        console.log(`Looking up subscription_product with id: ${sub.subscriptionProductId}`);
+        const { data: subscriptionProduct, error: subProductError } = await supabaseAdmin
+          .from('subscription_products')
+          .select('*')
+          .eq('id', sub.subscriptionProductId)
+          .single()
+        
+        if (subProductError) {
+          console.error('Error fetching subscription product:', subProductError)
+          console.error('Query was for subscription_product_id:', sub.subscriptionProductId);
+          // Don't fail the order, but log it
+        } else if (!subscriptionProduct) {
+          console.error('⚠️ No subscription_product found with id:', sub.subscriptionProductId);
+        } else {
+          console.log('✓ Found subscription product:', subscriptionProduct.name);
+          
+          const subscriptionRecord = {
             id: crypto.randomUUID(),
             tenant_id: orderRequest.tenantId,
             subscription_product_id: sub.subscriptionProductId!,
@@ -333,13 +343,22 @@ serve(async (req) => {
             deliveries_fulfilled: 1, // This first order counts as delivery #1
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          })
-        
-        if (subscriptionError) {
-          console.error('Error creating customer subscription:', subscriptionError)
-          // Don't fail the order, but log it
-        } else {
-          console.log('✓ Customer subscription created successfully')
+          };
+          
+          console.log('Inserting customer_subscription:', JSON.stringify(subscriptionRecord, null, 2));
+          
+          // Create customer_subscription record
+          const { error: subscriptionError } = await supabaseAdmin
+            .from('customer_subscriptions')
+            .insert(subscriptionRecord)
+          
+          if (subscriptionError) {
+            console.error('❌ Error creating customer subscription:', subscriptionError)
+            console.error('Error details:', JSON.stringify(subscriptionError, null, 2));
+            // Don't fail the order, but log it
+          } else {
+            console.log('✓ Customer subscription created successfully with id:', subscriptionRecord.id)
+          }
         }
       }
     }
