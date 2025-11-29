@@ -8,20 +8,26 @@ console.log('🔧 Supabase Environment Check:');
 console.log('VITE_SUPABASE_URL:', supabaseUrl ? '✅ Set' : '❌ Missing');
 console.log('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Set' : '❌ Missing');
 
+// Allow app to run without Supabase for development/testing
+// In production, you MUST set these environment variables in Cloudflare Pages
+let supabaseInstance = null;
+
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('❌ Supabase environment variables not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
-  throw new Error('Missing Supabase environment variables');
+  console.warn('⚠️ Supabase environment variables not configured.');
+  console.warn('Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Cloudflare Pages environment variables.');
+  console.warn('Customer login and subscriptions will not work without these.');
+} else {
+  console.log('✅ Supabase environment variables configured successfully');
+  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
 }
 
-console.log('✅ Supabase environment variables configured successfully');
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true, // Enable session persistence for customer portal
-    autoRefreshToken: true,
-    detectSessionInUrl: true // Enable OAuth callback detection
-  }
-})
+export const supabase = supabaseInstance as any;
 
 export type Database = {
   public: {

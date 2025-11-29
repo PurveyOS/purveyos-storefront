@@ -13,6 +13,29 @@ export function CustomerLogin() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  // Check if Supabase is configured
+  if (!supabase) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+          <div className="text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Customer Portal Unavailable</h1>
+            <p className="text-gray-600 mb-4">
+              The customer portal is not yet configured. Please contact support.
+            </p>
+            <button
+              onClick={() => navigate('/')}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+            >
+              Return to Store
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
