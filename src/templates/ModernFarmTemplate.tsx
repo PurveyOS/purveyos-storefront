@@ -298,13 +298,15 @@ const filteredProducts =
           onConfirm={(config) => {
             // Add subscription to cart with metadata including subscription_product_id
             onAddToCart(selectedSubscriptionProduct.id, 1, {
-              isSubscription: true,
-              subscriptionProductId: selectedSubscriptionProduct.subscriptionData!.id, // subscription_products.id
-              subscriptionInterval: config.interval,
-              subscriptionDuration: config.duration,
-              subscriptionDurationIntervals: config.durationIntervals,
-              subscriptionTotalPrice: config.totalPrice,
-            } as any);
+              metadata: {
+                isSubscription: true,
+                subscriptionProductId: selectedSubscriptionProduct.subscriptionData!.id, // subscription_products.id
+                subscriptionInterval: config.interval,
+                subscriptionDuration: config.duration,
+                subscriptionDurationIntervals: config.durationIntervals,
+                subscriptionTotalPrice: config.totalPrice,
+              }
+            });
             setShowSubscriptionModal(false);
             setSelectedSubscriptionProduct(null);
           }}
