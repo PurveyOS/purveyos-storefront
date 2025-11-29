@@ -36,9 +36,7 @@ interface OrderRequest {
     enabled: boolean
     cadence?: 'weekly' | 'biweekly' | 'monthly'
     startDate?: string
-    isCsaBox?: boolean
-    targetWeightLbs?: number
-    productId?: string
+    subscriptionProductId?: string
     quantity?: number
   }
 }
@@ -348,7 +346,8 @@ serve(async (req) => {
 
     // Send notification to tenant (don't fail order if notification fails)
     try {
-      await supabaseAdmin.functions.invoke('order-created-notify', {
+      console.log('Invoking order-created-notify function...');
+      const notifyResult = await supabaseAdmin.functions.invoke('order-created-notify', {
         body: {
           orderId,
           tenantId: orderRequest.tenantId,
@@ -359,7 +358,12 @@ serve(async (req) => {
           source: 'storefront'
         }
       });
-      console.log('Notification sent successfully');
+      console.log('Notification result:', notifyResult);
+      if (notifyResult.error) {
+        console.error('Notification function returned error:', notifyResult.error);
+      } else {
+        console.log('✓ Notification sent successfully');
+      }
     } catch (notifyError) {
       console.error('Failed to send notification (non-fatal):', notifyError);
     }
