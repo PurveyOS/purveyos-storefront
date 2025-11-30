@@ -97,7 +97,8 @@ export async function submitOrder(
   cartItems: CartItem[],
   products: any[],
   customerInfo: CustomerInfo,
-  tenantTaxConfig: TenantTaxConfig = {}
+  tenantTaxConfig: TenantTaxConfig = {},
+  userId?: string // Optional authenticated user ID
 ): Promise<OrderResult> {
   try {
     if (!supabase) {
@@ -181,6 +182,7 @@ export async function submitOrder(
       .from('orders')
       .insert({
         tenant_id: tenantId,
+        user_id: userId || null, // Link to authenticated user if logged in
         customer_name: customerInfo.name,
         customer_email: customerInfo.email,
         customer_phone: customerInfo.phone,

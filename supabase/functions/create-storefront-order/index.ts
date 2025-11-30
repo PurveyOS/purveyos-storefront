@@ -79,6 +79,19 @@ serve(async (req) => {
     // 1. Create the order
     const orderId = crypto.randomUUID()
     
+    // Get authenticated user if logged in
+    const authHeader = req.headers.get('Authorization')
+    let userId = null
+    if (authHeader) {
+      try {
+        const token = authHeader.replace('Bearer ', '')
+        const { data: { user } } = await supabaseAdmin.auth.getUser(token)
+        userId = user?.id || null
+      } catch (e) {
+        console.log('No authenticated user for order')
+      }
+    }
+
     // Build note field with delivery/payment info
     const noteParts = []
     if (orderRequest.deliveryMethod) {
@@ -100,6 +113,7 @@ serve(async (req) => {
       .insert({
         id: orderId,
         tenant_id: orderRequest.tenantId,
+        user_id: userId, // Link to authenticated user if logged in
         customer_name: orderRequest.customerName,
         customer_email: orderRequest.customerEmail,
         customer_phone: orderRequest.customerPhone,

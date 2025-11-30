@@ -129,7 +129,7 @@ export function CustomerPortal() {
             products(id, name, image_url)
           )
         `)
-        .eq('customer_email', user.email)
+        .or(`user_id.eq.${user.id},customer_email.eq.${user.email}`)
         .order('created_at', { ascending: false })
         .limit(20);
 
