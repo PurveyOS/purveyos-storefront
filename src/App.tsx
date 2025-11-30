@@ -5,6 +5,7 @@ import { CartPage } from './pages/CartPage'
 import { CheckoutPage } from './pages/CheckoutPage'
 import { CustomerLogin } from './pages/CustomerLogin'
 import { CustomerPortal } from './pages/CustomerPortal'
+import { CustomerProfileSetup } from './pages/CustomerProfileSetup'
 import { SubscriptionManagement } from './pages/SubscriptionManagement'
 import './App.css'
 import { useEffect } from 'react'
@@ -28,6 +29,7 @@ function App() {
         <Route path="/cart" element={<CartPage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
         <Route path="/login" element={<CustomerLogin />} />
+        <Route path="/account/setup" element={<CustomerProfileSetup />} />
         <Route path="/account" element={<CustomerPortal />} />
         <Route path="/subscription/:id" element={<SubscriptionManagement />} />
       </Routes>

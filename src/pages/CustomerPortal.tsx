@@ -65,6 +65,19 @@ export function CustomerPortal() {
         return;
       }
 
+      // Check if profile is complete
+      const { data: profile } = await supabase
+        .from('customer_profiles')
+        .select('tenant_id, phone')
+        .eq('id', user.id)
+        .single();
+
+      // Redirect to setup if profile incomplete (no tenant_id or phone)
+      if (!profile?.tenant_id || !profile?.phone) {
+        navigate('/account/setup');
+        return;
+      }
+
       setUser(user);
       await Promise.all([loadSubscriptions(), loadOrders()]);
     } catch (error) {

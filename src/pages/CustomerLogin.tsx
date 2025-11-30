@@ -95,9 +95,9 @@ export function CustomerLogin() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session) {
-          // Email confirmation is disabled - user is logged in immediately
-          setMessage('Account created successfully! Logging you in...');
-          setTimeout(() => navigate('/account'), 1500);
+          // Email confirmation is disabled - redirect to profile setup
+          setMessage('Account created successfully! Complete your profile to continue.');
+          setTimeout(() => navigate('/account/setup'), 1500);
         } else {
           // Email confirmation is enabled - user needs to confirm email
           setMessage('Account created! Check your email to confirm your account.');
