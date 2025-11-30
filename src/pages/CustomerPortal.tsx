@@ -124,9 +124,11 @@ export function CustomerPortal() {
           notified_ready_at,
           order_lines(
             id,
+            product_id,
+            product_name,
             quantity,
             price_cents,
-            products(id, name, image_url)
+            unit_price_cents
           )
         `)
         .or(`user_id.eq.${user.id},customer_email.eq.${user.email}`)
@@ -521,18 +523,11 @@ export function CustomerPortal() {
                         <div className="space-y-2">
                           {order.order_lines.map((line: any) => (
                             <div key={line.id} className="flex items-center gap-3 py-2">
-                              {line.products?.image_url && (
-                                <img 
-                                  src={line.products.image_url} 
-                                  alt={line.products.name}
-                                  className="w-12 h-12 object-cover rounded"
-                                />
-                              )}
                               <div className="flex-1">
-                                <p className="font-medium text-gray-900">{line.products?.name || 'Product'}</p>
+                                <p className="font-medium text-gray-900">{line.product_name || 'Product'}</p>
                                 <p className="text-sm text-gray-600">Qty: {line.quantity}</p>
                               </div>
-                              <p className="font-medium text-gray-900">${(line.price_cents / 100).toFixed(2)}</p>
+                              <p className="font-medium text-gray-900">${((line.unit_price_cents || line.price_cents) / 100).toFixed(2)}</p>
                             </div>
                           ))}
                         </div>

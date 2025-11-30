@@ -63,6 +63,22 @@ serve(async (req) => {
       }
     )
 
+    // Get authenticated user ID from JWT if present
+    let userId = null
+    const authHeader = req.headers.get('Authorization')
+    if (authHeader) {
+      try {
+        const token = authHeader.replace('Bearer ', '')
+        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+        if (!authError && user) {
+          userId = user.id
+          console.log('Order from authenticated user:', userId)
+        }
+      } catch (e) {
+        console.log('Could not parse user from token:', e)
+      }
+    }
+
     const orderRequest: OrderRequest = await req.json()
     console.log('Creating storefront order:', orderRequest)
     console.log('🔍 Subscription payload received:', JSON.stringify(orderRequest.subscription, null, 2))
@@ -79,19 +95,6 @@ serve(async (req) => {
     // 1. Create the order
     const orderId = crypto.randomUUID()
     
-    // Get authenticated user if logged in
-    const authHeader = req.headers.get('Authorization')
-    let userId = null
-    if (authHeader) {
-      try {
-        const token = authHeader.replace('Bearer ', '')
-        const { data: { user } } = await supabaseAdmin.auth.getUser(token)
-        userId = user?.id || null
-      } catch (e) {
-        console.log('No authenticated user for order')
-      }
-    }
-
     // Build note field with delivery/payment info
     const noteParts = []
     if (orderRequest.deliveryMethod) {
