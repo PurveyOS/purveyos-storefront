@@ -71,7 +71,7 @@ export function Navbar(props: NavbarProps) {
                 Products
               </button>
               <Link
-                to="/login"
+                to="/account"
                 className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-3 py-2 rounded-md text-sm"
               >
                 My Account
@@ -152,7 +152,7 @@ export function Navbar(props: NavbarProps) {
 
             {/* Right side */}
             <div className="flex items-center gap-2">
-              <Link to="/login" className="inline-flex">
+              <Link to="/account" className="inline-flex">
                 <button
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors duration-200 text-sm font-medium"
                   style={{ color: primaryColor }}
