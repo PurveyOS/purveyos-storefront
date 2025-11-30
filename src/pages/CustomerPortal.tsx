@@ -127,8 +127,8 @@ export function CustomerPortal() {
             product_id,
             product_name,
             quantity,
-            price_cents,
-            unit_price_cents
+            unit_price_cents,
+            line_total_cents
           )
         `)
         .or(`user_id.eq.${user.id},customer_email.eq.${user.email}`)
@@ -527,7 +527,7 @@ export function CustomerPortal() {
                                 <p className="font-medium text-gray-900">{line.product_name || 'Product'}</p>
                                 <p className="text-sm text-gray-600">Qty: {line.quantity}</p>
                               </div>
-                              <p className="font-medium text-gray-900">${((line.unit_price_cents || line.price_cents) / 100).toFixed(2)}</p>
+                              <p className="font-medium text-gray-900">${(line.line_total_cents / 100).toFixed(2)}</p>
                             </div>
                           ))}
                         </div>
