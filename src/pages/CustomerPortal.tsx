@@ -35,10 +35,26 @@ export function CustomerPortal() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeTab, setActiveTab] = useState<'subscriptions' | 'orders' | 'settings'>('subscriptions');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   useEffect(() => {
     checkAuth();
+    checkPasswordRecovery();
   }, []);
+
+  const checkPasswordRecovery = async () => {
+    // Check if this is a password recovery redirect
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+    
+    if (type === 'recovery') {
+      setIsResettingPassword(true);
+    }
+  };
 
   const checkAuth = async () => {
     try {
@@ -116,6 +132,41 @@ export function CustomerPortal() {
     navigate('/login');
   };
 
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+
+    if (newPassword.length < 6) {
+      setResetError('Password must be at least 6 characters');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setResetError('Passwords do not match');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) throw error;
+
+      setResetSuccess(true);
+      setTimeout(() => {
+        setIsResettingPassword(false);
+        setResetSuccess(false);
+        setNewPassword('');
+        setConfirmPassword('');
+        // Clear hash from URL
+        window.history.replaceState(null, '', window.location.pathname);
+      }, 2000);
+    } catch (err: any) {
+      setResetError(err.message || 'Failed to update password');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const colors = {
       active: 'bg-green-100 text-green-800',
@@ -141,6 +192,88 @@ export function CustomerPortal() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Password Reset Modal */}
+      {isResettingPassword && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Set New Password</h2>
+            <p className="text-gray-600 mb-6">Enter your new password below</p>
+
+            {resetError && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">{resetError}</p>
+              </div>
+            )}
+
+            {resetSuccess && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">✓ Password updated successfully!</p>
+              </div>
+            )}
+
+            <form onSubmit={handlePasswordReset} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="••••••••"
+                  disabled={resetSuccess}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="••••••••"
+                  disabled={resetSuccess}
+                />
+              </div>
+
+              {!resetSuccess && (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsResettingPassword(false);
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      setResetError(null);
+                      window.history.replaceState(null, '', window.location.pathname);
+                    }}
+                    className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
+                  >
+                    Update Password
+                  </button>
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
