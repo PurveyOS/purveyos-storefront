@@ -5,6 +5,7 @@ import { useStorefrontData } from '../hooks/useStorefrontData';
 import { usePersistedCart } from '../hooks/usePersistedCart';
 import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
+import { supabase } from '../lib/supabase';
 
 export function CheckoutPage() {
   
@@ -23,6 +24,44 @@ export function CheckoutPage() {
     deliveryAddress: '',
     deliveryNotes: '',
   });
+
+  // Load customer info if logged in
+  useEffect(() => {
+    async function loadCustomerInfo() {
+      if (!supabase) return;
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Get customer profile
+        const { data: profile } = await supabase
+          .from('customer_profiles')
+          .select('full_name, email, phone, default_delivery_address, default_delivery_notes')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setFormData(prev => ({
+            ...prev,
+            customerName: profile.full_name || user.email || '',
+            customerEmail: profile.email || user.email || '',
+            customerPhone: profile.phone || '',
+            deliveryAddress: profile.default_delivery_address || '',
+            deliveryNotes: profile.default_delivery_notes || '',
+          }));
+        } else {
+          // No profile yet, use auth data
+          setFormData(prev => ({
+            ...prev,
+            customerName: user.user_metadata?.full_name || user.email || '',
+            customerEmail: user.email || '',
+          }));
+        }
+      }
+    }
+
+    loadCustomerInfo();
+  }, []);
 
   
   const [orderSuccess, setOrderSuccess] = useState(false);

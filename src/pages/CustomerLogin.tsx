@@ -91,8 +91,18 @@ export function CustomerLogin() {
       if (error) throw error;
 
       if (data.user) {
-        setMessage('Account created! Check your email to confirm your account.');
-        setMode('login');
+        // Check if email confirmation is required
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          // Email confirmation is disabled - user is logged in immediately
+          setMessage('Account created successfully! Logging you in...');
+          setTimeout(() => navigate('/account'), 1500);
+        } else {
+          // Email confirmation is enabled - user needs to confirm email
+          setMessage('Account created! Check your email to confirm your account.');
+          setMode('login');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
