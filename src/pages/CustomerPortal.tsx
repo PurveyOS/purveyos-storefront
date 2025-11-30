@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { User, Package, Calendar, CreditCard, Settings, LogOut } from 'lucide-react';
+import { User, Package, Calendar, CreditCard, Settings, LogOut, ShoppingCart } from 'lucide-react';
 
 interface Subscription {
   id: string;
@@ -325,28 +325,37 @@ export function CustomerPortal() {
       {/* Navigation Tabs */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex gap-8">
+          <nav className="flex gap-8 justify-between items-center">
+            <div className="flex gap-8">
+              <button
+                onClick={() => setActiveTab('subscriptions')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition ${
+                  activeTab === 'subscriptions'
+                    ? 'border-green-600 text-green-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Package className="h-4 w-4 inline mr-2" />
+                My Subscriptions
+              </button>
+              <button
+                onClick={() => setActiveTab('orders')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition ${
+                  activeTab === 'orders'
+                    ? 'border-green-600 text-green-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Calendar className="h-4 w-4 inline mr-2" />
+                Order History
+              </button>
+            </div>
             <button
-              onClick={() => setActiveTab('subscriptions')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition ${
-                activeTab === 'subscriptions'
-                  ? 'border-green-600 text-green-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+              onClick={() => navigate('/')}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
             >
-              <Package className="h-4 w-4 inline mr-2" />
-              My Subscriptions
-            </button>
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition ${
-                activeTab === 'orders'
-                  ? 'border-green-600 text-green-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <Calendar className="h-4 w-4 inline mr-2" />
-              Order History
+              <ShoppingCart className="h-4 w-4" />
+              Go Shopping
             </button>
             <button
               onClick={() => setActiveTab('settings')}
@@ -448,13 +457,72 @@ export function CustomerPortal() {
                       </div>
                     )}
 
-                    <div className="mt-4 flex gap-3">
+                    <div className="mt-4 flex gap-3 flex-wrap">
                       <button
                         onClick={() => navigate(`/subscription/${sub.id}`)}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
                       >
-                        Manage Subscription
+                        View Details
                       </button>
+                      {sub.status === 'active' && (
+                        <>
+                          <button
+                            onClick={() => {
+                              // TODO: Implement pause functionality
+                              alert('Pause subscription feature coming soon!');
+                            }}
+                            className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-medium text-sm"
+                          >
+                            Pause
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to cancel this subscription?')) {
+                                try {
+                                  const { error } = await supabase
+                                    .from('customer_subscriptions')
+                                    .update({ status: 'cancelled' })
+                                    .eq('id', sub.id);
+                                  
+                                  if (error) throw error;
+                                  
+                                  alert('Subscription cancelled successfully');
+                                  await loadSubscriptions();
+                                } catch (err) {
+                                  console.error('Failed to cancel subscription:', err);
+                                  alert('Failed to cancel subscription. Please try again.');
+                                }
+                              }
+                            }}
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                      {sub.status === 'paused' && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('customer_subscriptions')
+                                .update({ status: 'active', paused_until: null })
+                                .eq('id', sub.id);
+                              
+                              if (error) throw error;
+                              
+                              alert('Subscription resumed successfully');
+                              await loadSubscriptions();
+                            } catch (err) {
+                              console.error('Failed to resume subscription:', err);
+                              alert('Failed to resume subscription. Please try again.');
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
+                        >
+                          Resume
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -544,12 +612,37 @@ export function CustomerPortal() {
 
                     {/* Action Buttons */}
                     <div className="flex gap-3 pt-4 border-t border-gray-100">
+                      {order.status === 'pending' && (
+                        <button
+                          onClick={async () => {
+                            if (confirm('Are you sure you want to cancel this order?')) {
+                              try {
+                                const { error } = await supabase
+                                  .from('orders')
+                                  .update({ status: 'cancelled' })
+                                  .eq('id', order.id);
+                                
+                                if (error) throw error;
+                                
+                                alert('Order cancelled successfully');
+                                await loadOrders();
+                              } catch (err) {
+                                console.error('Failed to cancel order:', err);
+                                alert('Failed to cancel order. Please try again.');
+                              }
+                            }
+                          }}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium text-sm"
+                        >
+                          Cancel Order
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           // TODO: Implement reorder functionality
                           alert('Reorder feature coming soon! This will add all items from this order to your cart.');
                         }}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium"
+                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
                       >
                         🔄 Reorder
                       </button>
