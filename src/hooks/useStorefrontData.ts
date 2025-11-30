@@ -261,10 +261,11 @@ export function useStorefrontData(tenantId: string): {
 
         // Group subscriptions by product_id
         const subscriptionsByProduct = new Map<string, any>();
-        console.log('Subscription products fetched:', subscriptionsResult.data?.length || 0);
+        console.log('📊 Subscription products fetched:', subscriptionsResult.data?.length || 0);
+        console.log('📊 Raw subscription data:', JSON.stringify(subscriptionsResult.data, null, 2));
         if (subscriptionsResult.data) {
           subscriptionsResult.data.forEach((sub: any) => {
-            console.log('Mapping subscription:', sub.product_id, sub);
+            console.log('🔗 Mapping subscription product_id:', sub.product_id, '-> subscription_id:', sub.id);
             subscriptionsByProduct.set(sub.product_id, {
               id: sub.id,
               price_per_interval: sub.price_per_interval,
@@ -275,14 +276,17 @@ export function useStorefrontData(tenantId: string): {
             });
           });
         }
-        console.log('Subscriptions by product map:', subscriptionsByProduct);
+        console.log('📦 Subscriptions by product map size:', subscriptionsByProduct.size);
+        console.log('📦 Subscription product IDs:', Array.from(subscriptionsByProduct.keys()));
 
         const products: Product[] = (productsRows || []).map(p => {
           const bins = binsByProduct.get(p.id);
           const subscription = subscriptionsByProduct.get(p.id);
           
+          console.log('🔍 Processing product:', p.id, p.name);
+          console.log('   Has subscription data?', !!subscription);
           if (subscription) {
-            console.log('Product', p.name, 'is a subscription with data:', subscription);
+            console.log('   ✅ Subscription data:', JSON.stringify(subscription, null, 2));
           }
           
           // Calculate total inventory from package_bins (authoritative source)
@@ -290,7 +294,7 @@ export function useStorefrontData(tenantId: string): {
             ? bins.reduce((sum, bin) => sum + (bin.qty || 0), 0)
             : 0;
           
-          return {
+          const productData = {
             id: p.id,
             name: p.name,
             description: p.online_description || '', // Use online_description column
@@ -300,11 +304,22 @@ export function useStorefrontData(tenantId: string): {
             imageUrl: p.image || '/demo-product.svg', // Use image column
             categoryId: p.category || '', // Use category column
             available: true,
-            inventory: totalInventory, // Use package_bins total, not products.qty
+            inventory: totalInventory,
             allowPreOrder: p.allow_pre_order === true,
             isSubscription: !!subscription,
             subscriptionData: subscription,
           };
+          
+          if (subscription) {
+            console.log('   📦 Final product with subscription:', {
+              id: productData.id,
+              name: productData.name,
+              isSubscription: productData.isSubscription,
+              subscriptionData: productData.subscriptionData
+            });
+          }
+          
+          return productData;
         });
 
         // Since we don't have category column yet, create a generic "Products" category
