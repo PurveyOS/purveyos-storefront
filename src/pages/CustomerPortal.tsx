@@ -135,10 +135,16 @@ export function CustomerPortal() {
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Query error details:', JSON.stringify(error, null, 2));
+        throw error;
+      }
+      
+      console.log('Orders loaded successfully:', data);
       setOrders(data || []);
     } catch (error) {
       console.error('Failed to load orders:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
     }
   };
 
