@@ -343,6 +343,7 @@ serve(async (req) => {
             id: crypto.randomUUID(),
             tenant_id: orderRequest.tenantId,
             subscription_product_id: sub.subscriptionProductId!,
+            user_id: userId, // Link to authenticated user for customer portal
             customer_name: orderRequest.customerName,
             customer_email: orderRequest.customerEmail,
             customer_phone: orderRequest.customerPhone || null,

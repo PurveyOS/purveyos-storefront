@@ -118,7 +118,7 @@ export function CustomerPortal() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.email) return;
 
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from('orders')
         .select(`
           id, 
@@ -127,6 +127,7 @@ export function CustomerPortal() {
           created_at, 
           source,
           note,
+          is_subscription_order,
           order_lines(
             id,
             product_id,
@@ -137,6 +138,7 @@ export function CustomerPortal() {
           )
         `)
         .or(`user_id.eq.${user.id},customer_email.eq.${user.email}`)
+        .eq('is_subscription_order', false)
         .order('created_at', { ascending: false })
         .limit(20);
 
