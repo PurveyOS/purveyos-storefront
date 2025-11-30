@@ -72,8 +72,8 @@ export function CustomerPortal() {
         .eq('id', user.id)
         .single();
 
-      // Redirect to setup if profile incomplete (no tenant_id or phone)
-      if (!profile?.tenant_id || !profile?.phone) {
+      // Redirect to setup if profile incomplete (missing tenant_id - phone is optional for now)
+      if (!profile?.tenant_id) {
         navigate('/account/setup');
         return;
       }
