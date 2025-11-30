@@ -125,10 +125,8 @@ export function CustomerPortal() {
           status, 
           total_cents, 
           created_at, 
-          source, 
-          fulfillment_method,
-          pickup_location,
-          notified_ready_at,
+          source,
+          note,
           order_lines(
             id,
             product_id,
@@ -512,14 +510,11 @@ export function CustomerPortal() {
                             month: 'short', 
                             day: 'numeric' 
                           })}</span>
-                          <span>
-                            {order.fulfillment_method === 'delivery' ? '🚚 Delivery' : '📦 Pickup'}
-                            {order.pickup_location && ` - ${order.pickup_location}`}
-                          </span>
-                          {order.notified_ready_at && (
-                            <span className="text-green-600 font-medium">
-                              ✅ Ready {new Date(order.notified_ready_at).toLocaleDateString()}
-                            </span>
+                          {order.note && order.note.includes('delivery') && (
+                            <span>🚚 Delivery</span>
+                          )}
+                          {(!order.note || !order.note.includes('delivery')) && (
+                            <span>📦 Pickup</span>
                           )}
                         </div>
                       </div>
