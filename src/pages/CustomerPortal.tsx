@@ -58,9 +58,12 @@ export function CustomerPortal() {
 
   const checkAuth = async () => {
     try {
+      console.log('🔐 Checking auth state...');
       const { data: { user } } = await supabase.auth.getUser();
+      console.log('👤 User:', user ? user.email : 'No user found');
       
       if (!user) {
+        console.log('❌ No user found, redirecting to login');
         navigate('/login');
         return;
       }
@@ -72,12 +75,16 @@ export function CustomerPortal() {
         .eq('id', user.id)
         .single();
 
+      console.log('📋 Profile data:', profile);
+
       // Redirect to setup if profile incomplete (missing tenant_id - phone is optional for now)
       if (!profile?.tenant_id) {
+        console.log('⚠️ Profile incomplete, redirecting to setup');
         navigate('/account/setup');
         return;
       }
 
+      console.log('✅ Auth check passed, loading data');
       setUser(user);
       await Promise.all([loadSubscriptions(), loadOrders()]);
     } catch (error) {
