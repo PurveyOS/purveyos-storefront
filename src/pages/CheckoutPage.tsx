@@ -93,6 +93,78 @@ export function CheckoutPage() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleStripeCheckout = async () => {
+    if (!tenant || !storefrontData?.products) return;
+
+    try {
+      // Prepare line items for Stripe
+      const lineItems = cart.items.map((item: any) => {
+        const product = storefrontData.products.find((p: any) => p.id === item.productId);
+        const productName = product?.name || 'Product';
+        const unitPrice = Math.round((item.price / item.quantity) * 100); // Convert to cents
+
+        return {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: productName,
+              description: item.metadata?.isSubscription 
+                ? `${item.metadata.subscriptionInterval} subscription` 
+                : undefined,
+            },
+            unit_amount: unitPrice,
+          },
+          quantity: item.quantity,
+        };
+      });
+
+      // Calculate tax if applicable
+      const taxRate = tenant?.tax_rate ?? 0;
+      const chargeTax = tenant?.charge_tax_on_online !== false;
+      const taxIncluded = tenant?.tax_included ?? false;
+      
+      if (chargeTax && !taxIncluded && taxRate > 0) {
+        const taxAmount = Math.round(cart.total * 100 * taxRate);
+        lineItems.push({
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Tax',
+            },
+            unit_amount: taxAmount,
+          },
+          quantity: 1,
+        });
+      }
+
+      // Call Supabase function to create Stripe checkout session
+      const { data, error } = await supabase!.functions.invoke('create-storefront-checkout', {
+        body: {
+          mode: 'payment',
+          lineItems,
+          tenantId: tenant.id,
+          customerEmail: formData.customerEmail,
+          metadata: {
+            customer_name: formData.customerName,
+            customer_phone: formData.customerPhone,
+            delivery_method: formData.deliveryMethod,
+            delivery_address: formData.deliveryAddress || '',
+            delivery_notes: formData.deliveryNotes || '',
+          },
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error('No checkout URL returned');
+
+      // Redirect to Stripe Checkout
+      window.location.href = data.url;
+    } catch (error) {
+      console.error('Stripe checkout error:', error);
+      alert('Failed to start checkout. Please try again.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -113,6 +185,12 @@ export function CheckoutPage() {
     }
 
     const orderValue = cart.total;
+
+    // Handle Stripe checkout for card payments
+    if (formData.paymentMethod === 'card') {
+      await handleStripeCheckout();
+      return;
+    }
     // Check if cart contains a subscription item
     console.log('🔍 Checking cart for subscription items:', cart.items);
     const subscriptionItem = cart.items.find((item: any) => item.metadata?.isSubscription);
@@ -374,7 +452,7 @@ const result = await createOrder(
                       className="h-4 w-4 text-blue-600"
                     />
                     <label htmlFor="card" className="ml-3 text-sm font-medium text-gray-700">
-                      Credit Card (Coming Soon)
+                      Credit Card (Pay Now)
                     </label>
                   </div>
                   <div className="flex items-center">
@@ -415,9 +493,9 @@ const result = await createOrder(
                   )}
 
                   {formData.paymentMethod === 'card' && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                      <p className="text-sm text-yellow-800">
-                        Online card payment will be available soon. Please select "Pay Later" to complete your order.
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                      <p className="text-sm text-blue-800">
+                        You'll be redirected to Stripe's secure checkout to complete your payment.
                       </p>
                     </div>
                   )}
@@ -524,10 +602,10 @@ const result = await createOrder(
 
               <button
                 type="submit"
-                disabled={cartItems.length === 0 || checkoutLoading || formData.paymentMethod === 'card'}
+                disabled={cartItems.length === 0 || checkoutLoading}
                 className="w-full mt-6 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {checkoutLoading ? 'Processing...' : 'Place Order'}
+                {checkoutLoading ? 'Processing...' : formData.paymentMethod === 'card' ? 'Continue to Payment' : 'Place Order'}
               </button>
 
               {formData.paymentMethod !== 'card' && cartItems.length > 0 && (
