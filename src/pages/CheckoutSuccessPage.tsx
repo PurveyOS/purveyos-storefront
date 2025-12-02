@@ -149,12 +149,12 @@ export function CheckoutSuccessPage() {
   }, [sessionId, tenant?.id, cart.items.length, orderCreated, clearCart]);
 
   useEffect(() => {
-    // Redirect to customer portal after 5 seconds
+    // Redirect to storefront home after 5 seconds
     const timer = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          navigate('/customer/portal');
+          navigate('/');
           return 0;
         }
         return prev - 1;
@@ -202,22 +202,15 @@ export function CheckoutSuccessPage() {
 
         <div className="space-y-3">
           <button
-            onClick={() => navigate('/customer/portal')}
+            onClick={() => navigate('/')}
             className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
           >
-            View My Orders
-          </button>
-          
-          <button
-            onClick={() => navigate('/')}
-            className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-lg transition-colors"
-          >
-            Back to Store
+            Continue Shopping
           </button>
         </div>
 
         <p className="text-xs text-gray-400 mt-6">
-          Redirecting to your orders in {countdown} seconds...
+          Redirecting to store in {countdown} seconds...
         </p>
       </div>
     </div>
