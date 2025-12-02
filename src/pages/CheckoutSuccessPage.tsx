@@ -63,6 +63,8 @@ export function CheckoutSuccessPage() {
           note: `Payment: Card (Stripe)\nDelivery: ${checkoutData.deliveryMethod || 'pickup'}\nSession: ${sessionId}`,
         };
         
+        console.log('Inserting order data:', JSON.stringify(orderData, null, 2));
+        
         const { data: order, error: orderError } = await supabase!
           .from('orders')
           .insert(orderData)
