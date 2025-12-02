@@ -20,7 +20,7 @@ export function CheckoutPage() {
     customerEmail: '',
     customerPhone: '',
     deliveryMethod: 'pickup',
-    paymentMethod: 'cash',
+    paymentMethod: '', // No default - force user to choose
     deliveryAddress: '',
     deliveryNotes: '',
   });
@@ -220,6 +220,11 @@ export function CheckoutPage() {
       return;
     }
 
+    if (!formData.paymentMethod) {
+      alert('Please select a payment method.');
+      return;
+    }
+
     if (formData.deliveryMethod === 'delivery' && !formData.deliveryAddress) {
       alert('Please provide a delivery address.');
       return;
@@ -280,11 +285,16 @@ const result = await createOrder(
     }
   };
 
+  const primaryColor = storefrontData?.settings.primaryColor || '#0f6fff';
+
   if (dataLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div 
+            className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
+            style={{ borderColor: primaryColor }}
+          ></div>
           <p className="text-gray-600">Loading checkout...</p>
         </div>
       </div>
@@ -312,7 +322,8 @@ const result = await createOrder(
           <div className="space-y-3">
             <button
               onClick={() => navigate('/')}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              className="w-full text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg"
+              style={{ backgroundColor: primaryColor }}
             >
               Continue Shopping
             </button>
@@ -356,7 +367,8 @@ const result = await createOrder(
           <div className="mb-6">
             <button
               onClick={() => navigate(-1)}
-              className="inline-flex items-center text-blue-600 hover:text-blue-800 mb-4"
+              className="inline-flex items-center hover:opacity-80 transition-opacity mb-4"
+              style={{ color: primaryColor }}
             >
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -467,80 +479,104 @@ const result = await createOrder(
               {/* Payment Method */}
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Payment Method</h2>
-                <div className="space-y-4">
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="cash"
-                      name="paymentMethod"
-                      value="cash"
-                      checked={formData.paymentMethod === 'cash'}
-                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="cash" className="ml-3 text-sm font-medium text-gray-700">
-                      Pay at Pickup/Delivery (Cash)
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="card"
-                      name="paymentMethod"
-                      value="card"
-                      checked={formData.paymentMethod === 'card'}
-                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="card" className="ml-3 text-sm font-medium text-gray-700">
-                      Credit Card (Pay Now)
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="venmo"
-                      name="paymentMethod"
-                      value="venmo"
-                      checked={formData.paymentMethod === 'venmo'}
-                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="venmo" className="ml-3 text-sm font-medium text-gray-700">
-                      Venmo (Pay Later)
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="zelle"
-                      name="paymentMethod"
-                      value="zelle"
-                      checked={formData.paymentMethod === 'zelle'}
-                      onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="zelle" className="ml-3 text-sm font-medium text-gray-700">
-                      Zelle (Pay Later)
-                    </label>
-                  </div>
-
-                  {formData.paymentMethod !== 'card' && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                      <p className="text-sm text-blue-800">
-                        You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order. We accept cash, and also Venmo or Zelle.
-                      </p>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('paymentMethod', 'cash')}
+                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                      formData.paymentMethod === 'cash'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.paymentMethod === 'cash' ? {
+                      borderColor: primaryColor,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">💵</div>
+                      <div className="font-medium text-gray-800">Cash</div>
+                      <div className="text-xs text-gray-500 mt-1">Pay at {formData.deliveryMethod === 'delivery' ? 'delivery' : 'pickup'}</div>
                     </div>
-                  )}
+                  </button>
 
-                  {formData.paymentMethod === 'card' && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                      <p className="text-sm text-blue-800">
-                        You'll be redirected to Stripe's secure checkout to complete your payment.
-                      </p>
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('paymentMethod', 'card')}
+                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                      formData.paymentMethod === 'card'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.paymentMethod === 'card' ? {
+                      borderColor: primaryColor,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">💳</div>
+                      <div className="font-medium text-gray-800">Credit Card</div>
+                      <div className="text-xs text-gray-500 mt-1">Pay now</div>
                     </div>
-                  )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('paymentMethod', 'venmo')}
+                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                      formData.paymentMethod === 'venmo'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.paymentMethod === 'venmo' ? {
+                      borderColor: primaryColor,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">📱</div>
+                      <div className="font-medium text-gray-800">Venmo</div>
+                      <div className="text-xs text-gray-500 mt-1">Pay later</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('paymentMethod', 'zelle')}
+                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                      formData.paymentMethod === 'zelle'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.paymentMethod === 'zelle' ? {
+                      borderColor: primaryColor,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">🏦</div>
+                      <div className="font-medium text-gray-800">Zelle</div>
+                      <div className="text-xs text-gray-500 mt-1">Pay later</div>
+                    </div>
+                  </button>
                 </div>
+
+                {formData.paymentMethod && formData.paymentMethod !== 'card' && (
+                  <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
+                    <p className="text-sm" style={{ color: primaryColor}}>
+                      You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.
+                    </p>
+                  </div>
+                )}
+
+                {formData.paymentMethod === 'card' && (
+                  <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
+                    <p className="text-sm" style={{ color: primaryColor }}>
+                      You'll be redirected to Stripe's secure checkout to complete your payment.
+                    </p>
+                  </div>
+                )}
+              </div>
 
                 <div className="mt-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -643,8 +679,9 @@ const result = await createOrder(
 
               <button
                 type="submit"
-                disabled={cartItems.length === 0 || checkoutLoading}
-                className="w-full mt-6 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={cartItems.length === 0 || checkoutLoading || !formData.paymentMethod}
+                className="w-full mt-6 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: primaryColor }}
               >
                 {checkoutLoading ? 'Processing...' : formData.paymentMethod === 'card' ? 'Continue to Payment' : 'Place Order'}
               </button>

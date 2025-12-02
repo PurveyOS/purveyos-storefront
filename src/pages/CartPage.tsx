@@ -17,10 +17,15 @@ export function CartPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenant?.id]);
 
+  const primaryColor = storefrontData?.settings.primaryColor || '#0f6fff';
+
   if (!storefrontData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <div 
+          className="animate-spin rounded-full h-12 w-12 border-b-2"
+          style={{ borderColor: primaryColor }}
+        ></div>
       </div>
     );
   }
@@ -65,7 +70,8 @@ export function CartPage() {
             <h1 className="text-3xl font-bold text-gray-800">Shopping Cart</h1>
             <Link
               to="/"
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center px-4 py-2 text-white rounded-lg transition-all duration-200 hover:opacity-90 hover:shadow-lg"
+              style={{ backgroundColor: primaryColor }}
             >
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m0 7h18"/>
@@ -182,7 +188,10 @@ export function CartPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <div className="flex justify-between items-center mb-4">
                   <span className="text-lg font-medium">Total:</span>
-                  <span className="text-2xl font-bold text-green-600">${cartTotal.toFixed(2)}</span>
+                  <span 
+                    className="text-2xl font-bold"
+                    style={{ color: primaryColor }}
+                  >${cartTotal.toFixed(2)}</span>
                 </div>
                 
                 <div className="flex space-x-4">
@@ -196,7 +205,8 @@ export function CartPage() {
                   <Link
                     to="/checkout"
                     onClick={() => trackBeginCheckout({ tenantId: tenant?.id, itemsCount: cart.items.length, value: cartTotal, currency: 'USD' })}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-center"
+                    className="flex-1 px-4 py-2 text-white rounded-lg transition-all duration-200 hover:opacity-90 hover:shadow-lg text-center font-medium"
+                    style={{ backgroundColor: primaryColor }}
                   >
                     Proceed to Checkout
                   </Link>
