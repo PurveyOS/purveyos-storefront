@@ -35,7 +35,8 @@ export function CheckoutSuccessPage() {
     async function processOrder() {
       console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, orderCreated });
       
-      if (!sessionId || !tenant || orderCreated) {
+      // Must have sessionId and tenant, and not already created
+      if (!sessionId || !tenant?.id || orderCreated) {
         console.log('Skipping order creation - missing requirements or already created');
         return;
       }
@@ -149,7 +150,7 @@ export function CheckoutSuccessPage() {
     
     processOrder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]); // Only run when sessionId changes
+  }, [sessionId, tenant?.id]); // Run when sessionId or tenant loads
 
   useEffect(() => {
     // Redirect to storefront home after 5 seconds
