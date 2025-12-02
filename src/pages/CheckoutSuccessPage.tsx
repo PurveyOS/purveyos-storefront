@@ -2,21 +2,89 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
 import { usePersistedCart } from '../hooks/usePersistedCart';
+import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
+import { supabase } from '../lib/supabase';
 
 export function CheckoutSuccessPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = searchParams.get('session_id');
   const [countdown, setCountdown] = useState(5);
-  const { clearCart } = usePersistedCart();
+  const { cart, clearCart } = usePersistedCart();
+  const { tenant } = useTenantFromDomain();
+  const [orderCreated, setOrderCreated] = useState(false);
 
   useEffect(() => {
-    // Clear the cart when payment succeeds
-    if (sessionId) {
-      console.log('Payment successful, clearing cart');
-      clearCart();
+    // Create order and clear cart when payment succeeds
+    async function processOrder() {
+      if (!sessionId || !tenant || !cart.items.length || orderCreated) return;
+      
+      console.log('Creating order from successful payment');
+      
+      try {
+        // Get checkout form data from localStorage (saved during checkout)
+        const checkoutDataStr = localStorage.getItem('checkout-form-data');
+        const checkoutData = checkoutDataStr ? JSON.parse(checkoutDataStr) : {};
+        
+        // Create order
+        const orderData = {
+          tenant_id: tenant.id,
+          customer_email: checkoutData.customerEmail || '',
+          customer_name: checkoutData.customerName || 'Customer',
+          customer_phone: checkoutData.customerPhone || '',
+          delivery_method: checkoutData.deliveryMethod || 'pickup',
+          delivery_address: checkoutData.deliveryAddress || '',
+          delivery_notes: checkoutData.deliveryNotes || '',
+          payment_method: 'card',
+          payment_status: 'paid',
+          total: cart.total,
+          stripe_session_id: sessionId,
+        };
+        
+        const { data: order, error: orderError } = await supabase!
+          .from('orders')
+          .insert(orderData)
+          .select()
+          .single();
+        
+        if (orderError) {
+          console.error('Failed to create order:', orderError);
+          return;
+        }
+        
+        console.log('Order created:', order.id);
+        
+        // Create order lines from cart
+        const orderLines = cart.items.map(item => ({
+          order_id: order.id,
+          tenant_id: tenant.id,
+          product_id: item.productId,
+          quantity: item.quantity,
+          unit_price: item.unitPriceCents ? item.unitPriceCents / 100 : 0,
+        }));
+        
+        const { error: linesError } = await supabase!
+          .from('order_lines')
+          .insert(orderLines);
+        
+        if (linesError) {
+          console.error('Failed to create order lines:', linesError);
+        } else {
+          console.log('Order lines created:', orderLines.length);
+        }
+        
+        // Clear cart and checkout data
+        clearCart();
+        localStorage.removeItem('checkout-form-data');
+        setOrderCreated(true);
+        
+      } catch (err) {
+        console.error('Error creating order:', err);
+      }
     }
-  }, [sessionId, clearCart]);
+    
+    processOrder();
+  }, [sessionId, tenant, cart, clearCart, orderCreated]);
 
   useEffect(() => {
     // Redirect to customer portal after 5 seconds

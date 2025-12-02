@@ -146,6 +146,9 @@ export function CheckoutPage() {
         });
       }
 
+      // Save form data to localStorage for order creation after payment
+      localStorage.setItem('checkout-form-data', JSON.stringify(formData));
+      
       // Call Supabase function to create Stripe checkout session
       const { data, error } = await supabase!.functions.invoke('create-storefront-checkout', {
         body: {
