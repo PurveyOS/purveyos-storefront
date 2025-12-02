@@ -393,7 +393,10 @@ const result = await createOrder(
                       required
                       value={formData.customerName}
                       onChange={(e) => handleInputChange('customerName', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                      style={{ '--tw-ring-color': primaryColor } as any}
+                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
                       placeholder="Enter your full name"
                     />
                   </div>
@@ -406,7 +409,9 @@ const result = await createOrder(
                       required
                       value={formData.customerEmail}
                       onChange={(e) => handleInputChange('customerEmail', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
                       placeholder="Enter your email"
                     />
                   </div>
@@ -419,7 +424,9 @@ const result = await createOrder(
                       required
                       value={formData.customerPhone}
                       onChange={(e) => handleInputChange('customerPhone', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
                       placeholder="Enter your phone number"
                     />
                   </div>
@@ -429,50 +436,66 @@ const result = await createOrder(
               {/* Delivery Method */}
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Delivery Method</h2>
-                <div className="space-y-4">
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="pickup"
-                      name="deliveryMethod"
-                      value="pickup"
-                      checked={formData.deliveryMethod === 'pickup'}
-                      onChange={(e) => handleInputChange('deliveryMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="pickup" className="ml-3 text-sm font-medium text-gray-700">
-                      Pickup (Free)
-                    </label>
-                  </div>
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="delivery"
-                      name="deliveryMethod"
-                      value="delivery"
-                      checked={formData.deliveryMethod === 'delivery'}
-                      onChange={(e) => handleInputChange('deliveryMethod', e.target.value)}
-                      className="h-4 w-4 text-blue-600"
-                    />
-                    <label htmlFor="delivery" className="ml-3 text-sm font-medium text-gray-700">
-                      Local Delivery
-                    </label>
-                  </div>
-                  {formData.deliveryMethod === 'delivery' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Delivery Address *
-                      </label>
-                      <input
-                        type="text"
-                        required={formData.deliveryMethod === 'delivery'}
-                        value={formData.deliveryAddress || ''}
-                        onChange={(e) => handleInputChange('deliveryAddress', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Full delivery address"
-                      />
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('deliveryMethod', 'pickup')}
+                    className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                      formData.deliveryMethod === 'pickup'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.deliveryMethod === 'pickup' ? {
+                      borderColor: primaryColor,
+                      backgroundColor: `${primaryColor}08`,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">📦</div>
+                      <div className="font-semibold text-gray-800">Pickup</div>
+                      <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>Free</div>
                     </div>
-                  )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('deliveryMethod', 'delivery')}
+                    className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                      formData.deliveryMethod === 'delivery'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.deliveryMethod === 'delivery' ? {
+                      borderColor: primaryColor,
+                      backgroundColor: `${primaryColor}08`,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">🚚</div>
+                      <div className="font-semibold text-gray-800">Delivery</div>
+                      <div className="text-sm text-gray-500 mt-1">Local area</div>
+                    </div>
+                  </button>
+                </div>
+                {formData.deliveryMethod === 'delivery' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Delivery Address *
+                    </label>
+                    <input
+                      type="text"
+                      required={formData.deliveryMethod === 'delivery'}
+                      value={formData.deliveryAddress || ''}
+                      onChange={(e) => handleInputChange('deliveryAddress', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                      placeholder="Full delivery address"
+                    />
+                  </div>
+                )}
                 </div>
               </div>
 
@@ -577,14 +600,16 @@ const result = await createOrder(
                   </div>
                 )}
 
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                <div className="mt-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Delivery Notes
                   </label>
                   <textarea
                     value={formData.deliveryNotes || ''}
                     onChange={(e) => handleInputChange('deliveryNotes', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors resize-none"
+                    onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                    onBlur={(e) => e.currentTarget.style.borderColor = ''}
                     rows={3}
                     placeholder="Any special requests or notes..."
                   />
