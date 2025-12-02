@@ -33,15 +33,16 @@ export function CheckoutSuccessPage() {
   useEffect(() => {
     // Create order after successful payment
     async function processOrder() {
-      console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, cartItemsCount: cart.items.length, orderCreated });
+      console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, orderCreated });
       
-      if (!sessionId || !tenant || !cart.items.length || orderCreated) {
-        console.log('Skipping order creation - missing requirements');
+      if (!sessionId || !tenant || orderCreated) {
+        console.log('Skipping order creation - missing requirements or already created');
         return;
       }
       
       try {
         console.log('Calling create-order-from-session with sessionId:', sessionId);
+        setOrderCreated(true); // Set immediately to prevent duplicate calls
         
         // Call the Edge Function to create order from paid session
         const { data, error } = await supabase.functions.invoke('create-order-from-session', {
@@ -51,23 +52,24 @@ export function CheckoutSuccessPage() {
         if (error) {
           console.error('Order creation error:', error);
           setError(`Failed to create order: ${error.message}. Session ID: ${sessionId}`);
+          setOrderCreated(false); // Reset on error so user can retry
           return;
         }
         
         if (data?.alreadyExists) {
-          console.log('Order already exists:', data.orderId);
+          console.log('Order already exists:', data.saleId);
         } else {
-          console.log('Order created successfully:', data.orderId);
+          console.log('Sale created successfully:', data.saleId);
         }
         
         // Clear cart after successful order creation
         clearCart();
         localStorage.removeItem('checkout-form-data');
-        setOrderCreated(true);
         
       } catch (err: any) {
         console.error('Unexpected error:', err);
         setError(`An unexpected error occurred: ${err.message}`);
+        setOrderCreated(false); // Reset on error
       }
       
       /* OLD CLIENT-SIDE ORDER CREATION (DISABLED - using webhook instead)
@@ -146,7 +148,8 @@ export function CheckoutSuccessPage() {
     }
     
     processOrder();
-  }, [sessionId, tenant?.id, cart.items.length, orderCreated, clearCart]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]); // Only run when sessionId changes
 
   useEffect(() => {
     // Redirect to storefront home after 5 seconds
