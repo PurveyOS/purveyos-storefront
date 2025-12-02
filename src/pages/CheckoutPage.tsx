@@ -496,7 +496,6 @@ const result = await createOrder(
                     />
                   </div>
                 )}
-                </div>
               </div>
 
               {/* Payment Method */}
