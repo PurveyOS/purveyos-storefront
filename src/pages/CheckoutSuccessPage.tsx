@@ -40,8 +40,15 @@ export function CheckoutSuccessPage() {
         return;
       }
       
-      console.log('Creating order from successful payment');
+      console.log('Payment successful! Order will be created by webhook.');
       
+      // Note: Order creation is now handled server-side by stripe-webhook Edge Function
+      // This bypasses RLS issues and is more secure
+      clearCart();
+      localStorage.removeItem('checkout-form-data');
+      setOrderCreated(true);
+      
+      /* OLD CLIENT-SIDE ORDER CREATION (DISABLED - using webhook instead)
       try {
         // Get checkout form data from localStorage (saved during checkout)
         const checkoutDataStr = localStorage.getItem('checkout-form-data');
@@ -113,12 +120,10 @@ export function CheckoutSuccessPage() {
         console.error('Error creating order:', err);
         setError(err instanceof Error ? err.message : 'Failed to create order');
       }
+      */
     }
     
-    processOrder().catch(err => {
-      console.error('ProcessOrder promise rejected:', err);
-      setError(err instanceof Error ? err.message : 'Failed to process order');
-    });
+    processOrder();
   }, [sessionId, tenant?.id, cart.items.length, orderCreated, clearCart]);
 
   useEffect(() => {
