@@ -6,6 +6,8 @@ import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { supabase } from '../lib/supabase';
 
 export function CheckoutSuccessPage() {
+  console.log('CheckoutSuccessPage component mounted!');
+  
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = searchParams.get('session_id');
@@ -13,11 +15,17 @@ export function CheckoutSuccessPage() {
   const { cart, clearCart } = usePersistedCart();
   const { tenant } = useTenantFromDomain();
   const [orderCreated, setOrderCreated] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Create order and clear cart when payment succeeds
     async function processOrder() {
-      if (!sessionId || !tenant || !cart.items.length || orderCreated) return;
+      console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, cartItemsCount: cart.items.length, orderCreated });
+      
+      if (!sessionId || !tenant || !cart.items.length || orderCreated) {
+        console.log('Skipping order creation - missing requirements');
+        return;
+      }
       
       console.log('Creating order from successful payment');
       
@@ -81,11 +89,15 @@ export function CheckoutSuccessPage() {
         
       } catch (err) {
         console.error('Error creating order:', err);
+        setError(err instanceof Error ? err.message : 'Failed to create order');
       }
     }
     
-    processOrder();
-  }, [sessionId, tenant, cart, clearCart, orderCreated]);
+    processOrder().catch(err => {
+      console.error('ProcessOrder promise rejected:', err);
+      setError(err instanceof Error ? err.message : 'Failed to process order');
+    });
+  }, [sessionId, tenant, cart.items.length, orderCreated]);
 
   useEffect(() => {
     // Redirect to customer portal after 5 seconds
@@ -103,9 +115,17 @@ export function CheckoutSuccessPage() {
     return () => clearInterval(timer);
   }, [navigate]);
 
+  console.log('CheckoutSuccessPage rendering:', { sessionId, hasTenant: !!tenant, cartItemsCount: cart.items.length, error });
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+        
         <div className="mb-6">
           <div className="mx-auto w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
             <CheckCircle className="w-12 h-12 text-green-600" />
