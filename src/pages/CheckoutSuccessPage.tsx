@@ -110,7 +110,7 @@ export function CheckoutSuccessPage() {
       console.error('ProcessOrder promise rejected:', err);
       setError(err instanceof Error ? err.message : 'Failed to process order');
     });
-  }, [sessionId, tenant, cart.items.length, orderCreated]);
+  }, [sessionId, tenant?.id, cart.items.length, orderCreated, clearCart]);
 
   useEffect(() => {
     // Redirect to customer portal after 5 seconds
