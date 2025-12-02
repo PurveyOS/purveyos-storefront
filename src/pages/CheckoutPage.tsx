@@ -142,6 +142,9 @@ export function CheckoutPage() {
                 : undefined,
               metadata: {
                 product_id: item.productId, // Store product ID for order creation
+                binWeight: item.binWeight ? String(item.binWeight) : undefined, // Weight per unit for pre-packaged bins
+                weight: item.weight ? String(item.weight) : undefined, // Weight per unit for custom weight
+                unit: product?.unit || 'ea', // 'lb' or 'ea'
               },
             },
             unit_amount: unitPriceInCents,
