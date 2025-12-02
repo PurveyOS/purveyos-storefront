@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
 import { usePersistedCart } from '../hooks/usePersistedCart';
@@ -16,6 +16,7 @@ export function CheckoutSuccessPage() {
   const { tenant } = useTenantFromDomain();
   const [orderCreated, setOrderCreated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const processingRef = useRef(false); // Track if currently processing
 
   // Check if Supabase is available
   if (!supabase) {
@@ -33,17 +34,18 @@ export function CheckoutSuccessPage() {
   useEffect(() => {
     // Create order after successful payment
     async function processOrder() {
-      console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, orderCreated });
+      console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, orderCreated, processing: processingRef.current });
       
-      // Must have sessionId and tenant, and not already created
-      if (!sessionId || !tenant?.id || orderCreated) {
-        console.log('Skipping order creation - missing requirements or already created');
+      // Must have sessionId and tenant, and not already created or processing
+      if (!sessionId || !tenant?.id || orderCreated || processingRef.current) {
+        console.log('Skipping order creation - missing requirements or already created/processing');
         return;
       }
       
       try {
+        processingRef.current = true; // Set ref immediately
+        setOrderCreated(true); // Set state to prevent duplicate calls
         console.log('Calling create-order-from-session with sessionId:', sessionId);
-        setOrderCreated(true); // Set immediately to prevent duplicate calls
         
         // Call the Edge Function to create order from paid session
         const { data, error } = await supabase.functions.invoke('create-order-from-session', {
@@ -54,6 +56,7 @@ export function CheckoutSuccessPage() {
           console.error('Order creation error:', error);
           setError(`Failed to create order: ${error.message}. Session ID: ${sessionId}`);
           setOrderCreated(false); // Reset on error so user can retry
+          processingRef.current = false;
           return;
         }
         
@@ -71,6 +74,7 @@ export function CheckoutSuccessPage() {
         console.error('Unexpected error:', err);
         setError(`An unexpected error occurred: ${err.message}`);
         setOrderCreated(false); // Reset on error
+        processingRef.current = false;
       }
       
       /* OLD CLIENT-SIDE ORDER CREATION (DISABLED - using webhook instead)
