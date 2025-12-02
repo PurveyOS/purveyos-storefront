@@ -27,18 +27,19 @@ export function CheckoutSuccessPage() {
         const checkoutData = checkoutDataStr ? JSON.parse(checkoutDataStr) : {};
         
         // Create order
+        const totalCents = Math.round(cart.total * 100);
         const orderData = {
           tenant_id: tenant.id,
           customer_email: checkoutData.customerEmail || '',
           customer_name: checkoutData.customerName || 'Customer',
           customer_phone: checkoutData.customerPhone || '',
-          delivery_method: checkoutData.deliveryMethod || 'pickup',
-          delivery_address: checkoutData.deliveryAddress || '',
-          delivery_notes: checkoutData.deliveryNotes || '',
-          payment_method: 'card',
-          payment_status: 'paid',
+          status: 'paid',
           total: cart.total,
-          stripe_session_id: sessionId,
+          total_cents: totalCents,
+          subtotal_cents: totalCents, // For now, same as total
+          tax_cents: 0, // TODO: Calculate tax if applicable
+          source: 'storefront',
+          note: `Payment: Card (Stripe)\nDelivery: ${checkoutData.deliveryMethod || 'pickup'}\nSession: ${sessionId}`,
         };
         
         const { data: order, error: orderError } = await supabase!
