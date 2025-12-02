@@ -101,7 +101,19 @@ export function CheckoutPage() {
       const lineItems = cart.items.map((item: any) => {
         const product = storefrontData.products.find((p: any) => p.id === item.productId);
         const productName = product?.name || 'Product';
-        const unitPrice = Math.round((item.price / item.quantity) * 100); // Convert to cents
+        
+        // Calculate unit price in cents
+        // item.price should be the total for this item (unit price * quantity)
+        const unitPriceInDollars = item.price / item.quantity;
+        const unitPriceInCents = Math.round(unitPriceInDollars * 100);
+        
+        console.log('Line item:', {
+          productName,
+          itemPrice: item.price,
+          quantity: item.quantity,
+          unitPriceInDollars,
+          unitPriceInCents
+        });
 
         return {
           price_data: {
@@ -112,7 +124,7 @@ export function CheckoutPage() {
                 ? `${item.metadata.subscriptionInterval} subscription` 
                 : undefined,
             },
-            unit_amount: unitPrice,
+            unit_amount: unitPriceInCents,
           },
           quantity: item.quantity,
         };
