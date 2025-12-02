@@ -102,12 +102,28 @@ export function CheckoutPage() {
         const product = storefrontData.products.find((p: any) => p.id === item.productId);
         const productName = product?.name || 'Product';
         
-        // Cart items store unitPriceCents directly
-        const unitPriceInCents = item.unitPriceCents || 0;
+        // Calculate unit_amount based on item type
+        let unitPriceInCents = 0;
+        
+        if (item.binWeight && item.unitPriceCents) {
+          // Pre-packaged weight bins: unitPriceCents is price per lb, multiply by binWeight
+          unitPriceInCents = Math.round(item.binWeight * item.unitPriceCents);
+        } else if (item.weight && product?.pricingMode === 'weight') {
+          // Custom weight entry: price per lb * weight
+          unitPriceInCents = Math.round(item.weight * product.pricePer * 100);
+        } else if (item.unitPriceCents) {
+          // Fixed price items with unitPriceCents stored
+          unitPriceInCents = item.unitPriceCents;
+        } else if (product?.pricePer) {
+          // Standard fixed pricing
+          unitPriceInCents = Math.round(product.pricePer * 100);
+        }
         
         console.log('Line item:', {
           productId: item.productId,
           productName,
+          binWeight: item.binWeight,
+          weight: item.weight,
           unitPriceCents: item.unitPriceCents,
           quantity: item.quantity,
           finalUnitPrice: unitPriceInCents
