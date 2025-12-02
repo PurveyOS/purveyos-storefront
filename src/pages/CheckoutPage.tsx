@@ -112,11 +112,13 @@ export function CheckoutPage() {
           // Custom weight entry: price per lb * weight
           unitPriceInCents = Math.round(item.weight * product.pricePer * 100);
         } else if (item.unitPriceCents) {
-          // Fixed price items with unitPriceCents stored
+          // Items with unitPriceCents explicitly stored (already in cents)
           unitPriceInCents = item.unitPriceCents;
         } else if (product?.pricePer) {
-          // Standard fixed pricing
+          // Standard fixed pricing: convert dollars to cents
           unitPriceInCents = Math.round(product.pricePer * 100);
+        } else {
+          console.error('Unable to determine price for item:', item);
         }
         
         console.log('Line item:', {
@@ -125,6 +127,7 @@ export function CheckoutPage() {
           binWeight: item.binWeight,
           weight: item.weight,
           unitPriceCents: item.unitPriceCents,
+          productPricePer: product?.pricePer,
           quantity: item.quantity,
           finalUnitPrice: unitPriceInCents
         });
