@@ -3,6 +3,8 @@ import { StorefrontRoot } from './StorefrontRoot'
 import { ProductPage } from './pages/ProductPage'
 import { CartPage } from './pages/CartPage'
 import { CheckoutPage } from './pages/CheckoutPage'
+import { CheckoutSuccessPage } from './pages/CheckoutSuccessPage'
+import { CheckoutCancelPage } from './pages/CheckoutCancelPage'
 import { CustomerLogin } from './pages/CustomerLogin'
 import { CustomerPortal } from './pages/CustomerPortal'
 import { CustomerProfileSetup } from './pages/CustomerProfileSetup'
@@ -28,6 +30,8 @@ function App() {
         <Route path="/product/:productId" element={<ProductPage />} />
         <Route path="/cart" element={<CartPage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+        <Route path="/checkout/cancel" element={<CheckoutCancelPage />} />
         <Route path="/login" element={<CustomerLogin />} />
         <Route path="/account/setup" element={<CustomerProfileSetup />} />
         <Route path="/account" element={<CustomerPortal />} />
