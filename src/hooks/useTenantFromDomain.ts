@@ -32,9 +32,16 @@ export function useTenantFromDomain(): UseTenantResult {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const client = supabase!;
   
   useEffect(() => {
+    if (!supabase) {
+      console.error('useTenantFromDomain: Supabase client not available');
+      setError('Database not configured');
+      setLoading(false);
+      return;
+    }
+    
+    const client = supabase;
     let cancelled = false;
 
     async function resolveTenant() {

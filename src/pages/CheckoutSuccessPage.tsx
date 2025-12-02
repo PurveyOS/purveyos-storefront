@@ -17,6 +17,19 @@ export function CheckoutSuccessPage() {
   const [orderCreated, setOrderCreated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Check if Supabase is available
+  if (!supabase) {
+    console.error('Supabase client not initialized');
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Configuration Error</h1>
+          <p className="text-gray-700">Database connection not available. Please contact support.</p>
+        </div>
+      </div>
+    );
+  }
+
   useEffect(() => {
     // Create order and clear cart when payment succeeds
     async function processOrder() {
