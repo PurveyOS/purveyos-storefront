@@ -106,6 +106,7 @@ export function CheckoutPage() {
         const unitPriceInCents = item.unitPriceCents || 0;
         
         console.log('Line item:', {
+          productId: item.productId,
           productName,
           unitPriceCents: item.unitPriceCents,
           quantity: item.quantity,
@@ -120,6 +121,9 @@ export function CheckoutPage() {
               description: item.metadata?.isSubscription 
                 ? `${item.metadata.subscriptionInterval} subscription` 
                 : undefined,
+              metadata: {
+                product_id: item.productId, // Store product ID for order creation
+              },
             },
             unit_amount: unitPriceInCents,
           },

@@ -31,7 +31,7 @@ export function CheckoutSuccessPage() {
   }
 
   useEffect(() => {
-    // Clear cart when payment succeeds - order creation handled by webhook
+    // Create order after successful payment
     async function processOrder() {
       console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, cartItemsCount: cart.items.length, orderCreated });
       
@@ -40,12 +40,35 @@ export function CheckoutSuccessPage() {
         return;
       }
       
-      console.log('Payment successful! Order should be created by webhook.');
-      
-      // Just clear the cart - webhook will create the order
-      clearCart();
-      localStorage.removeItem('checkout-form-data');
-      setOrderCreated(true);
+      try {
+        console.log('Calling create-order-from-session with sessionId:', sessionId);
+        
+        // Call the Edge Function to create order from paid session
+        const { data, error } = await supabase.functions.invoke('create-order-from-session', {
+          body: { sessionId }
+        });
+        
+        if (error) {
+          console.error('Order creation error:', error);
+          setError(`Failed to create order: ${error.message}. Session ID: ${sessionId}`);
+          return;
+        }
+        
+        if (data?.alreadyExists) {
+          console.log('Order already exists:', data.orderId);
+        } else {
+          console.log('Order created successfully:', data.orderId);
+        }
+        
+        // Clear cart after successful order creation
+        clearCart();
+        localStorage.removeItem('checkout-form-data');
+        setOrderCreated(true);
+        
+      } catch (err: any) {
+        console.error('Unexpected error:', err);
+        setError(`An unexpected error occurred: ${err.message}`);
+      }
       
       /* OLD CLIENT-SIDE ORDER CREATION (DISABLED - using webhook instead)
       try {
