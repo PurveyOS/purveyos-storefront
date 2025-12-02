@@ -1,12 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
+import { usePersistedCart } from '../hooks/usePersistedCart';
 
 export function CheckoutSuccessPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const sessionId = searchParams.get('session_id');
   const [countdown, setCountdown] = useState(5);
+  const { clearCart } = usePersistedCart();
+
+  useEffect(() => {
+    // Clear the cart when payment succeeds
+    if (sessionId) {
+      console.log('Payment successful, clearing cart');
+      clearCart();
+    }
+  }, [sessionId, clearCart]);
 
   useEffect(() => {
     // Redirect to customer portal after 5 seconds
