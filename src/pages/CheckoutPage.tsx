@@ -156,6 +156,8 @@ export function CheckoutPage() {
           lineItems,
           tenantId: tenant.id,
           customerEmail: formData.customerEmail,
+          successUrl: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${window.location.origin}/checkout/cancel`,
           metadata: {
             customer_name: formData.customerName,
             customer_phone: formData.customerPhone,
