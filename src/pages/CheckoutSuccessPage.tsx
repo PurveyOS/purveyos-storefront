@@ -65,6 +65,9 @@ export function CheckoutSuccessPage() {
         
         console.log('Inserting order data:', JSON.stringify(orderData, null, 2));
         
+        // Ensure we're using anonymous role (sign out any existing session)
+        await supabase!.auth.signOut({ scope: 'local' });
+        
         const { data: order, error: orderError } = await supabase!
           .from('orders')
           .insert(orderData)
