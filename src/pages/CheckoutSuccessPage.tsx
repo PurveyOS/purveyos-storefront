@@ -68,6 +68,10 @@ export function CheckoutSuccessPage() {
         // Ensure we're using anonymous role (sign out any existing session)
         await supabase!.auth.signOut({ scope: 'local' });
         
+        // Log the current session to debug
+        const { data: { session } } = await supabase!.auth.getSession();
+        console.log('Current auth session:', session ? 'LOGGED IN' : 'ANONYMOUS');
+        
         const { data: order, error: orderError } = await supabase!
           .from('orders')
           .insert(orderData)
