@@ -40,13 +40,27 @@ export function CheckoutSuccessPage() {
         return;
       }
       
-      console.log('Payment successful! Order will be created by webhook.');
-      
-      // Note: Order creation is now handled server-side by stripe-webhook Edge Function
-      // This bypasses RLS issues and is more secure
-      clearCart();
-      localStorage.removeItem('checkout-form-data');
-      setOrderCreated(true);
+      try {
+        console.log('Creating order from session:', sessionId);
+        
+        const { data, error } = await supabase.functions.invoke('create-order-from-session', {
+          body: { sessionId }
+        });
+        
+        if (error) {
+          console.error('Order creation error:', error);
+          setError('Failed to create order. Please contact support with session ID: ' + sessionId);
+          return;
+        }
+        
+        console.log('Order created successfully:', data);
+        clearCart();
+        localStorage.removeItem('checkout-form-data');
+        setOrderCreated(true);
+      } catch (err) {
+        console.error('Unexpected error:', err);
+        setError('An unexpected error occurred. Please contact support.');
+      }
       
       /* OLD CLIENT-SIDE ORDER CREATION (DISABLED - using webhook instead)
       try {
