@@ -102,17 +102,14 @@ export function CheckoutPage() {
         const product = storefrontData.products.find((p: any) => p.id === item.productId);
         const productName = product?.name || 'Product';
         
-        // Calculate unit price in cents
-        // item.price should be the total for this item (unit price * quantity)
-        const unitPriceInDollars = item.price / item.quantity;
-        const unitPriceInCents = Math.round(unitPriceInDollars * 100);
+        // Cart items store unitPriceCents directly
+        const unitPriceInCents = item.unitPriceCents || 0;
         
         console.log('Line item:', {
           productName,
-          itemPrice: item.price,
+          unitPriceCents: item.unitPriceCents,
           quantity: item.quantity,
-          unitPriceInDollars,
-          unitPriceInCents
+          finalUnitPrice: unitPriceInCents
         });
 
         return {
