@@ -31,7 +31,7 @@ export function CheckoutSuccessPage() {
   }
 
   useEffect(() => {
-    // Create order and clear cart when payment succeeds
+    // Clear cart when payment succeeds - order creation handled by webhook
     async function processOrder() {
       console.log('ProcessOrder called:', { sessionId, hasTenant: !!tenant, cartItemsCount: cart.items.length, orderCreated });
       
@@ -40,27 +40,12 @@ export function CheckoutSuccessPage() {
         return;
       }
       
-      try {
-        console.log('Creating order from session:', sessionId);
-        
-        const { data, error } = await supabase.functions.invoke('create-order-from-session', {
-          body: { sessionId }
-        });
-        
-        if (error) {
-          console.error('Order creation error:', error);
-          setError('Failed to create order. Please contact support with session ID: ' + sessionId);
-          return;
-        }
-        
-        console.log('Order created successfully:', data);
-        clearCart();
-        localStorage.removeItem('checkout-form-data');
-        setOrderCreated(true);
-      } catch (err) {
-        console.error('Unexpected error:', err);
-        setError('An unexpected error occurred. Please contact support.');
-      }
+      console.log('Payment successful! Order should be created by webhook.');
+      
+      // Just clear the cart - webhook will create the order
+      clearCart();
+      localStorage.removeItem('checkout-form-data');
+      setOrderCreated(true);
       
       /* OLD CLIENT-SIDE ORDER CREATION (DISABLED - using webhook instead)
       try {
