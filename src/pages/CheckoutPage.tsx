@@ -139,6 +139,7 @@ export function CheckoutPage() {
             currency: 'usd',
             product_data: {
               name: 'Tax',
+              description: undefined,
             },
             unit_amount: taxAmount,
           },
