@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { usePersistedCart } from '../hooks/usePersistedCart';
@@ -24,6 +25,8 @@ export function CheckoutPage() {
     deliveryAddress: '',
     deliveryNotes: '',
   });
+
+  const [turnstileToken, setTurnstileToken] = useState<string>('');
 
   // Load customer info if logged in
   useEffect(() => {
@@ -191,6 +194,7 @@ export function CheckoutPage() {
             delivery_method: formData.deliveryMethod,
             delivery_address: formData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
+            turnstile_token: turnstileToken,
           },
         },
       });
@@ -222,6 +226,11 @@ export function CheckoutPage() {
 
     if (!formData.paymentMethod) {
       alert('Please select a payment method.');
+      return;
+    }
+
+    if (!turnstileToken) {
+      alert('Please complete the security verification.');
       return;
     }
 
@@ -700,9 +709,23 @@ const result = await createOrder(
                 </div>
               )}
 
+              {/* Cloudflare Turnstile Bot Protection */}
+              <div className="mt-6 flex justify-center">
+                <Turnstile
+                  siteKey="0x4AAAAAACEZ34gYDtEs_UvE"
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onError={() => setTurnstileToken('')}
+                  onExpire={() => setTurnstileToken('')}
+                  options={{
+                    theme: 'light',
+                    size: 'normal',
+                  }}
+                />
+              </div>
+
               <button
                 type="submit"
-                disabled={cartItems.length === 0 || checkoutLoading || !formData.paymentMethod}
+                disabled={cartItems.length === 0 || checkoutLoading || !formData.paymentMethod || !turnstileToken}
                 className="w-full mt-6 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: primaryColor }}
               >
