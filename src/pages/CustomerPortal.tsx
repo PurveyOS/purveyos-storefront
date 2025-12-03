@@ -116,9 +116,15 @@ export function CustomerPortal() {
   const loadOrders = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.email) return;
+      if (!user?.id) {
+        console.log('No user ID found');
+        return;
+      }
 
-      const { data, error} = await supabase
+      console.log('🔍 Loading orders for user:', user.id, user.email);
+
+      // First try loading by user_id (primary key)
+      const { data, error } = await supabase
         .from('orders')
         .select(`
           id, 
@@ -128,6 +134,8 @@ export function CustomerPortal() {
           source,
           note,
           is_subscription_order,
+          user_id,
+          customer_email,
           order_lines(
             id,
             product_id,
@@ -137,21 +145,20 @@ export function CustomerPortal() {
             line_total_cents
           )
         `)
-        .or(`user_id.eq.${user.id},customer_email.eq.${user.email}`)
-        .eq('is_subscription_order', false)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(20);
 
       if (error) {
-        console.error('Query error details:', JSON.stringify(error, null, 2));
+        console.error('❌ Query error:', error);
         throw error;
       }
       
-      console.log('Orders loaded successfully:', data);
+      console.log('✅ Orders loaded successfully:', data?.length || 0, 'orders');
+      console.log('📦 Order details:', data);
       setOrders(data || []);
     } catch (error) {
-      console.error('Failed to load orders:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      console.error('❌ Failed to load orders:', error);
     }
   };
 
