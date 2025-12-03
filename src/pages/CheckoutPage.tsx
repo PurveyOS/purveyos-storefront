@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Turnstile } from '@marsidev/react-turnstile';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { usePersistedCart } from '../hooks/usePersistedCart';
@@ -25,8 +24,6 @@ export function CheckoutPage() {
     deliveryAddress: '',
     deliveryNotes: '',
   });
-
-  const [turnstileToken, setTurnstileToken] = useState<string>('');
 
   // Load customer info if logged in
   useEffect(() => {
@@ -135,6 +132,11 @@ export function CheckoutPage() {
           finalUnitPrice: unitPriceInCents
         });
 
+        // Validate price
+        if (!unitPriceInCents || unitPriceInCents <= 0) {
+          throw new Error(`Invalid price for ${productName}: ${unitPriceInCents}`);
+        }
+
         return {
           price_data: {
             currency: 'usd',
@@ -179,9 +181,6 @@ export function CheckoutPage() {
       // Save form data to localStorage for order creation after payment
       localStorage.setItem('checkout-form-data', JSON.stringify(formData));
       
-      // Debug: verify Turnstile token is set
-      console.log('🔐 Turnstile token before checkout:', turnstileToken);
-      
       // Call Supabase function to create Stripe checkout session
       const { data, error } = await supabase!.functions.invoke('create-storefront-checkout', {
         body: {
@@ -197,7 +196,6 @@ export function CheckoutPage() {
             delivery_method: formData.deliveryMethod,
             delivery_address: formData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
-            turnstile_token: turnstileToken,
           },
         },
       });
@@ -246,12 +244,6 @@ export function CheckoutPage() {
       alert('Please select a payment method.');
       return;
     }
-
-    // Turnstile temporarily disabled
-    // if (!turnstileToken) {
-    //   alert('Please complete the security verification.');
-    //   return;
-    // }
 
     if (formData.deliveryMethod === 'delivery' && !formData.deliveryAddress) {
       alert('Please provide a delivery address.');
@@ -727,20 +719,6 @@ const result = await createOrder(
                   <p className="text-sm text-red-800">{checkoutError}</p>
                 </div>
               )}
-
-              {/* Cloudflare Turnstile Bot Protection */}
-              <div className="mt-6 flex justify-center">
-                <Turnstile
-                  siteKey="0x4AAAAAACEZ34gYDtEs_UvE"
-                  onSuccess={(token) => setTurnstileToken(token)}
-                  onError={() => setTurnstileToken('')}
-                  onExpire={() => setTurnstileToken('')}
-                  options={{
-                    theme: 'light',
-                    size: 'normal',
-                  }}
-                />
-              </div>
 
               <button
                 type="submit"
