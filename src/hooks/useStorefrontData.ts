@@ -160,6 +160,7 @@ export function useStorefrontData(tenantId: string): {
           supabase
             .from('package_bins')
             .select('product_id, weight_btn, unit_price_cents, qty')
+            .eq('tenant_id', tenantId)
             .gt('qty', 0), // Only show bins with inventory
           
           supabase
