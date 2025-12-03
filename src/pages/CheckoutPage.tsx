@@ -179,6 +179,9 @@ export function CheckoutPage() {
       // Save form data to localStorage for order creation after payment
       localStorage.setItem('checkout-form-data', JSON.stringify(formData));
       
+      // Debug: verify Turnstile token is set
+      console.log('🔐 Turnstile token before checkout:', turnstileToken);
+      
       // Call Supabase function to create Stripe checkout session
       const { data, error } = await supabase!.functions.invoke('create-storefront-checkout', {
         body: {
@@ -199,9 +202,24 @@ export function CheckoutPage() {
         },
       });
 
-      if (error) throw error;
-      if (!data?.url) throw new Error('No checkout URL returned');
+      if (error) {
+        console.error('❌ Supabase function error:', error);
+        throw error;
+      }
+      
+      // Check for error in function response
+      if (data?.error) {
+        console.error('❌ Function returned error:', data.error);
+        alert(`Checkout failed: ${data.error}`);
+        return;
+      }
+      
+      if (!data?.url) {
+        console.error('❌ No checkout URL in response:', data);
+        throw new Error('No checkout URL returned');
+      }
 
+      console.log('✅ Got checkout URL:', data.url);
       // Redirect to Stripe Checkout
       window.location.href = data.url;
     } catch (error) {
@@ -229,10 +247,11 @@ export function CheckoutPage() {
       return;
     }
 
-    if (!turnstileToken) {
-      alert('Please complete the security verification.');
-      return;
-    }
+    // Turnstile temporarily disabled
+    // if (!turnstileToken) {
+    //   alert('Please complete the security verification.');
+    //   return;
+    // }
 
     if (formData.deliveryMethod === 'delivery' && !formData.deliveryAddress) {
       alert('Please provide a delivery address.');
@@ -725,7 +744,7 @@ const result = await createOrder(
 
               <button
                 type="submit"
-                disabled={cartItems.length === 0 || checkoutLoading || !formData.paymentMethod || !turnstileToken}
+                disabled={cartItems.length === 0 || checkoutLoading || !formData.paymentMethod}
                 className="w-full mt-6 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: primaryColor }}
               >
