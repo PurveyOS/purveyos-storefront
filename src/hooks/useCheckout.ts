@@ -155,18 +155,37 @@ export function useCheckout() {
           // Pre-packaged bin: unitPriceCents is per lb; apply to bin weight
           unitPrice = item.unitPriceCents / 100;
           lineTotal = unitPrice * binWeight * quantity;
-        } else if (pricingMode === 'weight' && weightLbs) {
-          // Weight-based pricing (by lb)
+        } else if (weightLbs) {
+          // Weight-based pricing (by lb) - for pre-orders or custom weight
           unitPrice = (product as any).pricePer;
           lineTotal = unitPrice * weightLbs * quantity;
+        } else if (pricingMode === 'weight') {
+          // Weight mode but no weight specified - this shouldn't happen, but default to pricePer
+          unitPrice = (product as any).pricePer;
+          lineTotal = unitPrice * quantity;
         } else {
-          // Fixed price item
+          // Fixed price item (sold by unit count, not weight)
           unitPrice = (product as any).pricePer;
           lineTotal = unitPrice * quantity;
         }
 
         const unitPriceCents = Math.round(unitPrice * 100);
         const lineTotalCents = Math.round(lineTotal * 100);
+
+        console.log('🛒 Cart item calculation:', {
+          productName: (product as any).name,
+          pricingMode,
+          quantity,
+          binWeight,
+          weightLbs,
+          isPreOrder,
+          productPricePer: (product as any).pricePer,
+          itemUnitPriceCents: item.unitPriceCents,
+          calculatedUnitPrice: unitPrice,
+          calculatedLineTotal: lineTotal,
+          unitPriceCents,
+          lineTotalCents
+        });
 
         const pricePerLabel: OutgoingOrderLine['pricePer'] =
           pricingMode === 'weight' ? 'lb' : 'unit';

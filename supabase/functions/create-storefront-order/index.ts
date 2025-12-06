@@ -143,6 +143,17 @@ serve(async (req) => {
     for (const line of orderRequest.lines) {
       // Convert unitPriceCents to dollars for price_per field
       const pricePerDollars = line.unitPriceCents / 100
+      
+      console.log('📦 Processing line:', {
+        productName: line.productName,
+        qty: line.qty,
+        unitPriceCents: line.unitPriceCents,
+        pricePerDollars,
+        lineTotalCents: line.lineTotalCents,
+        weightLbs: line.weightLbs,
+        binWeight: line.binWeight,
+        isPreOrder: line.isPreOrder
+      })
 
       // Insert order line
       const { error: lineError } = await supabaseAdmin
