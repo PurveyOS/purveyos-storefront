@@ -369,3 +369,4 @@ export function useStorefrontData(tenantId: string): {
 
   return { data, loading, error };
 }
+
