@@ -37,6 +37,7 @@ export interface Product {
     season_end_date?: string;
   };
   
-  // Deposit field
+  // Deposit fields
   is_deposit_product?: boolean;
+  deposit_prod_price_per_lb?: number; // Price per lb for hanging weight on deposit products
 }

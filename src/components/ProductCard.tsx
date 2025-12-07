@@ -353,7 +353,7 @@ export function ProductCard(props: ProductCardProps) {
                       width: '150px',
                       textAlign: 'center',
                     }}>
-                    This is a deposit only. Total cost will be price per lb × hanging weight.
+                    This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
                   </div>
                 )}
               </>

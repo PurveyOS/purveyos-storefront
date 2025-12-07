@@ -152,7 +152,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('id, name, pricePer, unit, image, category, qty, online_description, allow_pre_order, is_deposit_product')
+            .select('id, name, pricePer, unit, image, category, qty, online_description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name'),
@@ -311,6 +311,7 @@ export function useStorefrontData(tenantId: string): {
             isSubscription: !!subscription,
             subscriptionData: subscription,
             is_deposit_product: p.is_deposit_product === true,
+            deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,
           };
 
           
