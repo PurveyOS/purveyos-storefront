@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import type { Product } from "../types/product";
 import { WeightBinSelector } from "./WeightBinSelector";
 import { isLowStock, formatRestockDate } from "../utils/inventory";
@@ -145,7 +145,19 @@ export function ProductCard(props: ProductCardProps) {
   const [fixedQty, setFixedQty] = useState<number>(1);
   const [showBinModal, setShowBinModal] = useState(false);
   const [showDepositTooltip, setShowDepositTooltip] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
   const depositButtonRef = useRef<HTMLButtonElement>(null);
+  
+  // Calculate tooltip position when it shows
+  useLayoutEffect(() => {
+    if (showDepositTooltip && depositButtonRef.current) {
+      const rect = depositButtonRef.current.getBoundingClientRect();
+      setTooltipPosition({
+        top: rect.top - 50,
+        left: rect.left - 75,
+      });
+    }
+  }, [showDepositTooltip]);
   
   // Track local bin quantities to reflect cart additions
   const [localBins, setLocalBins] = useState(product.weightBins || []);
@@ -334,8 +346,8 @@ export function ProductCard(props: ProductCardProps) {
                 {showDepositTooltip && depositButtonRef.current && (
                   <div className="fixed z-50 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs"
                     style={{
-                      top: (depositButtonRef.current.getBoundingClientRect().top - 50) + 'px',
-                      left: (depositButtonRef.current.getBoundingClientRect().left - 75) + 'px',
+                      top: tooltipPosition.top + 'px',
+                      left: tooltipPosition.left + 'px',
                       width: '150px',
                       textAlign: 'center',
                     }}>
