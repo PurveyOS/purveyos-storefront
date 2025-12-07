@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
 import type { Product } from "../types/product";
 import { WeightBinSelector } from "./WeightBinSelector";
 import { isLowStock, formatRestockDate } from "../utils/inventory";
@@ -338,14 +338,16 @@ export function ProductCard(props: ProductCardProps) {
                   onMouseEnter={() => setShowDepositTooltip(true)}
                   onMouseLeave={() => setShowDepositTooltip(false)}
                   onClick={() => setShowDepositTooltip(!showDepositTooltip)}
-                  className="ml-1 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold hover:bg-blue-600 transition-colors flex-shrink-0"
+                  className="ml-1 w-4 h-4 rounded-full text-white flex items-center justify-center text-xs font-bold transition-colors flex-shrink-0"
+                  style={{ backgroundColor: accentColor }}
                   title="Deposit information"
                 >
                   i
                 </button>
-                {showDepositTooltip && depositButtonRef.current && (
-                  <div className="fixed z-50 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs"
+                {showDepositTooltip && depositButtonRef.current && useMemo(() => (
+                  <div className="fixed z-50 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs pointer-events-none"
                     style={{
+                      backgroundColor: accentColor,
                       top: tooltipPosition.top + 'px',
                       left: tooltipPosition.left + 'px',
                       width: '150px',
@@ -353,7 +355,7 @@ export function ProductCard(props: ProductCardProps) {
                     }}>
                     This is a deposit only. Total cost will be price per lb × hanging weight.
                   </div>
-                )}
+                ), [tooltipPosition, accentColor])}
               </>
             )}
           </div>
