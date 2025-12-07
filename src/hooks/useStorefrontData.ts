@@ -152,7 +152,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('id, name, pricePer, unit, image, category, qty, online_description, allow_pre_order')
+            .select('id, name, pricePer, unit, image, category, qty, online_description, allow_pre_order, is_deposit_product')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name'),
@@ -310,6 +310,7 @@ export function useStorefrontData(tenantId: string): {
             isSubscription: !!subscription,
             subscriptionData: subscription,
           };
+
           
           if (subscription) {
             console.log('   📦 Final product with subscription:', {
