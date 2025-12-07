@@ -309,6 +309,7 @@ export function useStorefrontData(tenantId: string): {
             allowPreOrder: p.allow_pre_order === true,
             isSubscription: !!subscription,
             subscriptionData: subscription,
+            is_deposit_product: p.is_deposit_product === true,
           };
 
           
