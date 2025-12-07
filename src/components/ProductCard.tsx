@@ -198,7 +198,7 @@ export function ProductCard(props: ProductCardProps) {
 
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm border border-slate-100 hover:shadow-md transition-shadow duration-200 group"
+      className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md hover:shadow-lg transition-shadow duration-200 group border border-slate-200"
       style={{ borderColor: primaryColor + "22" }}
     >
       {/* IMAGE + BADGES */}
@@ -214,31 +214,24 @@ export function ProductCard(props: ProductCardProps) {
 
         {/* Sold Out Overlay */}
         {isSoldOut && (
-          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2">
-            <span className="bg-red-600 text-white px-4 py-2 rounded-lg text-lg font-bold shadow-lg">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <span className="text-red-600 text-2xl font-bold drop-shadow-lg">
               SOLD OUT
             </span>
             {canPreOrder && isWeightBased && (
-              <span className="text-white text-xs bg-black/70 px-2 py-1 rounded text-center max-w-[160px]">
-                This item is sold out, but you can request a weight to pre-order
+              <span className="text-slate-700 text-xs bg-white/90 px-2 py-1 rounded text-center max-w-[160px] shadow">
+                Pre-Order Available
               </span>
             )}
           </div>
         )}
 
         {/* Sold out / preorder badges */}
-        {isSoldOut && (
+        {isSoldOut && formattedRestockDate && (
           <div className="absolute top-2 left-2 flex flex-col gap-1">
-            {canPreOrder && (
-              <span className="bg-black-600 text-white px-2 py-1 rounded-full text-[11px] font-medium">
-                Pre-order Available
-              </span>
-            )}
-            {formattedRestockDate && (
-              <span className="bg-black/60 text-white px-2 py-1 rounded text-[11px]">
-                Back: {formattedRestockDate}
-              </span>
-            )}
+            <span className="bg-black/60 text-white px-2 py-1 rounded text-[11px]">
+              Back: {formattedRestockDate}
+            </span>
           </div>
         )}
 
@@ -279,7 +272,7 @@ export function ProductCard(props: ProductCardProps) {
       </div>
 
       {/* CONTENT */}
-      <div className="flex-1 p-4 flex flex-col">
+      <div className="flex-1 p-3 sm:p-4 flex flex-col">
         <h3
           className="text-base font-semibold mb-1 line-clamp-2"
           style={{ color: primaryColor }}
@@ -343,7 +336,7 @@ export function ProductCard(props: ProductCardProps) {
         // SOLD OUT + PREORDER → weight input as default
         <div className="space-y-2">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
+            <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
               Enter requested weight (lb)
             </label>
             <input
