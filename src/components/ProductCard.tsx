@@ -214,10 +214,15 @@ export function ProductCard(props: ProductCardProps) {
 
         {/* Sold Out Overlay */}
         {isSoldOut && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2">
             <span className="bg-red-600 text-white px-4 py-2 rounded-lg text-lg font-bold shadow-lg">
               SOLD OUT
             </span>
+            {canPreOrder && isWeightBased && (
+              <span className="text-white text-xs bg-black/70 px-2 py-1 rounded text-center max-w-[120px]">
+                Request weight to pre-order
+              </span>
+            )}
           </div>
         )}
 
@@ -253,7 +258,7 @@ export function ProductCard(props: ProductCardProps) {
               style={{ backgroundColor: primaryColor }}
               title={`${product.inventory - quantityInCart} ${product.inventory - quantityInCart === 1 ? 'item' : 'items'} remaining`}
             >
-              {Math.max(0, product.inventory - quantityInCart)} {product.unit || 'left'}
+              {Math.max(0, product.inventory - quantityInCart)} Avail
             </span>
           </div>
         )}
@@ -266,16 +271,11 @@ export function ProductCard(props: ProductCardProps) {
               style={{ backgroundColor: primaryColor }}
               title={`${localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} packages available`}
             >
-              {localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} packages
+              {localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} Avail
             </span>
           </div>
         )}
 
-        {hasBins && !isSoldOut && (
-          <div className="absolute bottom-2 left-2 bg-white/85 backdrop-blur px-2 py-1 rounded text-[11px] font-medium text-slate-600 shadow-sm">
-            Multiple sizes available
-          </div>
-        )}
       </div>
 
       {/* CONTENT */}
