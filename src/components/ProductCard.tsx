@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect, useMemo } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import type { Product } from "../types/product";
 import { WeightBinSelector } from "./WeightBinSelector";
 import { isLowStock, formatRestockDate } from "../utils/inventory";
@@ -344,7 +344,7 @@ export function ProductCard(props: ProductCardProps) {
                 >
                   i
                 </button>
-                {showDepositTooltip && depositButtonRef.current && useMemo(() => (
+                {showDepositTooltip && depositButtonRef.current && (
                   <div className="fixed z-50 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs pointer-events-none"
                     style={{
                       backgroundColor: accentColor,
@@ -355,7 +355,7 @@ export function ProductCard(props: ProductCardProps) {
                     }}>
                     This is a deposit only. Total cost will be price per lb × hanging weight.
                   </div>
-                ), [tooltipPosition, accentColor])}
+                )}
               </>
             )}
           </div>
