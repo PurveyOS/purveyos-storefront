@@ -245,6 +245,32 @@ export function ProductCard(props: ProductCardProps) {
           </div>
         )}
 
+        {/* Stock Count Badge - Fixed Price Items */}
+        {isFixedPrice && !isSoldOut && product.inventory !== undefined && (
+          <div className="absolute bottom-2 right-2">
+            <span 
+              className="text-white px-3 py-1.5 rounded-full text-sm font-semibold shadow-lg"
+              style={{ backgroundColor: primaryColor }}
+              title={`${product.inventory - quantityInCart} ${product.inventory - quantityInCart === 1 ? 'item' : 'items'} remaining`}
+            >
+              {Math.max(0, product.inventory - quantityInCart)} {product.unit || 'left'}
+            </span>
+          </div>
+        )}
+
+        {/* Package Count Badge - Weight-Based Items */}
+        {isWeightBased && !isSoldOut && localBins && localBins.length > 0 && (
+          <div className="absolute bottom-2 right-2">
+            <span 
+              className="text-white px-3 py-1.5 rounded-full text-sm font-semibold shadow-lg"
+              style={{ backgroundColor: primaryColor }}
+              title={`${localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} packages available`}
+            >
+              {localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} packages
+            </span>
+          </div>
+        )}
+
         {hasBins && !isSoldOut && (
           <div className="absolute bottom-2 left-2 bg-white/85 backdrop-blur px-2 py-1 rounded text-[11px] font-medium text-slate-600 shadow-sm">
             Multiple sizes available

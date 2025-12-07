@@ -417,6 +417,33 @@ serve(async (req) => {
       console.error('Failed to send notification (non-fatal):', notifyError);
     }
 
+    // Send confirmation email to customer (non-fatal if fails)
+    try {
+      if (orderRequest.customerEmail) {
+        console.log('Sending order confirmation to customer:', orderRequest.customerEmail);
+        const customerNotifyResult = await supabaseAdmin.functions.invoke('order-created-notify', {
+          body: {
+            orderId,
+            tenantId: orderRequest.tenantId,
+            customerName: orderRequest.customerName,
+            customerEmail: orderRequest.customerEmail,
+            customerPhone: orderRequest.customerPhone,
+            totalCents: orderRequest.totalCents,
+            source: 'storefront',
+            notifyCustomer: true  // Flag to send customer receipt instead of tenant notification
+          }
+        });
+        console.log('Customer notification result:', customerNotifyResult);
+        if (customerNotifyResult.error) {
+          console.error('Customer notification function returned error:', customerNotifyResult.error);
+        } else {
+          console.log('✓ Customer confirmation email sent successfully');
+        }
+      }
+    } catch (customerNotifyError) {
+      console.error('Failed to send customer notification (non-fatal):', customerNotifyError);
+    }
+
     // Return success response
     return new Response(
       JSON.stringify({
