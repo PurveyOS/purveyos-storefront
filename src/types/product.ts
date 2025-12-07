@@ -36,4 +36,7 @@ export interface Product {
     season_start_date?: string;
     season_end_date?: string;
   };
+  
+  // Deposit field
+  is_deposit_product?: boolean;
 }

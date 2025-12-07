@@ -144,6 +144,7 @@ export function ProductCard(props: ProductCardProps) {
   const [weightAmount, setWeightAmount] = useState<string>("1");
   const [fixedQty, setFixedQty] = useState<number>(1);
   const [showBinModal, setShowBinModal] = useState(false);
+  const [showDepositTooltip, setShowDepositTooltip] = useState(false);
   
   // Track local bin quantities to reflect cart additions
   const [localBins, setLocalBins] = useState(product.weightBins || []);
@@ -316,6 +317,25 @@ export function ProductCard(props: ProductCardProps) {
             {product.unit && (
               <span className="text-sm text-slate-500">/{product.unit}</span>
             )}
+            {product.is_deposit_product && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onMouseEnter={() => setShowDepositTooltip(true)}
+                  onMouseLeave={() => setShowDepositTooltip(false)}
+                  onClick={() => setShowDepositTooltip(!showDepositTooltip)}
+                  className="ml-1 w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold hover:bg-blue-600 transition-colors flex-shrink-0"
+                  title="Deposit information"
+                >
+                  i
+                </button>
+                {showDepositTooltip && (
+                  <div className="absolute bottom-full left-0 mb-2 z-20 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
+                    This is a deposit only. Total cost will be price per lb × hanging weight.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {showLowStock && product.inventory !== undefined && (
             <span className="text-xs text-orange-600 font-medium">
@@ -386,9 +406,6 @@ export function ProductCard(props: ProductCardProps) {
         >
           Choose Package Size
         </button>
-        <p className="text-xs text-slate-500">
-          Multiple package sizes available
-        </p>
 
         {showBinModal && (
           <div 
