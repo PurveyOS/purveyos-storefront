@@ -219,8 +219,8 @@ export function ProductCard(props: ProductCardProps) {
               SOLD OUT
             </span>
             {canPreOrder && isWeightBased && (
-              <span className="text-white text-xs bg-black/70 px-2 py-1 rounded text-center max-w-[120px]">
-                Request weight to pre-order
+              <span className="text-white text-xs bg-black/70 px-2 py-1 rounded text-center max-w-[160px]">
+                This item is sold out, but you can request a weight to pre-order
               </span>
             )}
           </div>
@@ -342,9 +342,6 @@ export function ProductCard(props: ProductCardProps) {
       canPreOrder ? (
         // SOLD OUT + PREORDER → weight input as default
         <div className="space-y-2">
-          <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
-            This item is sold out, but you can request a weight to pre-order.
-          </p>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
               Enter requested weight (lb)
