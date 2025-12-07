@@ -30,10 +30,26 @@ const categoryLabels = Array.from(
 );
 
 // Filter products by selected category label
-const filteredProducts =
+const categoryFiltered =
   selectedCategory && selectedCategory !== "all"
     ? products.filter((product) => product.categoryId === selectedCategory)
     : products;
+
+// Sort products: in-stock first, then pre-order, then sold out
+const filteredProducts = categoryFiltered.sort((a, b) => {
+  const getAvailabilityScore = (product: Product) => {
+    const isSoldOut = product.isSoldOut || !product.available || 
+                      (product.inventory !== undefined && product.inventory <= 0);
+    const canPreOrder = (features?.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
+    
+    if (!isSoldOut) return 0; // In stock - highest priority
+    if (canPreOrder) return 1; // Pre-order available - medium priority
+    return 2; // Sold out - lowest priority
+  };
+  
+  return getAvailabilityScore(a) - getAvailabilityScore(b);
+});
+
   const scrollToProducts = () => {
     document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
   };

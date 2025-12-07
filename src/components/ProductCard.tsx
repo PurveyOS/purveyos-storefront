@@ -318,7 +318,7 @@ export function ProductCard(props: ProductCardProps) {
               <span className="text-sm text-slate-500">/{product.unit}</span>
             )}
             {product.is_deposit_product && (
-              <div className="relative">
+              <div className="relative inline-block">
                 <button
                   type="button"
                   onMouseEnter={() => setShowDepositTooltip(true)}
@@ -330,8 +330,9 @@ export function ProductCard(props: ProductCardProps) {
                   i
                 </button>
                 {showDepositTooltip && (
-                  <div className="absolute bottom-full left-0 mb-2 z-20 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 z-50 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-lg">
                     This is a deposit only. Total cost will be price per lb × hanging weight.
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
                   </div>
                 )}
               </div>
