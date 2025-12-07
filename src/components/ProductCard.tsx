@@ -257,6 +257,36 @@ export function ProductCard(props: ProductCardProps) {
           </div>
         )}
 
+        {/* Deposit Product Info Button */}
+        {product.is_deposit_product && (
+          <div className="absolute top-2 left-2">
+            <button
+              ref={depositButtonRef}
+              type="button"
+              onMouseEnter={() => setShowDepositTooltip(true)}
+              onMouseLeave={() => setShowDepositTooltip(false)}
+              onClick={() => setShowDepositTooltip(!showDepositTooltip)}
+              className="w-6 h-6 rounded-full text-white flex items-center justify-center text-sm font-bold transition-colors shadow-lg"
+              style={{ backgroundColor: accentColor }}
+              title="Deposit information"
+            >
+              i
+            </button>
+            {showDepositTooltip && depositButtonRef.current && (
+              <div className="fixed z-50 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs pointer-events-none"
+                style={{
+                  backgroundColor: accentColor,
+                  top: tooltipPosition.top + 'px',
+                  left: tooltipPosition.left + 'px',
+                  width: '200px',
+                  textAlign: 'center',
+                }}>
+                This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Stock Count Badge - Fixed Price Items */}
         {isFixedPrice && !isSoldOut && product.inventory !== undefined && (
           <div className="absolute bottom-2 right-2">
@@ -329,34 +359,6 @@ export function ProductCard(props: ProductCardProps) {
             </span>
             {product.unit && (
               <span className="text-sm text-slate-500">/{product.unit}</span>
-            )}
-            {product.is_deposit_product && (
-              <>
-                <button
-                  ref={depositButtonRef}
-                  type="button"
-                  onMouseEnter={() => setShowDepositTooltip(true)}
-                  onMouseLeave={() => setShowDepositTooltip(false)}
-                  onClick={() => setShowDepositTooltip(!showDepositTooltip)}
-                  className="ml-1 w-4 h-4 rounded-full text-white flex items-center justify-center text-xs font-bold transition-colors flex-shrink-0"
-                  style={{ backgroundColor: accentColor }}
-                  title="Deposit information"
-                >
-                  i
-                </button>
-                {showDepositTooltip && depositButtonRef.current && (
-                  <div className="fixed z-50 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs pointer-events-none"
-                    style={{
-                      backgroundColor: accentColor,
-                      top: tooltipPosition.top + 'px',
-                      left: tooltipPosition.left + 'px',
-                      width: '150px',
-                      textAlign: 'center',
-                    }}>
-                    This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
-                  </div>
-                )}
-              </>
             )}
           </div>
           {showLowStock && product.inventory !== undefined && (
