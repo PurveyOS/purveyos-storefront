@@ -286,6 +286,7 @@ export function useStorefrontData(tenantId: string): {
           
           console.log('🔍 Processing product:', p.id, p.name);
           console.log('   Has subscription data?', !!subscription);
+          console.log('   is_deposit_product from DB:', p.is_deposit_product);
           if (subscription) {
             console.log('   ✅ Subscription data:', JSON.stringify(subscription, null, 2));
           }
