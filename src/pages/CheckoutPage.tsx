@@ -86,7 +86,11 @@ export function CheckoutPage() {
   // Load discounts from tenant
   useEffect(() => {
     async function loadDiscounts() {
-      if (!tenant?.id) return;
+      console.log('[Discount] Loading discounts for tenant:', tenant?.id);
+      if (!tenant?.id) {
+        console.log('[Discount] No tenant ID, skipping discount load');
+        return;
+      }
       setDiscountsLoading(true);
       try {
         const { data, error } = await supabase
@@ -95,8 +99,12 @@ export function CheckoutPage() {
           .eq('tenant_id', tenant.id)
           .eq('is_active', true);
         
+        console.log('[Discount] Supabase query result:', { data, error });
         if (!error && data) {
+          console.log('[Discount] Setting discounts:', data);
           setDiscounts(data as Discount[]);
+        } else if (error) {
+          console.error('[Discount] Supabase error:', error);
         }
       } catch (e) {
         console.error('Failed to load discounts:', e);
