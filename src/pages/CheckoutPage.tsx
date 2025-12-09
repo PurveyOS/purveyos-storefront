@@ -354,10 +354,15 @@ const result = await createOrder(
 
     try {
       // Find discount by coupon code or name
-      const discount = discounts.find(d => 
-        d.coupon_code?.toUpperCase() === code.toUpperCase() ||
-        d.name?.toUpperCase() === code.toUpperCase()
-      );
+      const discount = discounts.find(d => {
+        const normalizedCode = code.toUpperCase();
+        // Check coupon_code if it's not empty
+        if (d.coupon_code && d.coupon_code.trim()) {
+          return d.coupon_code.toUpperCase() === normalizedCode;
+        }
+        // Otherwise check name
+        return d.name?.toUpperCase() === normalizedCode;
+      });
 
       if (!discount) {
         setCouponError('Invalid coupon code');
