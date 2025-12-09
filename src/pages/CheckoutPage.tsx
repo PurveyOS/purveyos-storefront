@@ -250,6 +250,13 @@ export function CheckoutPage() {
       // Save form data to localStorage for order creation after payment
       localStorage.setItem('checkout-form-data', JSON.stringify(formData));
       
+      console.log('💰 Creating Stripe checkout with discount:', {
+        discountCents,
+        discountCode: appliedDiscount?.code,
+        appliedDiscount,
+        cartTotal: cart.total,
+      });
+      
       // Call Supabase function to create Stripe checkout session
       const { data, error } = await supabase!.functions.invoke('create-storefront-checkout', {
         body: {
