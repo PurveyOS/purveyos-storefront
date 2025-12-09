@@ -255,6 +255,8 @@ export function CheckoutPage() {
         discountCode: appliedDiscount?.code,
         appliedDiscount,
         cartTotal: cart.total,
+        lineItemsTotal: lineItems.reduce((sum, item) => sum + (item.price_data.unit_amount * item.quantity), 0) / 100,
+        expectedTotal: cart.total - (discountCents / 100),
       });
       
       // Call Supabase function to create Stripe checkout session
