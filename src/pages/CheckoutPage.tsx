@@ -7,6 +7,15 @@ import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { supabase } from '../lib/supabase';
 
+interface Discount {
+  id: string;
+  name: string;
+  coupon_code?: string;
+  is_percentage: boolean;
+  discount_amount: number;
+  is_active: boolean;
+}
+
 export function CheckoutPage() {
   
   const navigate = useNavigate();
@@ -63,9 +72,40 @@ export function CheckoutPage() {
     loadCustomerInfo();
   }, []);
 
-  
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderId, setOrderId] = useState<string>();
+  
+  // Discount state
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [discountsLoading, setDiscountsLoading] = useState(true);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponError, setCouponError] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number; percent: number } | null>(null);
+  const [discountCents, setDiscountCents] = useState(0);
+
+  // Load discounts from tenant
+  useEffect(() => {
+    async function loadDiscounts() {
+      if (!tenant?.id) return;
+      setDiscountsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('tenant_discounts')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .eq('is_active', true);
+        
+        if (!error && data) {
+          setDiscounts(data as Discount[]);
+        }
+      } catch (e) {
+        console.error('Failed to load discounts:', e);
+      } finally {
+        setDiscountsLoading(false);
+      }
+    }
+    loadDiscounts();
+  }, [tenant?.id]);
 
   // Update cart totals when products load
   useEffect(() => {
@@ -250,7 +290,7 @@ export function CheckoutPage() {
       return;
     }
 
-    const orderValue = cart.total;
+    const orderValue = cart.total - (discountCents / 100);
 
     // Handle Stripe checkout for card payments
     if (formData.paymentMethod === 'card') {
@@ -285,6 +325,7 @@ const result = await createOrder(
   {
     ...formData,
     subscription: subscriptionPayload,
+    discountCents,
   },
   {
     taxRate: tenant?.tax_rate ?? 0,
@@ -303,6 +344,57 @@ const result = await createOrder(
     } else {
       alert(result.error || 'Failed to create order. Please try again.');
     }
+  };
+
+  const handleApplyCoupon = async (code: string) => {
+    if (!code.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+
+    try {
+      // Find discount by coupon code or name
+      const discount = discounts.find(d => 
+        d.coupon_code?.toUpperCase() === code.toUpperCase() ||
+        d.name?.toUpperCase() === code.toUpperCase()
+      );
+
+      if (!discount) {
+        setCouponError('Invalid coupon code');
+        setAppliedDiscount(null);
+        setDiscountCents(0);
+        return;
+      }
+
+      // Calculate discount amount
+      let discountAmount = 0;
+      if (discount.is_percentage) {
+        discountAmount = (cartTotal * discount.discount_amount) / 100;
+      } else {
+        discountAmount = discount.discount_amount;
+      }
+
+      const newDiscountCents = Math.round(discountAmount * 100);
+      setDiscountCents(newDiscountCents);
+      setAppliedDiscount({
+        code: code.toUpperCase(),
+        amount: discountAmount,
+        percent: discount.is_percentage ? discount.discount_amount : 0,
+      });
+      setCouponCode('');
+      setCouponError('');
+    } catch (err) {
+      setCouponError('Failed to apply coupon');
+      setAppliedDiscount(null);
+      setDiscountCents(0);
+    }
+  };
+
+  const handleClearCoupon = () => {
+    setAppliedDiscount(null);
+    setCouponCode('');
+    setCouponError('');
+    setDiscountCents(0);
   };
 
   const primaryColor = storefrontData?.settings.primaryColor || '#0f6fff';
@@ -679,11 +771,71 @@ const result = await createOrder(
                     );
                   })}
                   
+                  {/* Discount Section */}
+                  <div className="border-t pt-4 space-y-3">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Discount Code
+                      </label>
+                      {appliedDiscount ? (
+                        <div className="flex gap-2">
+                          <div className="flex-1 bg-green-50 border border-green-200 rounded-lg p-3">
+                            <p className="text-sm text-green-700">
+                              ✓ {appliedDiscount.code} applied: {appliedDiscount.percent > 0 ? `${appliedDiscount.percent}% off` : `$${appliedDiscount.amount.toFixed(2)} off`}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleClearCoupon}
+                            className="px-3 py-2 text-red-600 hover:text-red-700 font-medium border border-red-300 rounded-lg hover:bg-red-50 transition"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Enter coupon code"
+                            value={couponCode}
+                            onChange={(e) => {
+                              setCouponCode(e.target.value.toUpperCase());
+                              setCouponError('');
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleApplyCoupon(couponCode);
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 transition"
+                            style={{ '--tw-ring-color': primaryColor } as any}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleApplyCoupon(couponCode)}
+                            disabled={!couponCode.trim() || discountsLoading}
+                            className="px-4 py-2 text-white rounded-lg font-medium transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{ backgroundColor: primaryColor }}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      )}
+                      {couponError && (
+                        <p className="text-sm text-red-600">{couponError}</p>
+                      )}
+                    </div>
+                  </div>
+                  
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between text-gray-600">
                       <span>Subtotal:</span>
                       <span>${cartTotal.toFixed(2)}</span>
                     </div>
+                    {discountCents > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Discount:</span>
+                        <span className="text-red-600">-${(discountCents / 100).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-gray-600">
   <span>Tax:</span>
   <span>
@@ -698,11 +850,20 @@ const result = await createOrder(
 <div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
   <span>Total:</span>
   <span>
-    {tenant?.charge_tax_on_online === false
-      ? `$${cartTotal.toFixed(2)}`
-      : tenant?.tax_included
-      ? `$${cartTotal.toFixed(2)}`
-      : `$${(cartTotal * (1 + (tenant?.tax_rate ?? 0))).toFixed(2)}`}
+    {(() => {
+      const subtotal = cartTotal - (discountCents / 100);
+      const tax = tenant?.charge_tax_on_online === false
+        ? 0
+        : tenant?.tax_included
+        ? 0
+        : subtotal * (tenant?.tax_rate ?? 0);
+      const total = tenant?.charge_tax_on_online === false
+        ? subtotal
+        : tenant?.tax_included
+        ? subtotal
+        : subtotal + tax;
+      return `$${total.toFixed(2)}`;
+    })()}
   </span>
 </div>
 

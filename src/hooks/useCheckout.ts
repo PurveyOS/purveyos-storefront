@@ -26,6 +26,7 @@ export interface CheckoutData {
   paymentDetails?: string; // Card token or payment confirmation
   deliveryNotes?: string;
   subscription?: SubscriptionRequest;
+  discountCents?: number;
 }
 
 export interface CheckoutResult {
@@ -48,12 +49,16 @@ interface TotalsResult {
 
 function calculateTotalsFromCents(
   lineTotalsCents: number[],
-  taxConfig?: TenantTaxConfig
+  taxConfig?: TenantTaxConfig,
+  discountCents: number = 0
 ): TotalsResult {
-  const subtotalCents = lineTotalsCents.reduce(
+  const grossSubtotalCents = lineTotalsCents.reduce(
     (sum, cents) => sum + (cents || 0),
     0
   );
+  
+  // Apply discount to subtotal
+  const subtotalCents = Math.max(0, grossSubtotalCents - discountCents);
 
   const rate = taxConfig?.taxRate ?? 0;
   const chargeTax =
@@ -204,9 +209,11 @@ export function useCheckout() {
       });
 
       // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
+      const discountCents = checkoutData.discountCents || 0;
       const totals = calculateTotalsFromCents(
         lines.map((line) => line.lineTotalCents),
-        taxConfig
+        taxConfig,
+        discountCents
       );
 
       const subtotalCents = totals.subtotalCents;
@@ -232,6 +239,7 @@ export function useCheckout() {
             subtotalCents,
             taxCents,
             totalCents,
+            discountCents,
 
             // Optional subscription payload (for storefront_subscriptions)
             subscription: checkoutData.subscription,

@@ -32,6 +32,7 @@ interface OrderRequest {
   subtotalCents: number
   taxCents: number
   totalCents: number
+  discountCents?: number
   subscription?: {
     enabled: boolean
     cadence?: 'weekly' | 'biweekly' | 'monthly'
@@ -124,6 +125,7 @@ serve(async (req) => {
         subtotal_cents: orderRequest.subtotalCents,
         tax_cents: orderRequest.taxCents,
         total_cents: orderRequest.totalCents,
+        discount_cents: orderRequest.discountCents ?? 0,
         source: 'storefront',
         status: 'pending',
         created_at: new Date().toISOString(),
@@ -138,6 +140,40 @@ serve(async (req) => {
     }
 
     console.log('Order created:', order)
+
+    // Log discount usage if discount was applied
+    if (orderRequest.discountCents && orderRequest.discountCents > 0) {
+      console.log('📝 Creating discount_usage_log entry for order:', { orderId, discountCents: orderRequest.discountCents })
+      
+      // Find discount by matching the discount amount (heuristic - may need refinement)
+      const { data: discounts } = await supabaseAdmin
+        .from('tenant_discounts')
+        .select('id')
+        .eq('tenant_id', orderRequest.tenantId)
+        .eq('is_active', true)
+        .limit(1)
+      
+      const discountId = discounts?.[0]?.id || 'unknown-discount'
+      
+      const { error: usageError } = await supabaseAdmin
+        .from('discount_usage_log')
+        .insert({
+          id: crypto.randomUUID(),
+          discount_id: discountId,
+          tenant_id: orderRequest.tenantId,
+          order_id: orderId,
+          customer_id: userId || null,
+          discount_amount_applied: orderRequest.discountCents,
+          created_at: new Date().toISOString(),
+        })
+      
+      if (usageError) {
+        console.warn('Error logging discount usage (non-blocking):', usageError)
+        // Don't throw - discount logging is not critical to order creation
+      } else {
+        console.log('✓ Discount usage logged for order:', orderId)
+      }
+    }
 
     // 2. Create order lines and decrement inventory
     for (const line of orderRequest.lines) {
