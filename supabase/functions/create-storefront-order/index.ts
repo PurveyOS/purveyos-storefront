@@ -134,6 +134,13 @@ serve(async (req) => {
       .select()
       .single()
 
+    console.log('💳 [Edge] Order created with discount_cents:', orderRequest.discountCents ?? 0, 'Full order object:', {
+      subtotal_cents: orderRequest.subtotalCents,
+      discount_cents: orderRequest.discountCents ?? 0,
+      tax_cents: orderRequest.taxCents,
+      total_cents: orderRequest.totalCents,
+    });
+
     if (orderError) {
       console.error('Error creating order:', orderError)
       throw orderError

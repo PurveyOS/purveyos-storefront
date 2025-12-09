@@ -210,6 +210,8 @@ export function useCheckout() {
 
       // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
       const discountCents = checkoutData.discountCents || 0;
+      console.log('🛍️ [useCheckout] Processing order with discountCents:', discountCents);
+      
       const totals = calculateTotalsFromCents(
         lines.map((line) => line.lineTotalCents),
         taxConfig,
@@ -219,6 +221,13 @@ export function useCheckout() {
       const subtotalCents = totals.subtotalCents;
       const taxCents = totals.taxCents;
       const totalCents = totals.totalCents;
+
+      console.log('💰 [useCheckout] Calling edge function with totals:', {
+        subtotalCents,
+        taxCents,
+        totalCents,
+        discountCents,
+      });
 
       // 3) Call Edge Function to create order securely (bypasses RLS)
       const { data, error: functionError } = await supabase.functions.invoke(

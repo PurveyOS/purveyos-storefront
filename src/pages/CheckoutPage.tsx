@@ -263,6 +263,7 @@ export function CheckoutPage() {
             delivery_method: formData.deliveryMethod,
             delivery_address: formData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
+          discount_cents: discountCents,
           },
         },
       });
@@ -344,6 +345,14 @@ export function CheckoutPage() {
     } else {
       console.log('⚠️ No subscription item found in cart');
     }
+
+    console.log('📋 [Order] About to create order with:', {
+      tenantId: tenant.id,
+      discountCents,
+      appliedDiscount: appliedDiscount,
+      cartTotal: cart.total,
+      cartItems: cart.items.length,
+    });
 
 const result = await createOrder(
   tenant.id,
