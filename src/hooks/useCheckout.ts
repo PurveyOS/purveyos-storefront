@@ -52,13 +52,11 @@ function calculateTotalsFromCents(
   taxConfig?: TenantTaxConfig,
   discountCents: number = 0
 ): TotalsResult {
-  const grossSubtotalCents = lineTotalsCents.reduce(
+  // Subtotal is always the sum of line items BEFORE discount
+  const subtotalCents = lineTotalsCents.reduce(
     (sum, cents) => sum + (cents || 0),
     0
   );
-  
-  // Apply discount to subtotal
-  const subtotalCents = Math.max(0, grossSubtotalCents - discountCents);
 
   const rate = taxConfig?.taxRate ?? 0;
   const chargeTax =
@@ -67,10 +65,11 @@ function calculateTotalsFromCents(
       : true;
 
   if (!chargeTax || rate <= 0) {
+    // No tax: total = subtotal - discount
     return {
       subtotalCents,
       taxCents: 0,
-      totalCents: subtotalCents,
+      totalCents: Math.max(0, subtotalCents - discountCents),
     };
   }
 
@@ -85,15 +84,16 @@ function calculateTotalsFromCents(
     return {
       subtotalCents: net,
       taxCents,
-      totalCents: gross,
+      totalCents: Math.max(0, gross - discountCents),
     };
   } else {
-    // Prices are before tax: add tax on top.
-    const taxCents = Math.round(subtotalCents * rate);
+    // Prices are before tax: calculate tax on (subtotal - discount), then add to subtotal
+    const subtotalAfterDiscount = Math.max(0, subtotalCents - discountCents);
+    const taxCents = Math.round(subtotalAfterDiscount * rate);
     return {
       subtotalCents,
       taxCents,
-      totalCents: subtotalCents + taxCents,
+      totalCents: subtotalAfterDiscount + taxCents,
     };
   }
 }
