@@ -354,15 +354,22 @@ const result = await createOrder(
 
     try {
       // Find discount by coupon code or name
+      console.log('[Discount] Searching for code:', code, 'in discounts:', discounts);
       const discount = discounts.find(d => {
         const normalizedCode = code.toUpperCase();
+        console.log('[Discount] Checking discount:', d.name, 'coupon_code:', d.coupon_code, 'is_active:', d.is_active);
         // Check coupon_code if it's not empty
         if (d.coupon_code && d.coupon_code.trim()) {
-          return d.coupon_code.toUpperCase() === normalizedCode;
+          const matches = d.coupon_code.toUpperCase() === normalizedCode;
+          console.log('[Discount] Checking coupon_code:', d.coupon_code, 'vs', normalizedCode, '=', matches);
+          return matches;
         }
         // Otherwise check name
-        return d.name?.toUpperCase() === normalizedCode;
+        const matches = d.name?.toUpperCase() === normalizedCode;
+        console.log('[Discount] Checking name:', d.name, 'vs', normalizedCode, '=', matches);
+        return matches;
       });
+      console.log('[Discount] Found discount:', discount);
 
       if (!discount) {
         setCouponError('Invalid coupon code');
