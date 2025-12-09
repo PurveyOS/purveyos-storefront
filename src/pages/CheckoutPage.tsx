@@ -86,28 +86,47 @@ export function CheckoutPage() {
   // Load discounts from tenant
   useEffect(() => {
     async function loadDiscounts() {
+      console.log('[Discount] Component mounted, tenant:', tenant);
       console.log('[Discount] Loading discounts for tenant:', tenant?.id);
       if (!tenant?.id) {
         console.log('[Discount] No tenant ID, skipping discount load');
+        setDiscountsLoading(false);
         return;
       }
       setDiscountsLoading(true);
       try {
+        // Ensure we have a session before querying
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('[Discount] Session:', session ? 'authenticated' : 'anonymous');
+        
+        console.log('[Discount] Fetching from Supabase with RLS bypass attempt...');
+        // Try querying directly without RLS first to see if data exists
         const { data, error } = await supabase
           .from('tenant_discounts')
           .select('*')
           .eq('tenant_id', tenant.id)
           .eq('is_active', true);
         
-        console.log('[Discount] Supabase query result:', { data, error });
-        if (!error && data) {
+        console.log('[Discount] Supabase query result:', { data, error, tenantId: tenant.id, dataLength: data?.length });
+        
+        if (error) {
+          console.error('[Discount] Supabase error:', error);
+          // Try alternative: query all active discounts without tenant filter (for debugging)
+          console.log('[Discount] Trying alternative query without tenant filter...');
+          const { data: allData, error: allError } = await supabase
+            .from('tenant_discounts')
+            .select('*')
+            .eq('is_active', true);
+          console.log('[Discount] Alternative query result:', { allData, allError });
+        } else if (data && data.length > 0) {
           console.log('[Discount] Setting discounts:', data);
           setDiscounts(data as Discount[]);
-        } else if (error) {
-          console.error('[Discount] Supabase error:', error);
+        } else {
+          console.log('[Discount] Query returned empty array');
+          setDiscounts([]);
         }
       } catch (e) {
-        console.error('Failed to load discounts:', e);
+        console.error('[Discount] Exception:', e);
       } finally {
         setDiscountsLoading(false);
       }
