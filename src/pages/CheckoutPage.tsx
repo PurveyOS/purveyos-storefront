@@ -225,30 +225,13 @@ export function CheckoutPage() {
         };
       });
 
-      // Add discount as a negative line item if applied
-      if (discountCents > 0) {
-        lineItems.push({
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: `Discount${appliedDiscount?.code ? ` (${appliedDiscount.code})` : ''}`,
-              description: undefined,
-            },
-            unit_amount: -discountCents, // Negative amount for discount
-          },
-          quantity: 1,
-        });
-      }
-
-      // Calculate tax if applicable (after discount)
+      // Calculate tax if applicable
       const taxRate = tenant?.tax_rate ?? 0;
       const chargeTax = tenant?.charge_tax_on_online !== false;
       const taxIncluded = tenant?.tax_included ?? false;
       
       if (chargeTax && !taxIncluded && taxRate > 0) {
-        // Calculate tax on subtotal after discount
-        const subtotalAfterDiscount = cart.total - (discountCents / 100);
-        const taxAmount = Math.round(subtotalAfterDiscount * 100 * taxRate);
+        const taxAmount = Math.round(cart.total * 100 * taxRate);
         lineItems.push({
           price_data: {
             currency: 'usd',
