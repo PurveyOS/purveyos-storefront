@@ -231,7 +231,9 @@ export function CheckoutPage() {
       const taxIncluded = tenant?.tax_included ?? false;
       
       if (chargeTax && !taxIncluded && taxRate > 0) {
-        const taxAmount = Math.round(cart.total * 100 * taxRate);
+        // Calculate tax on subtotal minus discount
+        const subtotalAfterDiscount = cart.total - (discountCents / 100);
+        const taxAmount = Math.round(subtotalAfterDiscount * 100 * taxRate);
         lineItems.push({
           price_data: {
             currency: 'usd',
@@ -257,13 +259,16 @@ export function CheckoutPage() {
           customerEmail: formData.customerEmail,
           successUrl: `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
           cancelUrl: `${window.location.origin}/checkout/cancel`,
+          discountCents, // Pass discount to edge function
+          discountCode: appliedDiscount?.code || null, // Pass discount code for display
           metadata: {
             customer_name: formData.customerName,
             customer_phone: formData.customerPhone,
             delivery_method: formData.deliveryMethod,
             delivery_address: formData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
-          discount_cents: discountCents,
+            discount_cents: discountCents,
+            discount_code: appliedDiscount?.code || '',
           },
         },
       });
