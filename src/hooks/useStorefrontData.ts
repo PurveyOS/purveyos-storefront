@@ -245,6 +245,14 @@ export function useStorefrontData(tenantId: string): {
           allow_shipping: settingsResult.data.allow_shipping ?? true,
           allow_dropoff: settingsResult.data.allow_dropoff ?? false,
           allow_other: settingsResult.data.allow_other ?? false,
+          enable_card: settingsResult.data.enable_card
+            ?? settingsResult.data.allow_card
+            ?? settingsResult.data.accept_card
+            ?? false,
+          allow_card: settingsResult.data.allow_card
+            ?? settingsResult.data.enable_card
+            ?? settingsResult.data.accept_card
+            ?? false,
           shipping_charge_cents: settingsResult.data.shipping_charge_cents ?? 0,
           pickup_locations: Array.isArray(settingsResult.data.pickup_locations)
             ? settingsResult.data.pickup_locations
