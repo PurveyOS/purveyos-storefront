@@ -132,6 +132,7 @@ serve(async (req) => {
         note: note || null,
         subtotal_cents: orderRequest.subtotalCents,
         tax_cents: orderRequest.taxCents,
+        shipping_cents: orderRequest.shippingChargeCents ?? 0,
         total_cents: orderRequest.totalCents,
         discount_cents: orderRequest.discountCents ?? 0,
         source: 'storefront',
