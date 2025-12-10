@@ -307,6 +307,7 @@ export function CheckoutPage() {
             delivery_method: formData.deliveryMethod,
             delivery_address: formData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
+            fulfillment_location: formData.fulfillmentLocation || '',
             discount_cents: discountCents,
             discount_code: appliedDiscount?.code || '',
           },
