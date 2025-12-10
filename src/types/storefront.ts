@@ -21,6 +21,14 @@ export interface StorefrontSettings {
     ctaText?: string;
     ctaLink?: string;
   }>;
+  // Fulfillment controls
+  allow_pickup?: boolean;
+  allow_shipping?: boolean;
+  allow_dropoff?: boolean;
+  allow_other?: boolean;
+  shipping_charge_cents?: number;
+  pickup_locations?: Array<{ name: string; address: string }>;
+  dropoff_locations?: Array<{ name: string; address: string }>;
 }
 
 export interface CartItem {

@@ -16,6 +16,13 @@ const MOCK_SETTINGS = {
   farmDescription: "Premium quality meats from our family farm to your table.",
   contactEmail: "hello@demofarm.com",
   contactPhone: "(555) 123-4567",
+  allow_pickup: true,
+  allow_shipping: true,
+  allow_dropoff: false,
+  allow_other: false,
+  shipping_charge_cents: 0,
+  pickup_locations: [],
+  dropoff_locations: [],
 };
 
 const MOCK_CATEGORIES: Category[] = [
@@ -234,6 +241,17 @@ export function useStorefrontData(tenantId: string): {
           contactEmail: settingsResult.data.contact_email,
           contactPhone: settingsResult.data.contact_phone,
           darkMode: settingsResult.data.enable_dark_mode || false,
+          allow_pickup: settingsResult.data.allow_pickup ?? false,
+          allow_shipping: settingsResult.data.allow_shipping ?? true,
+          allow_dropoff: settingsResult.data.allow_dropoff ?? false,
+          allow_other: settingsResult.data.allow_other ?? false,
+          shipping_charge_cents: settingsResult.data.shipping_charge_cents ?? 0,
+          pickup_locations: Array.isArray(settingsResult.data.pickup_locations)
+            ? settingsResult.data.pickup_locations
+            : [],
+          dropoff_locations: Array.isArray(settingsResult.data.dropoff_locations)
+            ? settingsResult.data.dropoff_locations
+            : [],
           featureSections: Array.isArray(settingsResult.data.feature_sections)
             ? settingsResult.data.feature_sections.map((s: any) => ({
                 imageUrl: s.image_url,
