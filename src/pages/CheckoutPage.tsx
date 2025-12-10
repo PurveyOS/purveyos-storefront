@@ -24,6 +24,13 @@ export function CheckoutPage() {
   const { cart, clearCart, updateCartTotal } = usePersistedCart();
   const { createOrder, loading: checkoutLoading, error: checkoutError } = useCheckout();
 
+  type ShippingAddress = {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+
   const [formData, setFormData] = useState<CheckoutData>({
     customerName: '',
     customerEmail: '',
@@ -32,6 +39,13 @@ export function CheckoutPage() {
     paymentMethod: 'card' as const,
     deliveryAddress: '',
     deliveryNotes: '',
+  });
+
+  const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
+    street: '',
+    city: '',
+    state: '',
+    zip: '',
   });
 
   // Load customer info if logged in
@@ -156,12 +170,30 @@ export function CheckoutPage() {
     }
   }, [cart.items.length, dataLoading, orderSuccess, navigate]);
 
+  const formatShippingAddress = (address: ShippingAddress) => {
+    return [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
+  };
+
   const handleInputChange = (field: keyof CheckoutData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleShippingAddressChange = (field: keyof ShippingAddress, value: string) => {
+    setShippingAddress(prev => {
+      const updated = { ...prev, [field]: value };
+      if (formData.deliveryMethod === 'shipping') {
+        setFormData(current => ({ ...current, deliveryAddress: formatShippingAddress(updated) }));
+      }
+      return updated;
+    });
+  };
+
   const handleStripeCheckout = async () => {
     if (!tenant || !storefrontData?.products) return;
+    if (!cardPaymentAvailable) {
+      alert('Card payments are not available for this store.');
+      return;
+    }
 
     try {
       // Prepare line items for Stripe
@@ -279,7 +311,10 @@ export function CheckoutPage() {
       }
 
       // Save form data to localStorage for order creation after payment
-      localStorage.setItem('checkout-form-data', JSON.stringify(formData));
+      const checkoutFormData = formData.deliveryMethod === 'shipping'
+        ? { ...formData, deliveryAddress: formatShippingAddress(shippingAddress) }
+        : formData;
+      localStorage.setItem('checkout-form-data', JSON.stringify(checkoutFormData));
       
       console.log('💰 Creating Stripe checkout with discount:', {
         discountCents,
@@ -305,11 +340,12 @@ export function CheckoutPage() {
             customer_name: formData.customerName,
             customer_phone: formData.customerPhone,
             delivery_method: formData.deliveryMethod,
-            delivery_address: formData.deliveryAddress || '',
+            delivery_address: checkoutFormData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
             fulfillment_location: formData.fulfillmentLocation || '',
             discount_cents: discountCents,
             discount_code: appliedDiscount?.code || '',
+            shipping_cents: shippingChargeCents,
           },
         },
       });
@@ -364,10 +400,26 @@ export function CheckoutPage() {
       return;
     }
 
+    if (formData.deliveryMethod === 'shipping') {
+      if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.zip) {
+        alert('Please provide street, city, state, and ZIP for shipping.');
+        return;
+      }
+      const formattedAddress = formatShippingAddress(shippingAddress);
+      if (!formattedAddress) {
+        alert('Please provide a full shipping address.');
+        return;
+      }
+    }
+
     const orderValue = cart.total - (discountCents / 100);
 
     // Handle Stripe checkout for card payments
     if (formData.paymentMethod === 'card') {
+      if (!cardPaymentAvailable) {
+        alert('Card payments are not available for this store. Please choose another method.');
+        return;
+      }
       await handleStripeCheckout();
       return;
     }
@@ -396,6 +448,10 @@ export function CheckoutPage() {
       ? ((storefrontData?.settings as any)?.shipping_charge_cents || 0)
       : 0;
 
+    const deliveryAddress = formData.deliveryMethod === 'shipping'
+      ? formatShippingAddress(shippingAddress)
+      : formData.deliveryAddress;
+
     console.log('📋 [Order] About to create order with:', {
       tenantId: tenant.id,
       discountCents,
@@ -411,6 +467,7 @@ const result = await createOrder(
   storefrontData.products,
   {
     ...formData,
+    deliveryAddress,
     subscription: subscriptionPayload,
     discountCents,
     shippingChargeCents,
@@ -498,6 +555,13 @@ const result = await createOrder(
   };
 
   const primaryColor = storefrontData?.settings.primaryColor || '#0f6fff';
+  const cardPaymentAvailable = Boolean((storefrontData?.settings as any)?.enable_card && tenant?.stripe_account_id);
+
+  useEffect(() => {
+    if (!cardPaymentAvailable && formData.paymentMethod === 'card') {
+      setFormData(prev => ({ ...prev, paymentMethod: 'cash' }));
+    }
+  }, [cardPaymentAvailable, formData.paymentMethod]);
 
   if (dataLoading) {
     return (
@@ -814,16 +878,48 @@ const result = await createOrder(
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Shipping Address *
                     </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.deliveryAddress || ''}
-                      onChange={(e) => handleInputChange('deliveryAddress', e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      placeholder="Full shipping address"
-                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input
+                        type="text"
+                        required
+                        value={shippingAddress.street}
+                        onChange={(e) => handleShippingAddressChange('street', e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                        placeholder="Street address"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={shippingAddress.city}
+                        onChange={(e) => handleShippingAddressChange('city', e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                        placeholder="City"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={shippingAddress.state}
+                        onChange={(e) => handleShippingAddressChange('state', e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                        placeholder="State"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={shippingAddress.zip}
+                        onChange={(e) => handleShippingAddressChange('zip', e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                        placeholder="ZIP / Postal code"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -852,25 +948,27 @@ const result = await createOrder(
                     </div>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('paymentMethod', 'card')}
-                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                      formData.paymentMethod === 'card'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.paymentMethod === 'card' ? {
-                      borderColor: primaryColor,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">💳</div>
-                      <div className="font-medium text-gray-800">Credit Card</div>
-                      <div className="text-xs text-gray-500 mt-1">Pay now</div>
-                    </div>
-                  </button>
+                  {cardPaymentAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange('paymentMethod', 'card')}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        formData.paymentMethod === 'card'
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.paymentMethod === 'card' ? {
+                        borderColor: primaryColor,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="text-2xl mb-2">💳</div>
+                        <div className="font-medium text-gray-800">Credit Card</div>
+                        <div className="text-xs text-gray-500 mt-1">Pay now</div>
+                      </div>
+                    </button>
+                  )}
 
                   <button
                     type="button"

@@ -8,6 +8,7 @@ export interface Tenant {
   name: string;
   subscription_tier: string | null;
   storefront_enabled: boolean;
+  stripe_account_id?: string | null;
 
   // Tax-related settings (optional so existing rows don't break)
   tax_rate?: number | null;               // e.g. 0.0825 for 8.25%
@@ -88,7 +89,7 @@ export function useTenantFromDomain(): UseTenantResult {
         const { data, error: supaError } = await client
           .from("tenants")
           .select(
-            "id, slug, name, subscription_tier, storefront_enabled, tax_rate, tax_included, charge_tax_on_online"
+            "id, slug, name, subscription_tier, storefront_enabled, tax_rate, tax_included, charge_tax_on_online, stripe_account_id"
           )
           .eq("slug", slug)
           .single();
