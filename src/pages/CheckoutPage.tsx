@@ -555,7 +555,10 @@ const result = await createOrder(
   };
 
   const primaryColor = storefrontData?.settings.primaryColor || '#0f6fff';
-  const cardPaymentAvailable = Boolean((storefrontData?.settings as any)?.enable_card && tenant?.stripe_account_id);
+  const cardPaymentAvailable = Boolean(
+    tenant?.stripe_account_id &&
+    (((storefrontData?.settings as any)?.enable_card ?? (storefrontData?.settings as any)?.allow_card ?? false))
+  );
 
   useEffect(() => {
     if (!cardPaymentAvailable && formData.paymentMethod === 'card') {
