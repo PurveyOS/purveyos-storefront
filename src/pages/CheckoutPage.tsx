@@ -225,14 +225,39 @@ export function CheckoutPage() {
         };
       });
 
+      // Add shipping charge if applicable
+      const shippingChargeCents = formData.deliveryMethod === 'shipping' 
+        ? ((storefrontData?.settings as any)?.shipping_charge_cents || 0)
+        : 0;
+      
+      if (shippingChargeCents > 0) {
+        lineItems.push({
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: 'Shipping',
+              description: undefined,
+              metadata: {
+                product_id: 'shipping',
+                binWeight: undefined,
+                weight: undefined,
+                unit: 'ea',
+              },
+            },
+            unit_amount: shippingChargeCents,
+          },
+          quantity: 1,
+        });
+      }
+
       // Calculate tax if applicable
       const taxRate = tenant?.tax_rate ?? 0;
       const chargeTax = tenant?.charge_tax_on_online !== false;
       const taxIncluded = tenant?.tax_included ?? false;
       
       if (chargeTax && !taxIncluded && taxRate > 0) {
-        // Calculate tax on subtotal minus discount
-        const subtotalAfterDiscount = cart.total - (discountCents / 100);
+        // Calculate tax on subtotal minus discount (including shipping in taxable base)
+        const subtotalAfterDiscount = cart.total + (shippingChargeCents / 100) - (discountCents / 100);
         const taxAmount = Math.round(subtotalAfterDiscount * 100 * taxRate);
         lineItems.push({
           price_data: {
