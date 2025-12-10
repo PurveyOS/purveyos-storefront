@@ -29,7 +29,7 @@ export function CheckoutPage() {
     customerEmail: '',
     customerPhone: '',
     deliveryMethod: 'pickup',
-    paymentMethod: '', // No default - force user to choose
+    paymentMethod: 'card' as const,
     deliveryAddress: '',
     deliveryNotes: '',
   });
@@ -240,6 +240,12 @@ export function CheckoutPage() {
             product_data: {
               name: 'Tax',
               description: undefined,
+              metadata: {
+                product_id: 'tax',
+                binWeight: undefined,
+                weight: undefined,
+                unit: 'ea',
+              },
             },
             unit_amount: taxAmount,
           },
@@ -360,9 +366,14 @@ export function CheckoutPage() {
       console.log('⚠️ No subscription item found in cart');
     }
 
+    const shippingChargeCents = formData.deliveryMethod === 'shipping' 
+      ? ((storefrontData?.settings as any)?.shipping_charge_cents || 0)
+      : 0;
+
     console.log('📋 [Order] About to create order with:', {
       tenantId: tenant.id,
       discountCents,
+      shippingChargeCents,
       appliedDiscount: appliedDiscount,
       cartTotal: cart.total,
       cartItems: cart.items.length,
@@ -376,6 +387,7 @@ const result = await createOrder(
     ...formData,
     subscription: subscriptionPayload,
     discountCents,
+    shippingChargeCents,
   },
   {
     taxRate: tenant?.tax_rate ?? 0,
@@ -607,66 +619,184 @@ const result = await createOrder(
                 </div>
               </div>
 
-              {/* Delivery Method */}
+              {/* Fulfillment Method */}
               <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6">Delivery Method</h2>
+                <h2 className="text-xl font-semibold text-gray-800 mb-6">Fulfillment Method</h2>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('deliveryMethod', 'pickup')}
-                    className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                      formData.deliveryMethod === 'pickup'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.deliveryMethod === 'pickup' ? {
-                      borderColor: primaryColor,
-                      backgroundColor: `${primaryColor}08`,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">📦</div>
-                      <div className="font-semibold text-gray-800">Pickup</div>
-                      <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>Free</div>
-                    </div>
-                  </button>
+                  {/* Show Pickup if enabled */}
+                  {(storefrontData?.settings as any)?.allow_pickup && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleInputChange('deliveryMethod', 'pickup');
+                        handleInputChange('fulfillmentLocation', '');
+                      }}
+                      className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                        formData.deliveryMethod === 'pickup'
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.deliveryMethod === 'pickup' ? {
+                        borderColor: primaryColor,
+                        backgroundColor: `${primaryColor}08`,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="text-3xl mb-2">📦</div>
+                        <div className="font-semibold text-gray-800">Pickup</div>
+                        <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>Free</div>
+                      </div>
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('deliveryMethod', 'delivery')}
-                    className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                      formData.deliveryMethod === 'delivery'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.deliveryMethod === 'delivery' ? {
-                      borderColor: primaryColor,
-                      backgroundColor: `${primaryColor}08`,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-3xl mb-2">🚚</div>
-                      <div className="font-semibold text-gray-800">Delivery</div>
-                      <div className="text-sm text-gray-500 mt-1">Local area</div>
-                    </div>
-                  </button>
+                  {/* Show Shipping if enabled */}
+                  {(storefrontData?.settings as any)?.allow_shipping && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleInputChange('deliveryMethod', 'shipping');
+                        handleInputChange('fulfillmentLocation', '');
+                      }}
+                      className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                        formData.deliveryMethod === 'shipping'
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.deliveryMethod === 'shipping' ? {
+                        borderColor: primaryColor,
+                        backgroundColor: `${primaryColor}08`,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="text-3xl mb-2">📮</div>
+                        <div className="font-semibold text-gray-800">Shipping</div>
+                        <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>
+                          ${(((storefrontData?.settings as any)?.shipping_charge_cents || 0) / 100).toFixed(2)}
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Show Dropoff if enabled */}
+                  {(storefrontData?.settings as any)?.allow_dropoff && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleInputChange('deliveryMethod', 'dropoff');
+                        handleInputChange('fulfillmentLocation', '');
+                      }}
+                      className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                        formData.deliveryMethod === 'dropoff'
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.deliveryMethod === 'dropoff' ? {
+                        borderColor: primaryColor,
+                        backgroundColor: `${primaryColor}08`,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="text-3xl mb-2">📍</div>
+                        <div className="font-semibold text-gray-800">Dropoff</div>
+                        <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>Free</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Show Other if enabled */}
+                  {(storefrontData?.settings as any)?.allow_other && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleInputChange('deliveryMethod', 'other');
+                        handleInputChange('fulfillmentLocation', '');
+                      }}
+                      className={`p-4 rounded-xl border-2 transition-all duration-200 ${
+                        formData.deliveryMethod === 'other'
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.deliveryMethod === 'other' ? {
+                        borderColor: primaryColor,
+                        backgroundColor: `${primaryColor}08`,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="text-3xl mb-2">🔄</div>
+                        <div className="font-semibold text-gray-800">Other</div>
+                        <div className="text-sm text-gray-500 mt-1">Arrange</div>
+                      </div>
+                    </button>
+                  )}
                 </div>
-                {formData.deliveryMethod === 'delivery' && (
-                  <div>
+
+                {/* Pickup Location Selector */}
+                {formData.deliveryMethod === 'pickup' && (storefrontData?.settings as any)?.pickup_locations?.length > 0 && (
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Delivery Address *
+                      Select Pickup Location *
+                    </label>
+                    <select
+                      required
+                      value={formData.fulfillmentLocation || ''}
+                      onChange={(e) => handleInputChange('fulfillmentLocation', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                    >
+                      <option value="">Choose a location...</option>
+                      {((storefrontData?.settings as any)?.pickup_locations || []).map((location: any, index: number) => (
+                        <option key={index} value={`${location.name} - ${location.address}`}>
+                          {location.name} - {location.address}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Dropoff Location Selector */}
+                {formData.deliveryMethod === 'dropoff' && (storefrontData?.settings as any)?.dropoff_locations?.length > 0 && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Dropoff Location *
+                    </label>
+                    <select
+                      required
+                      value={formData.fulfillmentLocation || ''}
+                      onChange={(e) => handleInputChange('fulfillmentLocation', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                    >
+                      <option value="">Choose a location...</option>
+                      {((storefrontData?.settings as any)?.dropoff_locations || []).map((location: any, index: number) => (
+                        <option key={index} value={`${location.name} - ${location.address}`}>
+                          {location.name} - {location.address}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Shipping Address Input */}
+                {formData.deliveryMethod === 'shipping' && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Shipping Address *
                     </label>
                     <input
                       type="text"
-                      required={formData.deliveryMethod === 'delivery'}
+                      required
                       value={formData.deliveryAddress || ''}
                       onChange={(e) => handleInputChange('deliveryAddress', e.target.value)}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
                       onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
                       onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      placeholder="Full delivery address"
+                      placeholder="Full shipping address"
                     />
                   </div>
                 )}
@@ -898,6 +1028,12 @@ const result = await createOrder(
                         <span className="text-red-600">-${(discountCents / 100).toFixed(2)}</span>
                       </div>
                     )}
+                    {formData.deliveryMethod === 'shipping' && (storefrontData?.settings as any)?.shipping_charge_cents > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Shipping:</span>
+                        <span>${(((storefrontData?.settings as any)?.shipping_charge_cents || 0) / 100).toFixed(2)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-gray-600">
   <span>Tax:</span>
   <span>
@@ -914,16 +1050,19 @@ const result = await createOrder(
   <span>
     {(() => {
       const subtotal = cartTotal - (discountCents / 100);
+      const shippingCharge = formData.deliveryMethod === 'shipping' 
+        ? (((storefrontData?.settings as any)?.shipping_charge_cents || 0) / 100)
+        : 0;
       const tax = tenant?.charge_tax_on_online === false
         ? 0
         : tenant?.tax_included
         ? 0
         : subtotal * (tenant?.tax_rate ?? 0);
       const total = tenant?.charge_tax_on_online === false
-        ? subtotal
+        ? subtotal + shippingCharge
         : tenant?.tax_included
-        ? subtotal
-        : subtotal + tax;
+        ? subtotal + shippingCharge
+        : subtotal + tax + shippingCharge;
       return `$${total.toFixed(2)}`;
     })()}
   </span>

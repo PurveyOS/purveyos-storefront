@@ -72,11 +72,14 @@ export type Database = {
           contact_email: string
           contact_phone: string
           allow_shipping: boolean
+          shipping_charge_cents: number
+          allow_pickup: boolean
           allow_farm_pickup: boolean
           allow_farmers_market_pickup: boolean
           allow_dropoff: boolean
           allow_other: boolean
           pickup_locations: Array<{name: string; address: string}>
+          dropoff_locations: Array<{name: string; address: string}>
           enable_card: boolean
           enable_venmo: boolean
           enable_zelle: boolean

@@ -20,13 +20,15 @@ export interface CheckoutData {
   customerName: string;
   customerEmail: string;
   customerPhone: string;
-  deliveryMethod: 'pickup' | 'delivery';
+  deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other';
   deliveryAddress?: string;
   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
   paymentDetails?: string; // Card token or payment confirmation
   deliveryNotes?: string;
+  fulfillmentLocation?: string; // Selected pickup or dropoff location
   subscription?: SubscriptionRequest;
   discountCents?: number;
+  shippingChargeCents?: number; // Shipping charge if applicable
 }
 
 export interface CheckoutResult {
@@ -210,7 +212,8 @@ export function useCheckout() {
 
       // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
       const discountCents = checkoutData.discountCents || 0;
-      console.log('🛍️ [useCheckout] Processing order with discountCents:', discountCents);
+      const shippingChargeCents = checkoutData.shippingChargeCents || 0;
+      console.log('🛍️ [useCheckout] Processing order with discountCents:', discountCents, 'shippingChargeCents:', shippingChargeCents);
       
       const totals = calculateTotalsFromCents(
         lines.map((line) => line.lineTotalCents),
@@ -220,13 +223,15 @@ export function useCheckout() {
 
       const subtotalCents = totals.subtotalCents;
       const taxCents = totals.taxCents;
-      const totalCents = totals.totalCents;
+      // Add shipping charge to the final total
+      const totalCents = totals.totalCents + shippingChargeCents;
 
       console.log('💰 [useCheckout] Calling edge function with totals:', {
         subtotalCents,
         taxCents,
         totalCents,
         discountCents,
+        shippingChargeCents,
       });
 
       // 3) Call Edge Function to create order securely (bypasses RLS)
@@ -242,6 +247,7 @@ export function useCheckout() {
             deliveryAddress: checkoutData.deliveryAddress,
             deliveryNotes: checkoutData.deliveryNotes,
             paymentMethod: checkoutData.paymentMethod,
+            fulfillmentLocation: checkoutData.fulfillmentLocation,
 
             // Canonical line structure
             lines,
@@ -249,6 +255,7 @@ export function useCheckout() {
             taxCents,
             totalCents,
             discountCents,
+            shippingChargeCents,
 
             // Optional subscription payload (for storefront_subscriptions)
             subscription: checkoutData.subscription,

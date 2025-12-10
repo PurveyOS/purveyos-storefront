@@ -24,15 +24,17 @@ interface OrderRequest {
   customerName: string
   customerEmail: string
   customerPhone: string
-  deliveryMethod: 'pickup' | 'delivery'
+  deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other'
   deliveryAddress?: string
   deliveryNotes?: string
+  fulfillmentLocation?: string
   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash'
   lines: OrderLine[]
   subtotalCents: number
   taxCents: number
   totalCents: number
   discountCents?: number
+  shippingChargeCents?: number
   subscription?: {
     enabled: boolean
     cadence?: 'weekly' | 'biweekly' | 'monthly'
@@ -99,10 +101,16 @@ serve(async (req) => {
     // Build note field with delivery/payment info
     const noteParts = []
     if (orderRequest.deliveryMethod) {
-      noteParts.push(`delivery: ${orderRequest.deliveryMethod}`)
+      noteParts.push(`fulfillment: ${orderRequest.deliveryMethod}`)
+    }
+    if (orderRequest.fulfillmentLocation) {
+      noteParts.push(`location: ${orderRequest.fulfillmentLocation}`)
     }
     if (orderRequest.deliveryAddress) {
       noteParts.push(`address: ${orderRequest.deliveryAddress}`)
+    }
+    if (orderRequest.shippingChargeCents && orderRequest.shippingChargeCents > 0) {
+      noteParts.push(`shipping charge: $${(orderRequest.shippingChargeCents / 100).toFixed(2)}`)
     }
     if (orderRequest.paymentMethod) {
       noteParts.push(`payment: ${orderRequest.paymentMethod}`)
