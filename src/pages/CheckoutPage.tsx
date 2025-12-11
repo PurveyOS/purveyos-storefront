@@ -191,30 +191,75 @@ export function CheckoutPage() {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id || null;
+      
+      if (user?.id) {
+        // Authenticated user - use their user ID
+        console.log('Saving customer profile for authenticated user:', { userId: user.id, email: formData.customerEmail, subscribed: subscribeToEmails });
 
-      // Generate a deterministic ID for guest customers (email + tenant hash)
-      // Use btoa (base64 encode) instead of Buffer for browser compatibility
-      const guestId = userId || `guest_${btoa(`${formData.customerEmail}_${tenant.id}`).replace(/[+/=]/g, '')}`;
+        const { data, error } = await supabase
+          .from('customer_profiles')
+          .upsert({
+            id: user.id,
+            tenant_id: tenant.id,
+            full_name: formData.customerName,
+            phone: formData.customerPhone || null,
+            email: formData.customerEmail,
+            subscribed_to_emails: subscribeToEmails,
+            updated_at: new Date().toISOString(),
+          });
 
-      console.log('Saving customer profile:', { guestId, tenantId: tenant.id, email: formData.customerEmail, subscribed: subscribeToEmails });
-
-      const { data, error } = await supabase
-        .from('customer_profiles')
-        .upsert({
-          id: guestId,
-          tenant_id: tenant.id,
-          full_name: formData.customerName,
-          phone: formData.customerPhone || null,
-          email: formData.customerEmail,
-          subscribed_to_emails: subscribeToEmails,
-          updated_at: new Date().toISOString(),
-        });
-
-      if (error) {
-        console.error('Error saving customer profile:', error);
+        if (error) {
+          console.error('Error saving customer profile:', error);
+        } else {
+          console.log('Customer profile saved successfully:', data);
+        }
       } else {
-        console.log('Customer profile saved successfully:', data);
+        // Guest user - check if profile exists by email, otherwise insert
+        console.log('Saving customer profile for guest:', { email: formData.customerEmail, tenantId: tenant.id, subscribed: subscribeToEmails });
+
+        // First, try to find existing profile by email and tenant
+        const { data: existing } = await supabase
+          .from('customer_profiles')
+          .select('id')
+          .eq('email', formData.customerEmail)
+          .eq('tenant_id', tenant.id)
+          .single();
+
+        if (existing?.id) {
+          // Update existing profile
+          const { error } = await supabase
+            .from('customer_profiles')
+            .update({
+              full_name: formData.customerName,
+              phone: formData.customerPhone || null,
+              subscribed_to_emails: subscribeToEmails,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existing.id);
+
+          if (error) {
+            console.error('Error updating customer profile:', error);
+          } else {
+            console.log('Customer profile updated successfully');
+          }
+        } else {
+          // Insert new profile (let database generate UUID)
+          const { data, error } = await supabase
+            .from('customer_profiles')
+            .insert({
+              tenant_id: tenant.id,
+              full_name: formData.customerName,
+              phone: formData.customerPhone || null,
+              email: formData.customerEmail,
+              subscribed_to_emails: subscribeToEmails,
+            });
+
+          if (error) {
+            console.error('Error inserting customer profile:', error);
+          } else {
+            console.log('Customer profile created successfully:', data);
+          }
+        }
       }
     } catch (err) {
       console.error('Exception saving customer profile:', err);
