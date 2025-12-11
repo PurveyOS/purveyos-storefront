@@ -24,13 +24,10 @@ export function MinimalTemplate({
   const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
   const [depositButtonRefs, setDepositButtonRefs] = useState<Record<string, HTMLElement | null>>({});
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   const filteredProducts = selectedCategory 
     ? products.filter(product => product.categoryId === selectedCategory)
     : products;
-
-  const hasManyCategories = categories.length > 6;
 
   return (
     <div className="min-h-screen bg-white">
@@ -51,46 +48,35 @@ export function MinimalTemplate({
       {/* Simple Category Filter */}
       <section className="py-8 bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {!hasManyCategories ? (
-            <div className="flex justify-center flex-wrap gap-3">
-              <button 
-                onClick={() => setSelectedCategory(null)}
-                className={`px-5 py-2 text-sm font-medium border-b-2 transition-colors ${
-                  selectedCategory === null
+          <div className="flex justify-center flex-wrap gap-2 sm:gap-3">
+            <button 
+              onClick={() => setSelectedCategory(null)}
+              className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+                selectedCategory === null
+                  ? 'text-gray-900 border-gray-900'
+                  : 'text-gray-600 hover:text-gray-800 border-transparent hover:border-gray-300'
+              }`}
+            >
+              All Products
+            </button>
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
+                  selectedCategory === category.id
                     ? 'text-gray-900 border-gray-900'
                     : 'text-gray-600 hover:text-gray-800 border-transparent hover:border-gray-300'
                 }`}
+                style={{ 
+                  color: selectedCategory === category.id ? settings.primaryColor : undefined,
+                  borderColor: selectedCategory === category.id ? settings.primaryColor : undefined
+                }}
               >
-                All Products
+                {category.name}
               </button>
-              {categories.map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => setSelectedCategory(category.id)}
-                  className={`px-5 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    selectedCategory === category.id
-                      ? 'text-gray-900 border-gray-900'
-                      : 'text-gray-600 hover:text-gray-800 border-transparent hover:border-gray-300'
-                  }`}
-                  style={{ 
-                    color: selectedCategory === category.id ? settings.primaryColor : undefined,
-                    borderColor: selectedCategory === category.id ? settings.primaryColor : undefined
-                  }}
-                >
-                  {category.name}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="flex justify-center">
-              <button
-                onClick={() => setShowCategoryModal(true)}
-                className="px-5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:border-gray-500 hover:bg-gray-50"
-              >
-                Choose Category
-              </button>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       </section>
 
@@ -353,45 +339,6 @@ export function MinimalTemplate({
               }}
               primaryColor={settings.primaryColor}
             />
-          </div>
-        </div>
-      )}
-
-      {/* Category Modal for many categories */}
-      {hasManyCategories && showCategoryModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 relative max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Categories</h3>
-              <button
-                onClick={() => setShowCategoryModal(false)}
-                className="text-gray-500 hover:text-gray-800"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="space-y-2">
-              <button
-                onClick={() => { setSelectedCategory(null); setShowCategoryModal(false); }}
-                className={`w-full text-left px-4 py-2 rounded-lg border transition-colors ${
-                  selectedCategory === null ? 'border-gray-900 text-gray-900 bg-gray-50' : 'border-gray-200 text-gray-700 hover:border-gray-400'
-                }`}
-              >
-                All Products
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => { setSelectedCategory(cat.id); setShowCategoryModal(false); }}
-                  className={`w-full text-left px-4 py-2 rounded-lg border transition-colors ${
-                    selectedCategory === cat.id ? 'border-gray-900 text-gray-900 bg-gray-50' : 'border-gray-200 text-gray-700 hover:border-gray-400'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}
