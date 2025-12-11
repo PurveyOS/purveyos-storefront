@@ -184,16 +184,22 @@ export function CheckoutPage() {
 
   // Save customer profile (guest or authenticated) with email preference
   const saveCustomerProfile = async () => {
-    if (!supabase || !tenant?.id || !formData.customerEmail) return;
+    if (!supabase || !tenant?.id || !formData.customerEmail) {
+      console.log('saveCustomerProfile skipped:', { supabase: !!supabase, tenantId: tenant?.id, email: formData.customerEmail });
+      return;
+    }
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const userId = user?.id || null;
 
       // Generate a deterministic ID for guest customers (email + tenant hash)
-      const guestId = userId || `guest_${Buffer.from(`${formData.customerEmail}_${tenant.id}`).toString('base64')}`;
+      // Use btoa (base64 encode) instead of Buffer for browser compatibility
+      const guestId = userId || `guest_${btoa(`${formData.customerEmail}_${tenant.id}`).replace(/[+/=]/g, '')}`;
 
-      await supabase
+      console.log('Saving customer profile:', { guestId, tenantId: tenant.id, email: formData.customerEmail, subscribed: subscribeToEmails });
+
+      const { data, error } = await supabase
         .from('customer_profiles')
         .upsert({
           id: guestId,
@@ -206,8 +212,14 @@ export function CheckoutPage() {
         }, {
           onConflict: 'id,tenant_id'
         });
+
+      if (error) {
+        console.error('Error saving customer profile:', error);
+      } else {
+        console.log('Customer profile saved successfully:', data);
+      }
     } catch (err) {
-      console.error('Error saving customer profile:', err);
+      console.error('Exception saving customer profile:', err);
       // Don't block checkout if profile save fails
     }
   };
@@ -232,6 +244,9 @@ export function CheckoutPage() {
       alert('Card payments are not available for this store.');
       return;
     }
+
+    // Save customer profile before redirecting to Stripe
+    await saveCustomerProfile();
 
     try {
       // Prepare line items for Stripe
