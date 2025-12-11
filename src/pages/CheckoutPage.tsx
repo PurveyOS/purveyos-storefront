@@ -209,8 +209,6 @@ export function CheckoutPage() {
           email: formData.customerEmail,
           subscribed_to_emails: subscribeToEmails,
           updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'id,tenant_id'
         });
 
       if (error) {
