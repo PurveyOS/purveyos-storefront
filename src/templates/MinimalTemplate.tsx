@@ -220,7 +220,7 @@ export function MinimalTemplate({
                       if (isWeight) {
                         return (
                           <div className="space-y-3">
-                            {hasBins ? (
+                            {hasBins && (
                               <button
                                 type="button"
                                 onClick={() => setActiveBinProduct(product)}
@@ -233,9 +233,24 @@ export function MinimalTemplate({
                               >
                                 {canPreOrder && isSoldOut ? 'Pre-order package' : 'Choose package'}
                               </button>
-                            ) : (
-                              <div className="text-center py-2">
-                                <span className="text-sm text-gray-500">{canPreOrder ? 'Available for pre-order' : 'Sold by weight'}</span>
+                            )}
+                            {canPreOrder && (
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  value={weightValue}
+                                  onChange={(e) => setWeightInputs((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                                  className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                  placeholder="lbs"
+                                />
+                                <button
+                                  onClick={handleCustomWeight}
+                                  className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white transition-colors"
+                                >
+                                  Pre-order weight
+                                </button>
                               </div>
                             )}
                           </div>
