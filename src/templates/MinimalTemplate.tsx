@@ -22,10 +22,14 @@ export function MinimalTemplate({
   const [weightInputs, setWeightInputs] = useState<Record<string, string>>({});
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
   const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
+  const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   const filteredProducts = selectedCategory 
     ? products.filter(product => product.categoryId === selectedCategory)
     : products;
+
+  const hasManyCategories = categories.length > 6;
 
   return (
     <div className="min-h-screen bg-white">
@@ -46,35 +50,46 @@ export function MinimalTemplate({
       {/* Simple Category Filter */}
       <section className="py-8 bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-center flex-wrap gap-4">
-            <button 
-              onClick={() => setSelectedCategory(null)}
-              className={`px-6 py-3 font-medium border-b-2 transition-colors ${
-                selectedCategory === null
-                  ? 'text-gray-900 border-gray-900'
-                  : 'text-gray-600 hover:text-gray-800 border-transparent hover:border-gray-300'
-              }`}
-            >
-              All Products
-            </button>
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => setSelectedCategory(category.id)}
-                className={`px-6 py-3 font-medium border-b-2 transition-colors ${
-                  selectedCategory === category.id
-                    ? 'border-gray-900'
+          {!hasManyCategories ? (
+            <div className="flex justify-center flex-wrap gap-3">
+              <button 
+                onClick={() => setSelectedCategory(null)}
+                className={`px-5 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  selectedCategory === null
+                    ? 'text-gray-900 border-gray-900'
                     : 'text-gray-600 hover:text-gray-800 border-transparent hover:border-gray-300'
                 }`}
-                style={{ 
-                  color: selectedCategory === category.id ? settings.primaryColor : undefined,
-                  borderColor: selectedCategory === category.id ? settings.primaryColor : undefined
-                }}
               >
-                {category.name}
+                All Products
               </button>
-            ))}
-          </div>
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategory(category.id)}
+                  className={`px-5 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    selectedCategory === category.id
+                      ? 'text-gray-900 border-gray-900'
+                      : 'text-gray-600 hover:text-gray-800 border-transparent hover:border-gray-300'
+                  }`}
+                  style={{ 
+                    color: selectedCategory === category.id ? settings.primaryColor : undefined,
+                    borderColor: selectedCategory === category.id ? settings.primaryColor : undefined
+                  }}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex justify-center">
+              <button
+                onClick={() => setShowCategoryModal(true)}
+                className="px-5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:border-gray-500 hover:bg-gray-50"
+              >
+                Choose Category
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -99,45 +114,48 @@ export function MinimalTemplate({
                   key={product.id}
                   className="group border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="aspect-w-4 aspect-h-3 mb-4 overflow-hidden">
+                  <div className="relative aspect-w-4 aspect-h-3 overflow-hidden">
                     <img
                       src={product.imageUrl}
                       alt={product.name}
                       className="w-full h-64 object-cover"
                     />
-                  </div>
-                  <div className="px-4 pb-5 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="text-left">
-                        <h3 className="font-semibold text-gray-900 text-lg mb-1">{product.name}</h3>
-                        {product.description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">{product.description}</p>
-                        )}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 py-3 flex items-center justify-between">
+                      <div className="text-left text-white">
+                        <h3 className="font-semibold text-sm sm:text-base line-clamp-1">{product.name}</h3>
+                        <div className="flex items-center gap-2 text-xs sm:text-sm text-white/90">
+                          <span className="font-medium">${product.pricePer.toFixed(2)}</span>
+                          {product.unit && <span>/ {product.unit}</span>}
+                        </div>
                       </div>
+                      {!product.available && (
+                        <span className="text-[11px] text-white bg-red-500 px-2 py-1 rounded-full">Out of stock</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 pb-5 pt-3 space-y-3">
+                    <div className="flex items-start justify-between">
+                      {product.description && (
+                        <p className="text-sm text-gray-600 line-clamp-2 flex-1">{product.description}</p>
+                      )}
                       {product.is_deposit_product && (
-                        <div className="relative">
+                        <div className="relative ml-3">
                           <button
                             type="button"
                             onMouseEnter={() => setDepositTooltip(product.id)}
                             onMouseLeave={() => setDepositTooltip(null)}
-                            className="w-7 h-7 flex items-center justify-center rounded-full border text-xs text-gray-700 hover:bg-gray-100"
+                            className="w-6 h-6 flex items-center justify-center rounded-full border text-[11px] text-gray-700 hover:bg-gray-100"
                             title="Deposit details"
                           >
                             i
                           </button>
                           {depositTooltip === product.id && (
-                            <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700">
+                            <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700 z-20">
                               This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
                             </div>
                           )}
                         </div>
                       )}
-                    </div>
-
-                    <div className="flex items-center gap-3 text-gray-900">
-                      <span className="text-xl font-light">${product.pricePer.toFixed(2)}</span>
-                      {product.unit && <span className="text-sm text-gray-500">/ {product.unit}</span>}
-                      {!product.available && <span className="text-xs text-red-500">Out of stock</span>}
                     </div>
 
                     {/* Subscription CTA */}
@@ -189,12 +207,13 @@ export function MinimalTemplate({
                         return (
                           <div className="space-y-3">
                             {hasBins && (
-                              <WeightBinSelector
-                                bins={product.weightBins || []}
-                                unit={product.unit}
-                                onSelect={handleBinSelect}
-                                primaryColor={settings.primaryColor}
-                              />
+                              <button
+                                type="button"
+                                onClick={() => setActiveBinProduct(product)}
+                                className="w-full border border-gray-300 text-gray-800 px-4 py-2 text-sm font-medium rounded-lg hover:border-gray-500 hover:bg-gray-50"
+                              >
+                                Choose package
+                              </button>
                             )}
                             <div className="flex items-center gap-3">
                               <input
@@ -287,6 +306,76 @@ export function MinimalTemplate({
             setSubscriptionProduct(null);
           }}
         />
+      )}
+
+      {/* Weight Bin Modal */}
+      {activeBinProduct && activeBinProduct.weightBins && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 relative">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Choose package size</h3>
+              <button
+                onClick={() => setActiveBinProduct(null)}
+                className="text-gray-500 hover:text-gray-800"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <WeightBinSelector
+              bins={activeBinProduct.weightBins}
+              unit={activeBinProduct.unit}
+              onSelect={(bin) => {
+                if (onAddBinToCart) {
+                  onAddBinToCart(activeBinProduct.id, bin.weightBtn, bin.unitPriceCents);
+                } else {
+                  onAddToCart(activeBinProduct.id, 1, { binWeight: bin.weightBtn, unitPriceCents: bin.unitPriceCents });
+                }
+                setActiveBinProduct(null);
+              }}
+              primaryColor={settings.primaryColor}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Category Modal for many categories */}
+      {hasManyCategories && showCategoryModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 relative max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Categories</h3>
+              <button
+                onClick={() => setShowCategoryModal(false)}
+                className="text-gray-500 hover:text-gray-800"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2">
+              <button
+                onClick={() => { setSelectedCategory(null); setShowCategoryModal(false); }}
+                className={`w-full text-left px-4 py-2 rounded-lg border transition-colors ${
+                  selectedCategory === null ? 'border-gray-900 text-gray-900 bg-gray-50' : 'border-gray-200 text-gray-700 hover:border-gray-400'
+                }`}
+              >
+                All Products
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => { setSelectedCategory(cat.id); setShowCategoryModal(false); }}
+                  className={`w-full text-left px-4 py-2 rounded-lg border transition-colors ${
+                    selectedCategory === cat.id ? 'border-gray-900 text-gray-900 bg-gray-50' : 'border-gray-200 text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
