@@ -174,6 +174,12 @@ export function CheckoutPage() {
     return [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
   };
 
+  const formatDropLocation = (location: any) => {
+    const base = [location?.name, location?.address].filter(Boolean).join(' - ').trim();
+    const dayTime = [location?.day, location?.time].filter(Boolean).join(' @ ');
+    return [base || 'Drop location', dayTime].filter(Boolean).join(' | ');
+  };
+
   const handleInputChange = (field: keyof CheckoutData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -772,7 +778,7 @@ const result = await createOrder(
                     </button>
                   )}
 
-                  {/* Show Dropoff if enabled */}
+                  {/* Show Drops if enabled */}
                   {(storefrontData?.settings as any)?.allow_dropoff && (
                     <button
                       type="button"
@@ -793,7 +799,7 @@ const result = await createOrder(
                     >
                       <div className="text-center">
                         <div className="text-3xl mb-2">📍</div>
-                        <div className="font-semibold text-gray-800">Dropoff</div>
+                        <div className="font-semibold text-gray-800">Drop</div>
                         <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>Free</div>
                       </div>
                     </button>
@@ -851,11 +857,11 @@ const result = await createOrder(
                   </div>
                 )}
 
-                {/* Dropoff Location Selector */}
+                {/* Drop Location Selector */}
                 {formData.deliveryMethod === 'dropoff' && (storefrontData?.settings as any)?.dropoff_locations?.length > 0 && (
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Select Dropoff Location *
+                      Select Drop Location *
                     </label>
                     <select
                       required
@@ -865,10 +871,10 @@ const result = await createOrder(
                       onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
                       onBlur={(e) => e.currentTarget.style.borderColor = ''}
                     >
-                      <option value="">Choose a location...</option>
+                      <option value="">Choose a drop...</option>
                       {((storefrontData?.settings as any)?.dropoff_locations || []).map((location: any, index: number) => (
-                        <option key={index} value={`${location.name} - ${location.address}`}>
-                          {location.name} - {location.address}
+                        <option key={index} value={formatDropLocation(location)}>
+                          {formatDropLocation(location)}
                         </option>
                       ))}
                     </select>

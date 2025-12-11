@@ -22,6 +22,7 @@ export function MinimalTemplate({
   const [weightInputs, setWeightInputs] = useState<Record<string, string>>({});
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
   const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
+  const [depositButtonRefs, setDepositButtonRefs] = useState<Record<string, HTMLElement | null>>({});
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
 
@@ -120,6 +121,24 @@ export function MinimalTemplate({
                       alt={product.name}
                       className="w-full h-64 object-cover"
                     />
+
+                    {/* Sold Out Overlay */}
+                    {(() => {
+                      const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
+                      const canPreOrder = (features?.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
+                      if (!isSoldOut) return null;
+                      return (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                          <div className="relative">
+                            <div className="border-2 border-black rounded-lg px-6 py-3 bg-white">
+                              <span className="text-black text-lg font-light tracking-wide">SOLD OUT</span>
+                            </div>
+                            <div className="absolute inset-0 border-2 border-black rounded-lg" style={{ transform: 'rotate(-8deg)', zIndex: -1 }} />
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 py-3 flex items-center justify-between">
                       <div className="text-left text-white">
                         <h3 className="font-semibold text-sm sm:text-base line-clamp-1">{product.name}</h3>
@@ -128,9 +147,6 @@ export function MinimalTemplate({
                           {product.unit && <span>/ {product.unit}</span>}
                         </div>
                       </div>
-                      {!product.available && (
-                        <span className="text-[11px] text-white bg-red-500 px-2 py-1 rounded-full">Out of stock</span>
-                      )}
                     </div>
                   </div>
                   <div className="px-4 pb-5 pt-3 space-y-3">
@@ -142,6 +158,11 @@ export function MinimalTemplate({
                         <div className="relative ml-3">
                           <button
                             type="button"
+                            ref={(el) => {
+                              if (el) {
+                                setDepositButtonRefs(prev => ({ ...prev, [product.id]: el }));
+                              }
+                            }}
                             onMouseEnter={() => setDepositTooltip(product.id)}
                             onMouseLeave={() => setDepositTooltip(null)}
                             className="w-6 h-6 flex items-center justify-center rounded-full border text-[11px] text-gray-700 hover:bg-gray-100"
@@ -149,11 +170,20 @@ export function MinimalTemplate({
                           >
                             i
                           </button>
-                          {depositTooltip === product.id && (
-                            <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700 z-20">
-                              This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
-                            </div>
-                          )}
+                          {depositTooltip === product.id && depositButtonRefs[product.id] && (() => {
+                            const rect = depositButtonRefs[product.id]!.getBoundingClientRect();
+                            return (
+                              <div 
+                                className="fixed w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700 z-50"
+                                style={{
+                                  top: `${rect.bottom + 8}px`,
+                                  left: `${rect.left - 180}px`
+                                }}
+                              >
+                                This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -206,37 +236,24 @@ export function MinimalTemplate({
                       if (isWeight) {
                         return (
                           <div className="space-y-3">
-                            {hasBins && (
+                            {hasBins ? (
                               <button
                                 type="button"
                                 onClick={() => setActiveBinProduct(product)}
-                                className="w-full border border-gray-300 text-gray-800 px-4 py-2 text-sm font-medium rounded-lg hover:border-gray-500 hover:bg-gray-50"
-                              >
-                                Choose package
-                              </button>
-                            )}
-                            <div className="flex items-center gap-3">
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0"
-                                value={weightValue}
-                                onChange={(e) => setWeightInputs((prev) => ({ ...prev, [product.id]: e.target.value }))}
-                                className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                                placeholder="lbs"
-                              />
-                              <button
-                                onClick={handleCustomWeight}
-                                disabled={!product.available && !canPreOrder}
-                                className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                                  product.available || canPreOrder
-                                    ? 'border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white'
-                                    : 'border-gray-300 text-gray-400 cursor-not-allowed'
+                                disabled={isSoldOut && !canPreOrder}
+                                className={`w-full border px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                  isSoldOut && !canPreOrder
+                                    ? 'border-gray-300 text-gray-400 cursor-not-allowed'
+                                    : 'border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white'
                                 }`}
                               >
-                                {canPreOrder && !product.available ? 'Pre-order weight' : 'Add weight'}
+                                {canPreOrder && isSoldOut ? 'Pre-order package' : 'Choose package'}
                               </button>
-                            </div>
+                            ) : (
+                              <div className="text-center py-2">
+                                <span className="text-sm text-gray-500">{canPreOrder ? 'Available for pre-order' : 'Sold by weight'}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       }
@@ -249,17 +266,18 @@ export function MinimalTemplate({
                             value={qtyValue}
                             onChange={(e) => setQtyInputs((prev) => ({ ...prev, [product.id]: parseInt(e.target.value || '1', 10) }))}
                             className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                            disabled={isSoldOut && !canPreOrder}
                           />
                           <button
                             onClick={handleFixedAdd}
-                            disabled={!product.available}
+                            disabled={isSoldOut && !canPreOrder}
                             className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                              product.available
-                                ? 'border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white'
-                                : 'border-gray-300 text-gray-400 cursor-not-allowed'
+                              isSoldOut && !canPreOrder
+                                ? 'border-gray-300 text-gray-400 cursor-not-allowed'
+                                : 'border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white'
                             }`}
                           >
-                            Add to Cart
+                            {canPreOrder && isSoldOut ? 'Pre-order' : 'Add to Cart'}
                           </button>
                         </div>
                       );

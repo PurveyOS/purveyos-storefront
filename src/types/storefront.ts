@@ -28,7 +28,7 @@ export interface StorefrontSettings {
   allow_other?: boolean;
   shipping_charge_cents?: number;
   pickup_locations?: Array<{ name: string; address: string }>;
-  dropoff_locations?: Array<{ name: string; address: string }>;
+  dropoff_locations?: Array<{ name: string; address: string; day?: string; time?: string }>;
 }
 
 export interface CartItem {

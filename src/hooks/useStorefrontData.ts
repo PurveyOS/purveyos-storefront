@@ -258,7 +258,12 @@ export function useStorefrontData(tenantId: string): {
             ? settingsResult.data.pickup_locations
             : [],
           dropoff_locations: Array.isArray(settingsResult.data.dropoff_locations)
-            ? settingsResult.data.dropoff_locations
+            ? settingsResult.data.dropoff_locations.map((loc: any) => ({
+                name: loc?.name || '',
+                address: loc?.address || '',
+                day: loc?.day || '',
+                time: loc?.time || '',
+              }))
             : [],
           featureSections: Array.isArray(settingsResult.data.feature_sections)
             ? settingsResult.data.feature_sections.map((s: any) => ({

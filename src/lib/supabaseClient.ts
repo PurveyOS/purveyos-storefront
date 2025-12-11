@@ -79,7 +79,7 @@ export type Database = {
           allow_dropoff: boolean
           allow_other: boolean
           pickup_locations: Array<{name: string; address: string}>
-          dropoff_locations: Array<{name: string; address: string}>
+          dropoff_locations: Array<{name: string; address: string; day?: string; time?: string}>
           enable_card: boolean
           enable_venmo: boolean
           enable_zelle: boolean
