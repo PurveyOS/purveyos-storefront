@@ -36,7 +36,7 @@ export function CheckoutPage() {
     customerEmail: '',
     customerPhone: '',
     deliveryMethod: 'pickup',
-    paymentMethod: 'card' as const,
+    paymentMethod: '' as any,
     deliveryAddress: '',
     deliveryNotes: '',
   });

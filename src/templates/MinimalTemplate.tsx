@@ -264,6 +264,7 @@ export function MinimalTemplate({
                             min="1"
                             value={qtyValue}
                             onChange={(e) => setQtyInputs((prev) => ({ ...prev, [product.id]: parseInt(e.target.value || '1', 10) }))}
+                            onFocus={(e) => e.currentTarget.select()}
                             className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                             disabled={isSoldOut && !canPreOrder}
                           />
