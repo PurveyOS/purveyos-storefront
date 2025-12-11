@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { StorefrontTemplateProps } from '../types/storefront';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
@@ -22,7 +22,7 @@ export function MinimalTemplate({
   const [weightInputs, setWeightInputs] = useState<Record<string, string>>({});
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
   const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
-  const [depositButtonRefs, setDepositButtonRefs] = useState<Record<string, HTMLElement | null>>({});
+  const depositButtonRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
 
   const filteredProducts = selectedCategory 
@@ -145,9 +145,7 @@ export function MinimalTemplate({
                           <button
                             type="button"
                             ref={(el) => {
-                              if (el) {
-                                setDepositButtonRefs(prev => ({ ...prev, [product.id]: el }));
-                              }
+                              depositButtonRefs.current[product.id] = el;
                             }}
                             onMouseEnter={() => setDepositTooltip(product.id)}
                             onMouseLeave={() => setDepositTooltip(null)}
@@ -156,8 +154,8 @@ export function MinimalTemplate({
                           >
                             i
                           </button>
-                          {depositTooltip === product.id && depositButtonRefs[product.id] && (() => {
-                            const rect = depositButtonRefs[product.id]!.getBoundingClientRect();
+                          {depositTooltip === product.id && depositButtonRefs.current[product.id] && (() => {
+                            const rect = depositButtonRefs.current[product.id]!.getBoundingClientRect();
                             return (
                               <div 
                                 className="fixed w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700 z-50"
