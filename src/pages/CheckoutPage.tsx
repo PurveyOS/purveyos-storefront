@@ -48,6 +48,8 @@ export function CheckoutPage() {
     zip: '',
   });
 
+  const [subscribeToEmails, setSubscribeToEmails] = useState(false);
+
   // Load customer info if logged in
   useEffect(() => {
     async function loadCustomerInfo() {
@@ -178,6 +180,36 @@ export function CheckoutPage() {
     const base = [location?.name, location?.address].filter(Boolean).join(' - ').trim();
     const dayTime = [location?.day, location?.time].filter(Boolean).join(' @ ');
     return [base || 'Drop location', dayTime].filter(Boolean).join(' | ');
+  };
+
+  // Save customer profile (guest or authenticated) with email preference
+  const saveCustomerProfile = async () => {
+    if (!supabase || !tenant?.id || !formData.customerEmail) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id || null;
+
+      // Generate a deterministic ID for guest customers (email + tenant hash)
+      const guestId = userId || `guest_${Buffer.from(`${formData.customerEmail}_${tenant.id}`).toString('base64')}`;
+
+      await supabase
+        .from('customer_profiles')
+        .upsert({
+          id: guestId,
+          tenant_id: tenant.id,
+          full_name: formData.customerName,
+          phone: formData.customerPhone || null,
+          email: formData.customerEmail,
+          subscribed_to_emails: subscribeToEmails,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'id,tenant_id'
+        });
+    } catch (err) {
+      console.error('Error saving customer profile:', err);
+      // Don't block checkout if profile save fails
+    }
   };
 
   const handleInputChange = (field: keyof CheckoutData, value: string) => {
@@ -429,6 +461,9 @@ export function CheckoutPage() {
         return;
       }
     }
+
+    // Save customer profile with email preference
+    await saveCustomerProfile();
 
     const orderValue = cart.total - (discountCents / 100);
 
@@ -1226,6 +1261,21 @@ const result = await createOrder(
                   <p className="text-sm text-red-800">{checkoutError}</p>
                 </div>
               )}
+
+              {/* Email Opt-in Checkbox */}
+              <div className="mt-6 flex items-start gap-3 bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <input
+                  type="checkbox"
+                  id="subscribeToEmails"
+                  checked={subscribeToEmails}
+                  onChange={(e) => setSubscribeToEmails(e.target.checked)}
+                  className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  style={{ accentColor: primaryColor }}
+                />
+                <label htmlFor="subscribeToEmails" className="text-sm text-gray-700 cursor-pointer">
+                  Subscribe to our email list for sales, restocks, and exclusive updates
+                </label>
+              </div>
 
               <button
                 type="submit"
