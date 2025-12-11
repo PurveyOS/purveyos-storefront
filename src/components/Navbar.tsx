@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import type { StorefrontSettings, Cart } from '../types/storefront';
 
 // Existing interface for ClassicTemplate compatibility
@@ -127,38 +128,90 @@ export function Navbar(props: NavbarProps) {
   } else {
     // Modern template navbar
     const { title, logoUrl, cartCount, primaryColor = '#0f6fff', accentColor = '#ffcc00' } = props;
+    const [menuOpen, setMenuOpen] = useState(false);
 
     return (
       <nav className="bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-3 py-2">
-          <div className="flex items-center justify-between gap-3">
-            {/* Left side */}
-            <div className="flex items-center gap-3">
-              {logoUrl && (
-                <img
-                  src={logoUrl}
-                  alt={title}
-                  className="h-8 w-8 rounded-full object-cover"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                  }}
-                />
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between gap-4">
+            {/* Left side - Menu Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors duration-200"
+                aria-label="Menu"
+              >
+                <svg className="w-6 h-6 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              
+              {/* Dropdown Menu */}
+              {menuOpen && (
+                <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50">
+                  <Link
+                    to="/"
+                    className="block px-4 py-3 text-slate-700 hover:bg-gray-50 transition-colors duration-200"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Home
+                  </Link>
+                  <button
+                    onClick={() => {
+                      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-3 text-slate-700 hover:bg-gray-50 transition-colors duration-200"
+                  >
+                    Products
+                  </button>
+                  <Link
+                    to="/account"
+                    className="block px-4 py-3 text-slate-700 hover:bg-gray-50 transition-colors duration-200 border-t border-gray-200"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    My Account
+                  </Link>
+                </div>
               )}
-              <h1 className="text-base font-semibold text-slate-900 truncate">
-                {title}
-              </h1>
             </div>
 
-            {/* Right side */}
-            <div className="flex items-center gap-2">
-              <Link to="/account" className="inline-flex">
+            {/* Center - Logo */}
+            <div className="flex-1 flex justify-center">
+              <button
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-200 focus:outline-none"
+              >
+                {logoUrl && (
+                  <img
+                    src={logoUrl}
+                    alt={title}
+                    className="h-12 w-12 sm:h-14 sm:w-14 rounded-full object-cover shadow-md"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                )}
+                <div className="text-center hidden sm:block">
+                  <h1 className="text-lg sm:text-xl font-bold text-slate-900">
+                    {title}
+                  </h1>
+                </div>
+              </button>
+            </div>
+
+            {/* Right side - Cart & Account */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Link to="/account" className="inline-flex hidden sm:flex">
                 <button
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors duration-200 text-sm font-medium"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-full transition-colors duration-200 text-sm font-medium hover:bg-gray-100"
                   style={{ color: primaryColor }}
                   aria-label="My Account"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
                   </svg>
                   <span className="hidden sm:inline">Account</span>
@@ -166,17 +219,17 @@ export function Navbar(props: NavbarProps) {
               </Link>
               <Link to="/cart" className="relative inline-flex">
                 <button
-                  className="relative flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md text-sm"
-                  style={{ backgroundColor: '#fff', border: `1px solid ${primaryColor}` }}
+                  className="relative flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 rounded-full transition-colors duration-200 shadow-sm hover:shadow-md text-sm font-medium"
+                  style={{ backgroundColor: '#fff', border: `2px solid ${primaryColor}` }}
                   aria-label="Open cart"
                 >
-                  <svg className="w-4 h-4" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
                   </svg>
-                  <span className="font-medium" style={{ color: primaryColor }}>Cart</span>
+                  <span className="hidden sm:inline" style={{ color: primaryColor }}>Cart</span>
                   {cartCount > 0 && (
                     <span
-                      className="absolute -top-1 -right-1 min-w-[20px] h-5 text-white text-xs font-bold rounded-full flex items-center justify-center"
+                      className="absolute -top-1 -right-1 min-w-[22px] h-6 text-white text-xs font-bold rounded-full flex items-center justify-center"
                       style={{ backgroundColor: accentColor }}
                     >
                       {cartCount}
