@@ -209,19 +209,29 @@ export function CheckoutPage() {
         
         // Calculate unit_amount based on item type
         let unitPriceInCents = 0;
+        let itemQuantity = item.quantity || 1;
         
         if (item.binWeight && item.unitPriceCents) {
           // Pre-packaged weight bins: unitPriceCents is price per lb, multiply by binWeight
           unitPriceInCents = Math.round(item.binWeight * item.unitPriceCents);
+          itemQuantity = item.quantity; // Quantity of bins
         } else if (item.weight && product?.pricingMode === 'weight') {
           // Custom weight entry: price per lb * weight
+          // For weight items, the total price IS the unit price and quantity is 1
           unitPriceInCents = Math.round(item.weight * product.pricePer * 100);
+          itemQuantity = 1; // Weight is already factored into the price
+        } else if (item.weight && product?.unit?.toLowerCase() === 'lb') {
+          // Handle weight-based items by unit
+          unitPriceInCents = Math.round(item.weight * product.pricePer * 100);
+          itemQuantity = 1; // Weight is already factored into the price
         } else if (item.unitPriceCents) {
           // Items with unitPriceCents explicitly stored (already in cents)
           unitPriceInCents = item.unitPriceCents;
+          itemQuantity = item.quantity;
         } else if (product?.pricePer) {
           // Standard fixed pricing: convert dollars to cents
           unitPriceInCents = Math.round(product.pricePer * 100);
+          itemQuantity = item.quantity;
         } else {
           console.error('Unable to determine price for item:', item);
         }
@@ -234,7 +244,9 @@ export function CheckoutPage() {
           unitPriceCents: item.unitPriceCents,
           productPricePer: product?.pricePer,
           quantity: item.quantity,
-          finalUnitPrice: unitPriceInCents
+          calculatedQuantity: itemQuantity,
+          finalUnitPrice: unitPriceInCents,
+          totalPrice: unitPriceInCents * itemQuantity
         });
 
         // Validate price
@@ -259,7 +271,7 @@ export function CheckoutPage() {
             },
             unit_amount: unitPriceInCents,
           },
-          quantity: item.quantity,
+          quantity: itemQuantity,
         };
       });
 
