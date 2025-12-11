@@ -358,14 +358,15 @@ export function useStorefrontData(tenantId: string): {
           return productData;
         });
 
-        // Since we don't have category column yet, create a generic "Products" category
-        const categories: Category[] = products.length > 0 ? [{
-          id: 'all',
-          name: 'All Products',
-          description: 'All available products',
+        // Generate categories from unique product categories
+        const uniqueCategoryIds = Array.from(new Set(products.map(p => p.categoryId).filter(Boolean))) as string[];
+        const categories: Category[] = uniqueCategoryIds.map((categoryId, index) => ({
+          id: categoryId,
+          name: categoryId, // Use category ID as the display name
+          description: `${categoryId} products`,
           imageUrl: '/demo-category.svg',
-          sortOrder: 1,
-        }] : [];
+          sortOrder: index + 1,
+        }));
 
         console.log('Generated categories from products:', categories);
         console.log('Products loaded:', products.length);
