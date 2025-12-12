@@ -67,18 +67,18 @@ export function CustomerProfileSetup() {
     setError(null);
 
     try {
-      // Update customer profile with tenant_id and contact info
+      // Upsert customer profile with tenant_id so portal stops redirecting back to setup
       const { error: updateError } = await supabase
         .from('customer_profiles')
-        .update({
+        .upsert({
+          id: user.id,
           tenant_id: tenant.id,
           full_name: formData.fullName,
           phone: formData.phone || null,
           default_delivery_address: formData.deliveryAddress || null,
           default_delivery_notes: formData.deliveryNotes || null,
           updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
+        }, { onConflict: 'id' });
 
       if (updateError) throw updateError;
 
@@ -150,7 +150,7 @@ export function CustomerProfileSetup() {
                   placeholder="(555) 123-4567"
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-500">We'll use this to contact you about your orders</p>
+              {/* SMS not used currently; keep instructions minimal */}
             </div>
 
             {/* Delivery Address */}
