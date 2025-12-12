@@ -33,9 +33,21 @@ export function MinimalTemplate({
     <div className="min-h-screen bg-white">
       <Navbar settings={settings} cart={cart} />
       
-      {/* Minimal Hero */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      {/* Minimal Hero with optional background image */}
+      <section className="relative py-20 bg-gray-50 overflow-hidden">
+        {/* Hero image with fade overlay for minimal feel */}
+        {settings.heroImageUrl && (
+          <>
+            <div 
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url(${settings.heroImageUrl})` }}
+            />
+            {/* Subtle white fade overlay to keep minimal aesthetic */}
+            <div className="absolute inset-0 bg-white/75" />
+          </>
+        )}
+        
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-5xl font-light text-gray-800 mb-4">
             {settings.farmName}
           </h1>
