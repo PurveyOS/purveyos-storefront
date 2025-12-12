@@ -125,20 +125,22 @@ export function CartPage() {
                   
                   return (
                     <div key={`${product.id}-${binWeight ?? weight ?? 'standard'}`} className="flex items-center p-6 border-b border-gray-200 last:border-b-0">
-                      <img
-                        src={product.imageUrl}
-                        alt={product.name}
-                        className="w-20 h-20 object-cover rounded-lg mr-4"
-                      />
+                      <div className="relative mr-4">
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="w-20 h-20 object-cover rounded-lg"
+                        />
+                        {isPreOrder && (
+                          <span className="absolute top-1 right-1 px-2 py-1 bg-blue-500 text-white text-xs font-bold rounded-md">
+                            Pre-order
+                          </span>
+                        )}
+                      </div>
                       
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
-                          {isPreOrder && (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-                              Pre-order
-                            </span>
-                          )}
                         </div>
                         <p className="text-gray-600">{product.description}</p>
                         <div className="text-sm text-gray-600 mt-1">
