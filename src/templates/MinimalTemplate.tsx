@@ -197,7 +197,7 @@ export function MinimalTemplate({
                                 className="fixed w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700 z-50"
                                 style={{
                                   top: `${rect.bottom + 8}px`,
-                                  left: `${rect.left - 180}px`
+                                  left: `${rect.right + 8}px`
                                 }}
                               >
                                 This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
