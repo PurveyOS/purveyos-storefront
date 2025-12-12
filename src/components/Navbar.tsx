@@ -24,6 +24,8 @@ function isClassicProps(props: NavbarProps): props is ClassicNavbarProps {
 }
 
 export function Navbar(props: NavbarProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   if (isClassicProps(props)) {
     // Classic template navbar
     const { settings, cart } = props;
@@ -103,28 +105,54 @@ export function Navbar(props: NavbarProps) {
               </Link>
             </div>
 
-            {/* Mobile navigation - hidden cart, only show tabs */}
-            <div className="md:hidden flex items-center space-x-4">
-              <Link
-                to="/"
-                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-2 py-2 rounded-md text-sm"
-              >
-                Home
-              </Link>
+            {/* Mobile navigation - hamburger menu */}
+            <div className="md:hidden relative">
               <button
-                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-2 py-2 rounded-md text-sm"
-                onClick={() => {
-                  document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
-                }}
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 text-slate-700 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-md"
+                aria-label="Menu"
               >
-                Products
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
               </button>
-              <Link
-                to="/account"
-                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-2 py-2 rounded-md text-sm"
-              >
-                Account
-              </Link>
+              
+              {/* Dropdown Menu */}
+              {mobileMenuOpen && (
+                <>
+                  {/* Backdrop */}
+                  <div 
+                    className="fixed inset-0 bg-black/20 z-40"
+                    onClick={() => setMobileMenuOpen(false)}
+                  />
+                  {/* Menu */}
+                  <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50">
+                    <Link
+                      to="/"
+                      className="block px-4 py-3 text-slate-700 hover:bg-gray-50 transition-colors duration-200"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      Home
+                    </Link>
+                    <button
+                      onClick={() => {
+                        document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-3 text-slate-700 hover:bg-gray-50 transition-colors duration-200"
+                    >
+                      Products
+                    </button>
+                    <Link
+                      to="/account"
+                      className="block px-4 py-3 text-slate-700 hover:bg-gray-50 transition-colors duration-200 border-t border-gray-200"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      My Account
+                    </Link>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
