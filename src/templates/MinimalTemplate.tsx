@@ -169,14 +169,10 @@ export function MinimalTemplate({
                           {product.unit && <span>/ {product.unit}</span>}
                         </div>
                       </div>
-                      {/* Quantity Badge */}
-                      {product.inventory !== undefined && (
-                        <div className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                          product.inventory > 0 
-                            ? 'bg-green-500/90 text-white' 
-                            : 'bg-red-500/90 text-white'
-                        }`}>
-                          {product.inventory > 0 ? `${product.inventory} in stock` : 'Out of stock'}
+                      {/* Quantity Badge - Show only when in stock */}
+                      {product.inventory !== undefined && product.inventory > 0 && (
+                        <div className="text-xs font-semibold px-2 py-1 rounded-full bg-black/60 text-white">
+                          {product.inventory} in stock
                         </div>
                       )}
                     </div>
@@ -259,6 +255,15 @@ export function MinimalTemplate({
 
                       const handleFixedAdd = () => {
                         const qty = qtyValue > 0 ? qtyValue : 1;
+                        const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
+                        if (isSoldOut && !canPreOrder) {
+                          alert('This product is sold out');
+                          return;
+                        }
+                        if (product.inventory !== undefined && qty > product.inventory && !canPreOrder) {
+                          alert('Product is sold out');
+                          return;
+                        }
                         onAddToCart(product.id, qty, { isPreOrder: canPreOrder });
                         setQtyInputs((prev) => ({ ...prev, [product.id]: 1 }));
                       };
