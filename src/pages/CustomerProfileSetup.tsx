@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
-import { User, Phone, MapPin, FileText } from 'lucide-react';
+import { User, Phone, MapPin, FileText, Mail } from 'lucide-react';
 
 export function CustomerProfileSetup() {
   const navigate = useNavigate();
@@ -16,6 +16,7 @@ export function CustomerProfileSetup() {
     phone: '',
     deliveryAddress: '',
     deliveryNotes: '',
+    emailNotifications: true,
   });
 
   useEffect(() => {
@@ -40,7 +41,7 @@ export function CustomerProfileSetup() {
     // Pre-fill with existing data if any
     const { data: profile } = await supabase
       .from('customer_profiles')
-      .select('full_name, phone, default_delivery_address, default_delivery_notes')
+      .select('full_name, phone, default_delivery_address, default_delivery_notes, email_notifications')
       .eq('id', user.id)
       .single();
 
@@ -50,6 +51,7 @@ export function CustomerProfileSetup() {
         phone: profile.phone || '',
         deliveryAddress: profile.default_delivery_address || '',
         deliveryNotes: profile.default_delivery_notes || '',
+        emailNotifications: profile.email_notifications ?? true,
       });
     } else {
       setFormData(prev => ({
@@ -77,6 +79,7 @@ export function CustomerProfileSetup() {
           phone: formData.phone || null,
           default_delivery_address: formData.deliveryAddress || null,
           default_delivery_notes: formData.deliveryNotes || null,
+          email_notifications: formData.emailNotifications,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' });
 
@@ -114,6 +117,23 @@ export function CustomerProfileSetup() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input
+                  type="email"
+                  value={user?.email || ''}
+                  readOnly
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500">Your signup email (cannot be changed)</p>
+            </div>
+
             {/* Full Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -188,6 +208,21 @@ export function CustomerProfileSetup() {
                 />
               </div>
             </div>
+
+            {/* Email Notifications */}
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="emailNotifications"
+                checked={formData.emailNotifications}
+                onChange={(e) => setFormData({ ...formData, emailNotifications: e.target.checked })}
+                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-2 focus:ring-green-500"
+              />
+              <label htmlFor="emailNotifications" className="ml-3 text-sm font-medium text-gray-700">
+                Enroll in email notifications
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 -mt-4">Receive updates on orders, new products, and special offers</p>
 
             {/* Submit Button */}
             <div className="flex gap-4">
