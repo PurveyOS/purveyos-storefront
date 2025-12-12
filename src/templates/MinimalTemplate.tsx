@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import type { StorefrontTemplateProps } from '../types/storefront';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
@@ -29,9 +30,32 @@ export function MinimalTemplate({
     ? products.filter(product => product.categoryId === selectedCategory)
     : products;
 
+  const cartItemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+
   return (
     <div className="min-h-screen bg-white">
       <Navbar settings={settings} cart={cart} />
+      
+      {/* Sticky Floating Cart Button - Mobile Only */}
+      <Link to="/cart" className="md:hidden fixed bottom-6 right-6 z-40">
+        <button
+          className="relative flex items-center justify-center w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-all duration-200"
+          style={{ backgroundColor: settings.primaryColor }}
+          aria-label="Open cart"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
+          </svg>
+          {cartItemCount > 0 && (
+            <span
+              className="absolute -top-1 -right-1 min-w-[22px] h-[22px] rounded-full text-xs flex items-center justify-center text-black font-bold px-1"
+              style={{ backgroundColor: settings.accentColor }}
+            >
+              {cartItemCount}
+            </span>
+          )}
+        </button>
+      </Link>
       
       {/* Minimal Hero with optional background image */}
       <section className="relative py-20 bg-gray-50 overflow-hidden">

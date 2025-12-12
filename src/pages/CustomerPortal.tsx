@@ -335,7 +335,7 @@ export function CustomerPortal() {
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex gap-8 justify-between items-center">
-            <div className="flex gap-8">
+            <div className="flex gap-6 sm:gap-8">
               <button
                 onClick={() => setActiveTab('subscriptions')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm transition ${
@@ -344,8 +344,8 @@ export function CustomerPortal() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <Package className="h-4 w-4 inline mr-2" />
-                My Subscriptions
+                <Package className="h-4 w-4" />
+                <span className="hidden sm:inline ml-2">My Subscriptions</span>
               </button>
               <button
                 onClick={() => setActiveTab('orders')}
@@ -355,8 +355,8 @@ export function CustomerPortal() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <Calendar className="h-4 w-4 inline mr-2" />
-                Order History
+                <Calendar className="h-4 w-4" />
+                <span className="hidden sm:inline ml-2">Order History</span>
               </button>
             </div>
             <button
@@ -374,8 +374,8 @@ export function CustomerPortal() {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              <Settings className="h-4 w-4 inline mr-2" />
-              Settings
+              <Settings className="h-4 w-4" />
+              <span className="hidden sm:inline ml-2">Settings</span>
             </button>
           </nav>
         </div>
@@ -654,15 +654,6 @@ export function CustomerPortal() {
                         className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
                       >
                         🔄 Reorder
-                      </button>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(order.id);
-                          alert('Order ID copied to clipboard!');
-                        }}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
-                      >
-                        📋 Copy ID
                       </button>
                     </div>
                   </div>

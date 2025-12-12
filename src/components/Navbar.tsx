@@ -103,22 +103,27 @@ export function Navbar(props: NavbarProps) {
               </Link>
             </div>
 
-            {/* Mobile cart button */}
-            <div className="md:hidden">
-              <Link to="/cart" className="relative inline-flex items-center">
-                <button className="p-2 text-slate-700 hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-md">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 6M7 13l-1.5 6m0 0h9"/>
-                  </svg>
-                  {cartItemCount > 0 && (
-                    <span
-                      className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full text-xs flex items-center justify-center text-black font-bold"
-                      style={{ backgroundColor: settings.accentColor || '#ffcc00' }}
-                    >
-                      {cartItemCount}
-                    </span>
-                  )}
-                </button>
+            {/* Mobile navigation - hidden cart, only show tabs */}
+            <div className="md:hidden flex items-center space-x-4">
+              <Link
+                to="/"
+                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-2 py-2 rounded-md text-sm"
+              >
+                Home
+              </Link>
+              <button
+                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-2 py-2 rounded-md text-sm"
+                onClick={() => {
+                  document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+              >
+                Products
+              </button>
+              <Link
+                to="/account"
+                className="text-slate-700 hover:text-blue-600 font-medium transition-colors duration-200 px-2 py-2 rounded-md text-sm"
+              >
+                Account
               </Link>
             </div>
           </div>
