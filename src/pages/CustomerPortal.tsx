@@ -20,12 +20,23 @@ interface Subscription {
   };
 }
 
+interface OrderLine {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price_cents: number;
+  line_total_cents: number;
+}
+
 interface Order {
   id: string;
   status: string;
   total_cents: number;
   created_at: string;
   source: string;
+  order_lines?: OrderLine[];
+  note?: string;
 }
 
 export function CustomerPortal() {
@@ -40,6 +51,8 @@ export function CustomerPortal() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState(false);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [makingRecurring, setMakingRecurring] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -159,6 +172,95 @@ export function CustomerPortal() {
       setOrders(data || []);
     } catch (error) {
       console.error('❌ Failed to load orders:', error);
+    }
+  };
+
+  const makeRecurringOrder = async (order: Order) => {
+    if (!user || !tenant) return;
+    
+    setMakingRecurring(order.id);
+    try {
+      // Create a new subscription from the order
+      const subscriptionName = `Recurring Order from #${order.id.slice(0, 8)}`;
+      
+      // Create subscription product first (or reuse if exists)
+      const { data: subProduct, error: productError } = await supabase
+        .from('subscription_products')
+        .insert({
+          tenant_id: tenant.id,
+          name: subscriptionName,
+          description: `Automatically reorders items from order #${order.id.slice(0, 8)}`,
+          price_cents: order.total_cents,
+        })
+        .select()
+        .single();
+
+      if (productError) throw productError;
+
+      // Create the subscription
+      const { data: newSub, error: subError } = await supabase
+        .from('customer_subscriptions')
+        .insert({
+          user_id: user.id,
+          tenant_id: tenant.id,
+          subscription_product_id: subProduct.id,
+          status: 'active',
+          interval_type: 'week',
+          interval_count: 1,
+          price_per_interval: order.total_cents / 100,
+          next_delivery_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        })
+        .select()
+        .single();
+
+      if (subError) throw subError;
+
+      // Create a new order with the order items to push to POS
+      const orderLines = (order.order_lines || []).map(line => ({
+        product_id: line.product_id,
+        product_name: line.product_name,
+        quantity: line.quantity,
+        unit_price_cents: line.unit_price_cents,
+      }));
+
+      const { data: newOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          tenant_id: tenant.id,
+          user_id: user.id,
+          customer_email: user.email,
+          status: 'pending',
+          total_cents: order.total_cents,
+          source: 'subscription',
+          is_subscription_order: true,
+          subscription_id: newSub.id,
+          note: `Recurring order created from #${order.id.slice(0, 8)}`,
+        })
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      // Add order lines to the new order
+      const newOrderLines = orderLines.map(line => ({
+        order_id: newOrder.id,
+        ...line,
+        line_total_cents: line.unit_price_cents * line.quantity,
+      }));
+
+      const { error: linesError } = await supabase
+        .from('order_lines')
+        .insert(newOrderLines);
+
+      if (linesError) throw linesError;
+
+      alert('✅ Order converted to recurring subscription! A new order has been created and sent to POS.');
+      await Promise.all([loadSubscriptions(), loadOrders()]);
+    } catch (error) {
+      console.error('Failed to create recurring order:', error);
+      alert('Failed to create recurring order. Please try again.');
+    } finally {
+      setMakingRecurring(null);
     }
   };
 
@@ -563,98 +665,134 @@ export function CustomerPortal() {
             ) : (
               <div className="space-y-4">
                 {orders.map((order: any) => (
-                  <div key={order.id} className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition">
-                    {/* Order Header */}
-                    <div className="flex items-start justify-between mb-4 pb-4 border-b border-gray-100">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900">
+                  <div key={order.id} className="bg-white rounded-lg shadow-sm hover:shadow-md transition">
+                    {/* Order Header - Reorganized for better layout */}
+                    <div className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2">
                             Order #{order.id.slice(0, 8)}
                           </h3>
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(order.status)}`}>
-                            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                          </span>
-                          {order.source === 'subscription' && (
-                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                              🔄 Subscription
+                          {/* Date and Status below title */}
+                          <div className="flex items-center gap-4 mb-3">
+                            <span className="text-sm text-gray-600">
+                              📅 {new Date(order.created_at).toLocaleDateString('en-US', { 
+                                weekday: 'short', 
+                                year: 'numeric', 
+                                month: 'short', 
+                                day: 'numeric' 
+                              })}
                             </span>
-                          )}
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(order.status)}`}>
+                              {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                            </span>
+                            {order.source === 'subscription' && (
+                              <span className="px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                🔄 Subscription
+                              </span>
+                            )}
+                          </div>
+                          {/* Delivery/Pickup info */}
+                          <div className="text-sm text-gray-600">
+                            {order.note && order.note.includes('delivery') && (
+                              <span>🚚 Delivery</span>
+                            )}
+                            {(!order.note || !order.note.includes('delivery')) && (
+                              <span>📦 Pickup</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <span>📅 {new Date(order.created_at).toLocaleDateString('en-US', { 
-                            weekday: 'short', 
-                            year: 'numeric', 
-                            month: 'short', 
-                            day: 'numeric' 
-                          })}</span>
-                          {order.note && order.note.includes('delivery') && (
-                            <span>🚚 Delivery</span>
-                          )}
-                          {(!order.note || !order.note.includes('delivery')) && (
-                            <span>📦 Pickup</span>
-                          )}
+                        {/* Total on the right */}
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-gray-900">${(order.total_cents / 100).toFixed(2)}</p>
+                          <p className="text-sm text-gray-600">Total</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-2xl font-bold text-gray-900">${(order.total_cents / 100).toFixed(2)}</p>
-                        <p className="text-sm text-gray-600">Total</p>
-                      </div>
-                    </div>
 
-                    {/* Order Items */}
-                    {order.order_lines && order.order_lines.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Items</h4>
-                        <div className="space-y-2">
-                          {order.order_lines.map((line: any) => (
-                            <div key={line.id} className="flex items-center gap-3 py-2">
-                              <div className="flex-1">
-                                <p className="font-medium text-gray-900">{line.product_name || 'Product'}</p>
-                                <p className="text-sm text-gray-600">Qty: {line.quantity}</p>
-                              </div>
-                              <p className="font-medium text-gray-900">${(line.line_total_cents / 100).toFixed(2)}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-3 pt-4 border-t border-gray-100">
-                      {order.status === 'pending' && (
-                        <button
-                          onClick={async () => {
-                            if (confirm('Are you sure you want to cancel this order?')) {
-                              try {
-                                const { error } = await supabase
-                                  .from('orders')
-                                  .update({ status: 'cancelled' })
-                                  .eq('id', order.id);
-                                
-                                if (error) throw error;
-                                
-                                alert('Order cancelled successfully');
-                                await loadOrders();
-                              } catch (err) {
-                                console.error('Failed to cancel order:', err);
-                                alert('Failed to cancel order. Please try again.');
-                              }
-                            }
-                          }}
-                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium text-sm"
-                        >
-                          Cancel Order
-                        </button>
-                      )}
+                      {/* Expandable Items Section */}
                       <button
-                        onClick={() => {
-                          // TODO: Implement reorder functionality
-                          alert('Reorder feature coming soon! This will add all items from this order to your cart.');
-                        }}
-                        className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
+                        onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+                        className="flex items-center gap-2 text-sm font-medium text-green-600 hover:text-green-700 mb-4"
                       >
-                        🔄 Reorder
+                        {expandedOrderId === order.id ? '▼' : '▶'} 
+                        View Order Details ({order.order_lines?.length || 0} items)
                       </button>
+
+                      {/* Expanded Items View */}
+                      {expandedOrderId === order.id && order.order_lines && order.order_lines.length > 0 && (
+                        <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-3">Items in this order:</h4>
+                          <div className="space-y-3">
+                            {order.order_lines.map((line: any) => (
+                              <div key={line.id} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
+                                <div className="flex-1">
+                                  <p className="font-medium text-gray-900">{line.product_name || 'Product'}</p>
+                                  <p className="text-sm text-gray-600">
+                                    Qty: {line.quantity} × ${(line.unit_price_cents / 100).toFixed(2)}
+                                  </p>
+                                </div>
+                                <p className="font-medium text-gray-900 ml-4">${(line.line_total_cents / 100).toFixed(2)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-3 pt-4 border-t border-gray-100 flex-wrap">
+                        {order.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={async () => {
+                                if (confirm('Are you sure you want to cancel this order?')) {
+                                  try {
+                                    const { error } = await supabase
+                                      .from('orders')
+                                      .update({ status: 'cancelled' })
+                                      .eq('id', order.id);
+                                    
+                                    if (error) throw error;
+                                    
+                                    alert('Order cancelled successfully');
+                                    await loadOrders();
+                                  } catch (err) {
+                                    console.error('Failed to cancel order:', err);
+                                    alert('Failed to cancel order. Please try again.');
+                                  }
+                                }
+                              }}
+                              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium text-sm"
+                            >
+                              Cancel Order
+                            </button>
+                            <button
+                              onClick={() => makeRecurringOrder(order)}
+                              disabled={makingRecurring === order.id}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {makingRecurring === order.id ? '⏳ Processing...' : '🔄 Make Recurring'}
+                            </button>
+                          </>
+                        )}
+                        {order.status === 'completed' && (
+                          <button
+                            onClick={() => makeRecurringOrder(order)}
+                            disabled={makingRecurring === order.id}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {makingRecurring === order.id ? '⏳ Processing...' : '🔄 Make Recurring'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            // TODO: Implement reorder functionality
+                            alert('Reorder feature coming soon! This will add all items from this order to your cart.');
+                          }}
+                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
+                        >
+                          🛒 Reorder Now
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
