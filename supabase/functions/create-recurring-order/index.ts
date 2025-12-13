@@ -114,18 +114,21 @@ serve(async (req: Request) => {
     const { data: subscription, error: subError } = await supabaseAdmin
       .from('customer_subscriptions')
       .insert({
-        user_id: user.id,
         tenant_id: order.tenant_id,
         subscription_product_id: subProduct.id,
-        status: 'active',
-        interval_type: interval,
-        interval_count: frequency,
-        price_per_interval: order.total_cents / 100,
-        next_delivery_date: nextDeliveryDate,
-        total_deliveries: duration,
         customer_name: user.user_metadata?.full_name || user.email || '',
         customer_email: order.customer_email || user.email || '',
         customer_phone: user.user_metadata?.phone || null,
+        status: 'active',
+        start_date: new Date().toISOString().split('T')[0],
+        next_delivery_date: nextDeliveryDate.split('T')[0],
+        price_per_interval: order.total_cents / 100,
+        interval_type: interval,
+        interval_count: frequency,
+        deliveries_fulfilled: 0,
+        total_deliveries_expected: duration,
+        pickup_location: order.pickup_location || null,
+        delivery_notes: order.note || null,
       })
       .select()
       .single();
