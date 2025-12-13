@@ -152,7 +152,6 @@ serve(async (req: Request) => {
         total_cents: order.total_cents,
         source: 'subscription',
         is_subscription_order: true,
-        pickup_location: order.pickup_location || null,
         note: `Recurring order from #${order.id.slice(0, 8)} - Every ${frequency} ${interval}${frequency > 1 ? 's' : ''}${duration ? ` for ${duration} occurrences` : ' (ongoing)'}`,
       })
       .select()
