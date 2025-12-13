@@ -224,7 +224,7 @@ export function CheckoutPage() {
             full_name: formData.customerName,
             phone: formData.customerPhone || null,
             email: formData.customerEmail,
-            subscribed_to_emails: subscribeToEmails,
+            email_notifications: subscribeToEmails,
             updated_at: new Date().toISOString(),
           });
 
@@ -252,7 +252,7 @@ export function CheckoutPage() {
             .update({
               full_name: formData.customerName,
               phone: formData.customerPhone || null,
-              subscribed_to_emails: subscribeToEmails,
+              email_notifications: subscribeToEmails,
               updated_at: new Date().toISOString(),
             })
             .eq('id', existing.id);
@@ -271,7 +271,7 @@ export function CheckoutPage() {
               full_name: formData.customerName,
               phone: formData.customerPhone || null,
               email: formData.customerEmail,
-              subscribed_to_emails: subscribeToEmails,
+              email_notifications: subscribeToEmails,
             });
 
           if (error) {

@@ -49,7 +49,7 @@ serve(async (req) => {
         .eq('tenant_id', tenant_id);
 
       if (recipient_filter === 'subscribed') {
-        query.eq('subscribed_to_emails', true);
+        query.eq('email_notifications', true);
       }
 
       const { data: customers, error: customersError } = await query;
