@@ -96,7 +96,8 @@ serve(async (req: Request) => {
     const boxItems = order.order_lines.map((line: any) => ({
       subscription_product_id: subProduct.id,
       product_id: line.product_id,
-      quantity: line.quantity,
+      default_quantity: line.quantity,
+      quantity_type: 'fixed',
     }));
 
     const { error: itemsError } = await supabaseAdmin
