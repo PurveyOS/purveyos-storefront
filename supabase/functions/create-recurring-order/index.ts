@@ -80,9 +80,10 @@ serve(async (req: Request) => {
       .from('subscription_products')
       .insert({
         tenant_id: order.tenant_id,
+        product_id: order.order_lines[0].product_id, // Use first product as reference
         name: `Recurring Order from #${order.id.slice(0, 8)}`,
         description: `Automatically reorders ${order.order_lines.length} item(s) from order #${order.id.slice(0, 8)}`,
-        price_cents: order.total_cents,
+        price_per_interval: order.total_cents / 100,
       })
       .select()
       .single();
