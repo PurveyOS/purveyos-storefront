@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { User, Package, Calendar, CreditCard, Settings, LogOut, ShoppingCart } from 'lucide-react';
+import { RecurringOrderModal, type RecurringOrderSettings } from '../components/RecurringOrderModal';
 
 interface Subscription {
   id: string;
@@ -53,6 +54,8 @@ export function CustomerPortal() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [makingRecurring, setMakingRecurring] = useState<string | null>(null);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -175,11 +178,20 @@ export function CustomerPortal() {
     }
   };
 
-  const makeRecurringOrder = async (order: Order) => {
+  const makeRecurringOrder = async (order: Order, settings: RecurringOrderSettings) => {
     if (!user || !tenant) return;
     
     setMakingRecurring(order.id);
+    setShowRecurringModal(false);
+    
     try {
+      // Calculate next delivery date based on settings
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const daysToAdd = settings.interval === 'week' 
+        ? settings.frequency * 7 
+        : settings.frequency * 30; // Approximate month as 30 days
+      const nextDeliveryDate = new Date(Date.now() + daysToAdd * msPerDay).toISOString();
+      
       // Create a new subscription from the order
       const subscriptionName = `Recurring Order from #${order.id.slice(0, 8)}`;
       
@@ -197,7 +209,7 @@ export function CustomerPortal() {
 
       if (productError) throw productError;
 
-      // Create the subscription
+      // Create the subscription with settings
       const { data: newSub, error: subError } = await supabase
         .from('customer_subscriptions')
         .insert({
@@ -205,10 +217,11 @@ export function CustomerPortal() {
           tenant_id: tenant.id,
           subscription_product_id: subProduct.id,
           status: 'active',
-          interval_type: 'week',
-          interval_count: 1,
+          interval_type: settings.interval,
+          interval_count: settings.frequency,
           price_per_interval: order.total_cents / 100,
-          next_delivery_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          next_delivery_date: nextDeliveryDate,
+          total_deliveries: settings.duration,
         })
         .select()
         .single();
@@ -234,7 +247,11 @@ export function CustomerPortal() {
           source: 'subscription',
           is_subscription_order: true,
           subscription_id: newSub.id,
-          note: `Recurring order created from #${order.id.slice(0, 8)}`,
+          is_recurring: true,
+          recurrence_frequency: settings.frequency,
+          recurrence_interval: settings.interval,
+          recurrence_duration: settings.duration,
+          note: `Recurring order created from #${order.id.slice(0, 8)} - Every ${settings.frequency} ${settings.interval}${settings.frequency > 1 ? 's' : ''}${settings.duration ? ` for ${settings.duration} occurrences` : ' (ongoing)'}`,
         })
         .select()
         .single();
@@ -766,7 +783,10 @@ export function CustomerPortal() {
                               Cancel Order
                             </button>
                             <button
-                              onClick={() => makeRecurringOrder(order)}
+                              onClick={() => {
+                                setSelectedOrder(order);
+                                setShowRecurringModal(true);
+                              }}
                               disabled={makingRecurring === order.id}
                               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -776,7 +796,10 @@ export function CustomerPortal() {
                         )}
                         {order.status === 'completed' && (
                           <button
-                            onClick={() => makeRecurringOrder(order)}
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setShowRecurringModal(true);
+                            }}
                             disabled={makingRecurring === order.id}
                             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
@@ -844,6 +867,20 @@ export function CustomerPortal() {
           </div>
         )}
       </main>
+
+      {/* Recurring Order Modal */}
+      {selectedOrder && (
+        <RecurringOrderModal
+          isOpen={showRecurringModal}
+          onClose={() => {
+            setShowRecurringModal(false);
+            setSelectedOrder(null);
+          }}
+          onConfirm={(settings) => makeRecurringOrder(selectedOrder, settings)}
+          orderTotal={selectedOrder.total_cents}
+          orderId={selectedOrder.id}
+        />
+      )}
     </div>
   );
 }
