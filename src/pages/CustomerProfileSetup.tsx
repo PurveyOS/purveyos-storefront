@@ -9,6 +9,7 @@ export function CustomerProfileSetup() {
   const { tenant } = useTenantFromDomain();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
 
   const [formData, setFormData] = useState({
@@ -67,8 +68,19 @@ export function CustomerProfileSetup() {
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
+      // Check if profile already exists
+      const { data: existing } = await supabase
+        .from('customer_profiles')
+        .select('id')
+        .eq('id', user.id)
+        .eq('tenant_id', tenant.id)
+        .maybeSingle();
+
+      const isUpdate = !!existing;
+
       // Upsert customer profile with tenant_id so portal stops redirecting back to setup
       const { error: updateError } = await supabase
         .from('customer_profiles')
@@ -86,8 +98,11 @@ export function CustomerProfileSetup() {
 
       if (updateError) throw updateError;
 
-      // Redirect to account page
-      navigate('/account');
+      // Show success message
+      setSuccess(isUpdate ? 'Profile updated successfully!' : 'Profile created successfully!');
+      
+      // Redirect to account page after brief delay
+      setTimeout(() => navigate('/account'), 1500);
     } catch (err: any) {
       setError(err.message || 'Failed to save profile');
     } finally {
@@ -114,6 +129,12 @@ export function CustomerProfileSetup() {
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800">{success}</p>
             </div>
           )}
 
