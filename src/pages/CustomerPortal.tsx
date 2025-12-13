@@ -38,6 +38,10 @@ interface Order {
   source: string;
   order_lines?: OrderLine[];
   note?: string;
+  is_recurring?: boolean;
+  recurrence_frequency?: number;
+  recurrence_interval?: 'week' | 'month';
+  recurrence_duration?: number;
 }
 
 export function CustomerPortal() {
@@ -56,6 +60,8 @@ export function CustomerPortal() {
   const [makingRecurring, setMakingRecurring] = useState<string | null>(null);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [showManageRecurringModal, setShowManageRecurringModal] = useState(false);
+  const [managingOrder, setManagingOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -150,6 +156,10 @@ export function CustomerPortal() {
           source,
           note,
           is_subscription_order,
+          is_recurring,
+          recurrence_frequency,
+          recurrence_interval,
+          recurrence_duration,
           user_id,
           customer_email,
           order_lines(
@@ -649,6 +659,11 @@ export function CustomerPortal() {
                                 🔄 Subscription
                               </span>
                             )}
+                            {order.is_recurring && (
+                              <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                🔁 Recurring
+                              </span>
+                            )}
                           </div>
                           {/* Delivery/Pickup info */}
                           <div className="text-sm text-gray-600">
@@ -698,7 +713,7 @@ export function CustomerPortal() {
 
                       {/* Action Buttons */}
                       <div className="flex gap-3 pt-4 border-t border-gray-100 flex-wrap">
-                        {order.status === 'pending' && (
+                        {order.status === 'pending' && !order.is_recurring && (
                           <>
                             <button
                               onClick={async () => {
@@ -735,7 +750,18 @@ export function CustomerPortal() {
                             </button>
                           </>
                         )}
-                        {order.status === 'completed' && (
+                        {order.is_recurring && (
+                          <button
+                            onClick={() => {
+                              setManagingOrder(order);
+                              setShowManageRecurringModal(true);
+                            }}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm"
+                          >
+                            🔁 Manage Recurring
+                          </button>
+                        )}
+                        {order.status === 'completed' && !order.is_recurring && (
                           <button
                             onClick={() => {
                               setSelectedOrder(order);
@@ -822,6 +848,112 @@ export function CustomerPortal() {
           orderId={selectedOrder.id}
         />
       )}
+
+      {/* Manage Recurring Modal */}
+      {managingOrder && (
+        <ManageRecurringModal
+          isOpen={showManageRecurringModal}
+          onClose={() => {
+            setShowManageRecurringModal(false);
+            setManagingOrder(null);
+          }}
+          order={managingOrder}
+          onUpdate={async () => {
+            await loadOrders();
+            setShowManageRecurringModal(false);
+            setManagingOrder(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Manage Recurring Modal Component
+interface ManageRecurringModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  order: Order;
+  onUpdate: () => void;
+}
+
+function ManageRecurringModal({ isOpen, onClose, order, onUpdate }: ManageRecurringModalProps) {
+  const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleCancel = async () => {
+    if (!confirm('Are you sure you want to cancel this recurring order? No future orders will be created.')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ 
+          is_recurring: false,
+          recurrence_frequency: null,
+          recurrence_interval: null,
+          recurrence_duration: null,
+        })
+        .eq('id', order.id);
+
+      if (error) throw error;
+
+      alert('✅ Recurring order cancelled. This order will not repeat.');
+      onUpdate();
+    } catch (error) {
+      console.error('Failed to cancel recurring order:', error);
+      alert('Failed to cancel recurring order. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg max-w-md w-full p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">🔁 Manage Recurring Order</h2>
+        
+        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+          <h3 className="font-semibold text-gray-900 mb-2">Current Schedule:</h3>
+          <p className="text-gray-700">
+            📅 Every {order.recurrence_frequency} {order.recurrence_interval}
+            {(order.recurrence_frequency || 0) > 1 ? 's' : ''}
+            {order.recurrence_duration && (
+              <span className="block text-sm text-gray-600 mt-1">
+                For {order.recurrence_duration} deliveries total
+              </span>
+            )}
+          </p>
+          <p className="text-sm text-gray-600 mt-2">
+            💰 ${(order.total_cents / 100).toFixed(2)} per delivery
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <button
+            onClick={handleCancel}
+            disabled={loading}
+            className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? '⏳ Cancelling...' : '🚫 Cancel Recurring Order'}
+          </button>
+          
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
+          >
+            Close
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-500 mt-4">
+          💡 Cancelling will stop future automatic orders. This order will remain in your history.
+        </p>
+      </div>
     </div>
   );
 }

@@ -72,7 +72,11 @@ serve(async (req: Request) => {
         total_cents: order.total_cents,
         source: 'recurring',
         is_subscription_order: true,
-        note: `🔁 RECURRING (Every ${frequency} ${interval}${frequency > 1 ? 's' : ''}${duration ? ` × ${duration}` : ''}) - ${order.note || ''}`,
+        is_recurring: true,
+        recurrence_frequency: frequency,
+        recurrence_interval: interval,
+        recurrence_duration: duration,
+        note: order.note,
       })
       .select()
       .single();
@@ -84,9 +88,15 @@ serve(async (req: Request) => {
     // Copy order_lines
     const newOrderLines = order.order_lines.map((line: any) => ({
       order_id: newOrder.id,
+      tenant_id: order.tenant_id,
       product_id: line.product_id,
       quantity: line.quantity,
       price_per: line.price_per,
+      line_total_cents: line.line_total_cents || 0,
+      bin_weight: line.bin_weight || null,
+      unit_price_cents: line.unit_price_cents || null,
+      price_per_lb_cents: line.price_per_lb_cents || null,
+      weight_lbs: line.weight_lbs || null,
     }));
 
     const { error: linesError } = await supabaseAdmin
