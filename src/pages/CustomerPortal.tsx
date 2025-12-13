@@ -179,103 +179,44 @@ export function CustomerPortal() {
   };
 
   const makeRecurringOrder = async (order: Order, settings: RecurringOrderSettings) => {
-    if (!user || !tenant) return;
+    if (!user) return;
     
     setMakingRecurring(order.id);
     setShowRecurringModal(false);
     
     try {
-      // Calculate next delivery date based on settings
-      const msPerDay = 24 * 60 * 60 * 1000;
-      const daysToAdd = settings.interval === 'week' 
-        ? settings.frequency * 7 
-        : settings.frequency * 30; // Approximate month as 30 days
-      const nextDeliveryDate = new Date(Date.now() + daysToAdd * msPerDay).toISOString();
+      // Call the edge function to securely create the recurring order
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No session');
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-recurring-order`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            orderId: order.id,
+            frequency: settings.frequency,
+            interval: settings.interval,
+            duration: settings.duration,
+          }),
+        }
+      );
+
+      const result = await response.json();
       
-      // Create a new subscription from the order
-      const subscriptionName = `Recurring Order from #${order.id.slice(0, 8)}`;
-      
-      // Create subscription product first (or reuse if exists)
-      const { data: subProduct, error: productError } = await supabase
-        .from('subscription_products')
-        .insert({
-          tenant_id: tenant.id,
-          name: subscriptionName,
-          description: `Automatically reorders items from order #${order.id.slice(0, 8)}`,
-          price_cents: order.total_cents,
-        })
-        .select()
-        .single();
-
-      if (productError) throw productError;
-
-      // Create the subscription with settings
-      const { data: newSub, error: subError } = await supabase
-        .from('customer_subscriptions')
-        .insert({
-          user_id: user.id,
-          tenant_id: tenant.id,
-          subscription_product_id: subProduct.id,
-          status: 'active',
-          interval_type: settings.interval,
-          interval_count: settings.frequency,
-          price_per_interval: order.total_cents / 100,
-          next_delivery_date: nextDeliveryDate,
-          total_deliveries: settings.duration,
-        })
-        .select()
-        .single();
-
-      if (subError) throw subError;
-
-      // Create a new order with the order items to push to POS
-      const orderLines = (order.order_lines || []).map(line => ({
-        product_id: line.product_id,
-        product_name: line.product_name,
-        quantity: line.quantity,
-        unit_price_cents: line.unit_price_cents,
-      }));
-
-      const { data: newOrder, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          tenant_id: tenant.id,
-          user_id: user.id,
-          customer_email: user.email,
-          status: 'pending',
-          total_cents: order.total_cents,
-          source: 'subscription',
-          is_subscription_order: true,
-          subscription_id: newSub.id,
-          is_recurring: true,
-          recurrence_frequency: settings.frequency,
-          recurrence_interval: settings.interval,
-          recurrence_duration: settings.duration,
-          note: `Recurring order created from #${order.id.slice(0, 8)} - Every ${settings.frequency} ${settings.interval}${settings.frequency > 1 ? 's' : ''}${settings.duration ? ` for ${settings.duration} occurrences` : ' (ongoing)'}`,
-        })
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      // Add order lines to the new order
-      const newOrderLines = orderLines.map(line => ({
-        order_id: newOrder.id,
-        ...line,
-        line_total_cents: line.unit_price_cents * line.quantity,
-      }));
-
-      const { error: linesError } = await supabase
-        .from('order_lines')
-        .insert(newOrderLines);
-
-      if (linesError) throw linesError;
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to create recurring order');
+      }
 
       alert('✅ Order converted to recurring subscription! A new order has been created and sent to POS.');
       await Promise.all([loadSubscriptions(), loadOrders()]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create recurring order:', error);
-      alert('Failed to create recurring order. Please try again.');
+      alert(error.message || 'Failed to create recurring order. Please try again.');
     } finally {
       setMakingRecurring(null);
     }
