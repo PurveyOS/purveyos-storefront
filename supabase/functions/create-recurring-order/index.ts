@@ -46,20 +46,10 @@ serve(async (req: Request) => {
     const { data: order, error: orderError } = await supabaseAdmin
       .from('orders')
       .select(`
-        id,
-        tenant_id,
-        user_id,
-        customer_email,
-        total_cents,
-        order_lines (
-          product_id,
-          product_name,
-          quantity,
-          unit_price_cents
-        )
+        *,
+        order_lines (*)
       `)
       .eq('id', orderId)
-      .eq('user_id', user.id) // Ensure user owns this order
       .single();
 
     if (orderError || !order) {
@@ -70,103 +60,33 @@ serve(async (req: Request) => {
       throw new Error('Order has no items');
     }
 
-    // Calculate next delivery date
-    const msPerDay = 24 * 60 * 60 * 1000;
-    const daysToAdd = interval === 'week' ? frequency * 7 : frequency * 30;
-    const nextDeliveryDate = new Date(Date.now() + daysToAdd * msPerDay).toISOString();
-
-    // Create subscription product
-    const { data: subProduct, error: productError } = await supabaseAdmin
-      .from('subscription_products')
-      .insert({
-        tenant_id: order.tenant_id,
-        product_id: order.order_lines[0].product_id, // Use first product as reference
-        name: `Recurring Order from #${order.id.slice(0, 8)}`,
-        description: `Automatically reorders ${order.order_lines.length} item(s) from order #${order.id.slice(0, 8)}`,
-        price_per_interval: order.total_cents / 100,
-      })
-      .select()
-      .single();
-
-    if (productError) {
-      throw new Error(`Failed to create subscription product: ${productError.message}`);
-    }
-
-    // Create subscription_box_items for each product in the order
-    const boxItems = order.order_lines.map((line: any) => ({
-      subscription_product_id: subProduct.id,
-      product_id: line.product_id,
-      default_quantity: line.quantity,
-      quantity_type: 'fixed',
-    }));
-
-    const { error: itemsError } = await supabaseAdmin
-      .from('subscription_box_items')
-      .insert(boxItems);
-
-    if (itemsError) {
-      // Rollback: delete the subscription product
-      await supabaseAdmin.from('subscription_products').delete().eq('id', subProduct.id);
-      throw new Error(`Failed to create subscription items: ${itemsError.message}`);
-    }
-
-    // Create customer subscription
-    const { data: subscription, error: subError } = await supabaseAdmin
-      .from('customer_subscriptions')
-      .insert({
-        tenant_id: order.tenant_id,
-        subscription_product_id: subProduct.id,
-        customer_name: user.user_metadata?.full_name || user.email || '',
-        customer_email: order.customer_email || user.email || '',
-        customer_phone: user.user_metadata?.phone || null,
-        status: 'active',
-        start_date: new Date().toISOString().split('T')[0],
-        next_delivery_date: nextDeliveryDate.split('T')[0],
-        price_per_interval: order.total_cents / 100,
-        interval_type: interval,
-        interval_count: frequency,
-        deliveries_fulfilled: 0,
-        total_deliveries_expected: duration,
-        pickup_location: order.pickup_location || null,
-        delivery_notes: order.note || null,
-      })
-      .select()
-      .single();
-
-    if (subError) {
-      // Rollback: delete subscription product and items
-      await supabaseAdmin.from('subscription_box_items').delete().eq('subscription_product_id', subProduct.id);
-      await supabaseAdmin.from('subscription_products').delete().eq('id', subProduct.id);
-      throw new Error(`Failed to create subscription: ${subError.message}`);
-    }
-
-    // Create initial order for the subscription
+    // Simply duplicate the order with recurring flag
     const { data: newOrder, error: newOrderError } = await supabaseAdmin
       .from('orders')
       .insert({
         tenant_id: order.tenant_id,
         customer_email: order.customer_email,
-        customer_name: user.user_metadata?.full_name || user.email || '',
-        customer_phone: user.user_metadata?.phone || order.customer_phone || null,
+        customer_name: order.customer_name,
+        customer_phone: order.customer_phone,
         status: 'pending',
         total_cents: order.total_cents,
-        source: 'subscription',
+        source: 'recurring',
         is_subscription_order: true,
-        note: `Recurring order from #${order.id.slice(0, 8)} - Every ${frequency} ${interval}${frequency > 1 ? 's' : ''}${duration ? ` for ${duration} occurrences` : ' (ongoing)'}`,
+        note: `🔁 RECURRING (Every ${frequency} ${interval}${frequency > 1 ? 's' : ''}${duration ? ` × ${duration}` : ''}) - ${order.note || ''}`,
       })
       .select()
       .single();
 
     if (newOrderError) {
-      throw new Error(`Failed to create initial order: ${newOrderError.message}`);
+      throw new Error(`Failed to create recurring order: ${newOrderError.message}`);
     }
 
-    // Create order_lines for the new order
+    // Copy order_lines
     const newOrderLines = order.order_lines.map((line: any) => ({
       order_id: newOrder.id,
       product_id: line.product_id,
       quantity: line.quantity,
-      price_per: line.unit_price_cents / 100, // Convert cents to dollars
+      price_per: line.price_per,
     }));
 
     const { error: linesError } = await supabaseAdmin
@@ -174,18 +94,14 @@ serve(async (req: Request) => {
       .insert(newOrderLines);
 
     if (linesError) {
-      console.error('Failed to create order lines:', linesError);
-      // Don't fail the whole operation for this
-    } else {
-      console.log(`Created ${newOrderLines.length} order lines for order ${newOrder.id}`);
+      throw new Error(`Failed to create order lines: ${linesError.message}`);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        subscription_id: subscription.id,
         order_id: newOrder.id,
-        next_delivery_date: nextDeliveryDate,
+        message: `Recurring order created! Will repeat every ${frequency} ${interval}${frequency > 1 ? 's' : ''}`,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
