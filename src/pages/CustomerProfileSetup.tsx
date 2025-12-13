@@ -75,6 +75,7 @@ export function CustomerProfileSetup() {
         .upsert({
           id: user.id,
           tenant_id: tenant.id,
+          email: user.email,
           full_name: formData.fullName,
           phone: formData.phone || null,
           default_delivery_address: formData.deliveryAddress || null,
