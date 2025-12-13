@@ -165,9 +165,8 @@ serve(async (req: Request) => {
     const newOrderLines = order.order_lines.map((line: any) => ({
       order_id: newOrder.id,
       product_id: line.product_id,
-      product_name: line.product_name,
       quantity: line.quantity,
-      unit_price_cents: line.unit_price_cents,
+      price_per: line.unit_price_cents / 100, // Convert cents to dollars
     }));
 
     const { error: linesError } = await supabaseAdmin
@@ -177,6 +176,8 @@ serve(async (req: Request) => {
     if (linesError) {
       console.error('Failed to create order lines:', linesError);
       // Don't fail the whole operation for this
+    } else {
+      console.log(`Created ${newOrderLines.length} order lines for order ${newOrder.id}`);
     }
 
     return new Response(
