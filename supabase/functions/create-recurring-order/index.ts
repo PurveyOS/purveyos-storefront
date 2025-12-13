@@ -145,18 +145,15 @@ serve(async (req: Request) => {
       .from('orders')
       .insert({
         tenant_id: order.tenant_id,
-        user_id: user.id,
         customer_email: order.customer_email,
+        customer_name: user.user_metadata?.full_name || user.email || '',
+        customer_phone: user.user_metadata?.phone || order.customer_phone || null,
         status: 'pending',
         total_cents: order.total_cents,
         source: 'subscription',
         is_subscription_order: true,
-        subscription_id: subscription.id,
-        is_recurring: true,
-        recurrence_frequency: frequency,
-        recurrence_interval: interval,
-        recurrence_duration: duration,
-        note: `Recurring order created from #${order.id.slice(0, 8)} - Every ${frequency} ${interval}${frequency > 1 ? 's' : ''}${duration ? ` for ${duration} occurrences` : ' (ongoing)'}`,
+        pickup_location: order.pickup_location || null,
+        note: `Recurring order from #${order.id.slice(0, 8)} - Every ${frequency} ${interval}${frequency > 1 ? 's' : ''}${duration ? ` for ${duration} occurrences` : ' (ongoing)'}`,
       })
       .select()
       .single();
