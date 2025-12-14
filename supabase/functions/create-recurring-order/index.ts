@@ -107,6 +107,17 @@ serve(async (req: Request) => {
       throw new Error(`Failed to create order lines: ${linesError.message}`);
     }
 
+    // Also update the original order to mark it as recurring (for POS display)
+    await supabaseAdmin
+      .from('orders')
+      .update({
+        is_recurring: true,
+        recurrence_frequency: frequency,
+        recurrence_interval: interval,
+        recurrence_duration: duration,
+      })
+      .eq('id', orderId);
+
     return new Response(
       JSON.stringify({
         success: true,

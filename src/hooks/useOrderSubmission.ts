@@ -176,6 +176,11 @@ export async function submitOrder(
 
     const totalDollars = totals.totalCents / 100;
 
+    // 2.5) Check if this is a weight-based pre-order (has weight AND is pre-order)
+    const isWeightEstimate = lineDrafts.some(
+      (draft) => draft.isPreOrder && (draft.weightLbs !== null || draft.binWeight !== null)
+    );
+
     // 3) Create the order
     const nowIso = new Date().toISOString();
     const { data: order, error: orderError } = await supabase
@@ -192,6 +197,9 @@ export async function submitOrder(
         status: 'pending',
         created_at: nowIso,
         updated_at: nowIso,
+        // Weight estimate fields - only set if this is a weight-based pre-order
+        is_weight_estimate: isWeightEstimate || undefined,
+        estimated_total_cents: isWeightEstimate ? totals.totalCents : undefined,
       })
       .select()
       .single();
