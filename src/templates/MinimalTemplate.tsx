@@ -249,7 +249,8 @@ export function MinimalTemplate({
                       const handleCustomWeight = () => {
                         const parsed = parseFloat(weightValue);
                         if (!parsed || parsed <= 0) return;
-                        onAddToCart(product.id, 1, { weight: parsed, isPreOrder: canPreOrder });
+                        // Set isPreOrder if product allows pre-orders OR if explicitly in pre-order mode
+                        onAddToCart(product.id, 1, { weight: parsed, isPreOrder: canPreOrder || product.allowPreOrder });
                         setWeightInputs((prev) => ({ ...prev, [product.id]: '1' }));
                       };
 
@@ -264,7 +265,8 @@ export function MinimalTemplate({
                           alert('Product is sold out');
                           return;
                         }
-                        onAddToCart(product.id, qty, { isPreOrder: canPreOrder });
+                        // Set isPreOrder if product allows pre-orders OR if explicitly in pre-order mode
+                        onAddToCart(product.id, qty, { isPreOrder: canPreOrder || product.allowPreOrder });
                         setQtyInputs((prev) => ({ ...prev, [product.id]: 1 }));
                       };
 

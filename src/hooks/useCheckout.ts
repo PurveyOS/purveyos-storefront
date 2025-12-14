@@ -151,7 +151,11 @@ export function useCheckout() {
           typeof item.binWeight === 'number' ? item.binWeight : null;
         const weightLbs: number | null =
           typeof item.weight === 'number' ? item.weight : null;
-        const isPreOrder: boolean = !!item.isPreOrder;
+        
+        // Check if this should be a pre-order based on:
+        // 1. Cart item explicitly marked as pre-order, OR
+        // 2. Product has allow_pre_order enabled (for weight-based items)
+        const isPreOrder: boolean = !!item.isPreOrder || !!(product as any).allowPreOrder;
 
         const pricingMode: 'weight' | 'fixed' | undefined = (product as any).pricingMode;
 
