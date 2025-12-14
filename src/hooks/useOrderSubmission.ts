@@ -198,8 +198,8 @@ export async function submitOrder(
         created_at: nowIso,
         updated_at: nowIso,
         // Weight estimate fields - only set if this is a weight-based pre-order
-        is_weight_estimate: isWeightEstimate || undefined,
-        estimated_total_cents: isWeightEstimate ? totals.totalCents : undefined,
+        is_weight_estimate: isWeightEstimate,
+        estimated_total_cents: isWeightEstimate ? totals.totalCents : null,
       })
       .select()
       .single();
