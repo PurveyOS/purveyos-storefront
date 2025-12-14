@@ -230,6 +230,14 @@ export function useCheckout() {
       // Add shipping charge to the final total
       const totalCents = totals.totalCents + shippingChargeCents;
 
+      // Flag weight-based pre-orders so orders can be marked as estimates server-side
+      const isWeightEstimate = lines.some(
+        (line) =>
+          (line.isPreOrder ?? false) &&
+          (((line.weightLbs ?? 0) > 0 || (line.binWeight ?? 0) > 0) || line.pricePer === 'lb')
+      );
+      const estimatedTotalCents = isWeightEstimate ? totalCents : undefined;
+
       console.log('💰 [useCheckout] Calling edge function with totals:', {
         subtotalCents,
         taxCents,
@@ -260,6 +268,10 @@ export function useCheckout() {
             totalCents,
             discountCents,
             shippingChargeCents,
+
+            // Weight-based pre-order flags used by the Edge Function
+            isWeightEstimate,
+            estimatedTotalCents,
 
             // Optional subscription payload (for storefront_subscriptions)
             subscription: checkoutData.subscription,

@@ -35,6 +35,8 @@ interface OrderRequest {
   totalCents: number
   discountCents?: number
   shippingChargeCents?: number
+  isWeightEstimate?: boolean
+  estimatedTotalCents?: number
   subscription?: {
     enabled: boolean
     cadence?: 'weekly' | 'biweekly' | 'monthly'
@@ -94,6 +96,16 @@ serve(async (req) => {
       )
     }
 
+    // Derive weight-based pre-order flags (used to mark orders as estimates)
+    const isWeightEstimate = orderRequest.isWeightEstimate ?? orderRequest.lines.some((line) => {
+      const lineIsPreOrder = line.isPreOrder ?? false
+      const hasWeight = (line.weightLbs ?? 0) > 0 || (line.binWeight ?? 0) > 0
+      const isWeightPriced = line.pricePer === 'lb'
+      return lineIsPreOrder && (hasWeight || isWeightPriced)
+    })
+
+    const estimatedTotalCents = orderRequest.estimatedTotalCents ?? (isWeightEstimate ? orderRequest.totalCents : null)
+
     // Start a transaction by using multiple operations
     // 1. Create the order
     const orderId = crypto.randomUUID()
@@ -135,6 +147,8 @@ serve(async (req) => {
         shipping_cents: orderRequest.shippingChargeCents ?? 0,
         total_cents: orderRequest.totalCents,
         discount_cents: orderRequest.discountCents ?? 0,
+        is_weight_estimate: isWeightEstimate,
+        estimated_total_cents: estimatedTotalCents,
         source: 'storefront',
         status: 'pending',
         created_at: new Date().toISOString(),
