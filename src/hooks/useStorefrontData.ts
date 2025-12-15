@@ -166,7 +166,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('package_bins')
-            .select('product_id, weight_btn, unit_price_cents, qty')
+            .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty')
             .eq('tenant_id', tenantId)
             .gt('qty', 0), // Only show bins with inventory
           
@@ -277,7 +277,7 @@ export function useStorefrontData(tenantId: string): {
         } : MOCK_SETTINGS;
 
         // Group bins by product_id
-        const binsByProduct = new Map<string, Array<{ weightBtn: number; unitPriceCents: number; qty: number }>>();
+        const binsByProduct = new Map<string, Array<{ weightBtn: number; unitPriceCents: number; qty: number; reservedQty?: number }>>();
         if (binsResult.data) {
           binsResult.data.forEach((bin: any) => {
             if (!binsByProduct.has(bin.product_id)) {
@@ -287,6 +287,7 @@ export function useStorefrontData(tenantId: string): {
               weightBtn: bin.weight_btn,
               unitPriceCents: bin.unit_price_cents,
               qty: bin.qty,
+              reservedQty: bin.reserved_qty || 0,
             });
           });
         }
@@ -324,7 +325,7 @@ export function useStorefrontData(tenantId: string): {
           
           // Calculate total inventory from package_bins (authoritative source)
           const totalInventory = bins 
-            ? bins.reduce((sum, bin) => sum + (bin.qty || 0), 0)
+            ? bins.reduce((sum, bin) => sum + ((bin.qty - (bin.reserved_qty || 0)) || 0), 0)
             : 0;
           
           const productData = {

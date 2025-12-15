@@ -2,6 +2,7 @@ interface WeightBin {
   weightBtn: number;
   unitPriceCents: number;
   qty: number;
+  reservedQty?: number; // Add reserved quantity
 }
 
 interface WeightBinSelectorProps {
@@ -17,8 +18,14 @@ export function WeightBinSelector({
   onSelect,
   primaryColor = '#0f6fff'
 }: WeightBinSelectorProps) {
+  // Filter bins by available quantity (qty - reservedQty)
   // Sort bins by weight
-  const sortedBins = [...bins].sort((a, b) => a.weightBtn - b.weightBtn);
+  const sortedBins = [...bins]
+    .filter(b => {
+      const available = (b.qty ?? 0) - (b.reservedQty ?? 0);
+      return available > 0;
+    })
+    .sort((a, b) => a.weightBtn - b.weightBtn);
 
   return (
     <div className="space-y-2">
@@ -28,12 +35,13 @@ export function WeightBinSelector({
   {sortedBins.map((bin) => {
           const pricePerUnit = bin.unitPriceCents / 100;
           const totalPrice = (bin.weightBtn * pricePerUnit).toFixed(2);
+          const availableQty = (bin.qty ?? 0) - (bin.reservedQty ?? 0);
           
           return (
             <button
               key={bin.weightBtn}
               onClick={() => onSelect({ weightBtn: bin.weightBtn, unitPriceCents: bin.unitPriceCents })}
-              disabled={bin.qty === 0}
+              disabled={availableQty <= 0}
               className="relative flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 borderColor: primaryColor,
@@ -47,7 +55,7 @@ export function WeightBinSelector({
                 ${totalPrice}
               </span>
               <span className="text-xs text-slate-500">
-                {bin.qty} available
+                {availableQty} available
               </span>
             </button>
           );
