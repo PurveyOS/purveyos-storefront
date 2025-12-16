@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface WeightBin {
   weightBtn: number;
   unitPriceCents: number;
