@@ -231,7 +231,21 @@ export function MinimalTemplate({
                     {(() => {
                       const unit = (product.unit || '').toLowerCase();
                       const isWeight = product.pricingMode === 'weight' || unit === 'lb';
-                      const hasBins = isWeight && product.weightBins && product.weightBins.length > 0;
+                      // Account for bins already in the cart when showing availability
+                      const binCountsInCart = cart.items
+                        .filter((item) => item.productId === product.id && item.binWeight != null)
+                        .reduce<Record<number, number>>((acc, item) => {
+                          const key = item.binWeight as number;
+                          acc[key] = (acc[key] || 0) + item.quantity;
+                          return acc;
+                        }, {});
+
+                      const adjustedBins = (product.weightBins || []).map((bin) => ({
+                        ...bin,
+                        qty: Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0) - (binCountsInCart[bin.weightBtn] || 0)),
+                      }));
+
+                      const hasBins = isWeight && adjustedBins.length > 0;
                       const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
                       const canPreOrder = (features?.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
 
@@ -276,7 +290,7 @@ export function MinimalTemplate({
                             {hasBins && (
                               <button
                                 type="button"
-                                onClick={() => setActiveBinProduct(product)}
+                                onClick={() => setActiveBinProduct({ ...product, weightBins: adjustedBins })}
                                 disabled={isSoldOut && !canPreOrder}
                                 className={`w-full border px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                                   isSoldOut && !canPreOrder
@@ -381,8 +395,14 @@ export function MinimalTemplate({
 
       {/* Weight Bin Modal */}
       {activeBinProduct && activeBinProduct.weightBins && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 relative">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={() => setActiveBinProduct(null)}
+        >
+          <div
+            className="w-full max-w-md bg-white rounded-xl shadow-2xl p-5 relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Choose package size</h3>
               <button
@@ -402,7 +422,7 @@ export function MinimalTemplate({
                 } else {
                   onAddToCart(activeBinProduct.id, 1, { binWeight: bin.weightBtn, unitPriceCents: bin.unitPriceCents });
                 }
-                setActiveBinProduct(null);
+                // Keep modal open; user can add multiple packages and close manually
               }}
               primaryColor={settings.primaryColor}
             />

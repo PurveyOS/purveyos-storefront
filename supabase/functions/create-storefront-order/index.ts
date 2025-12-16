@@ -49,6 +49,14 @@ interface OrderRequest {
   }
 }
 
+function buildPackageKey(productId: string, unit: string | null | undefined, line: OrderLine) {
+  const isLb = (unit || '').toLowerCase() === 'lb'
+  const rawWeight = isLb ? (line.binWeight ?? line.weightLbs ?? 0) : 0
+  const weightBtn = Math.round(rawWeight * 100) / 100
+  const weightStr = weightBtn.toString().replace(/\.0+$/, '').replace(/\.([1-9]*)0+$/, '.$1') || '0'
+  return `${productId}|${weightStr}`
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -105,6 +113,69 @@ serve(async (req) => {
     })
 
     const estimatedTotalCents = orderRequest.estimatedTotalCents ?? (isWeightEstimate ? orderRequest.totalCents : null)
+
+    // Preflight stock check to prevent orders on unavailable items
+    const productIds = Array.from(new Set(orderRequest.lines.map((l) => l.productId)))
+
+    const { data: products, error: productsError } = await supabaseAdmin
+      .from('products')
+      .select('id, unit, qty')
+      .eq('tenant_id', orderRequest.tenantId)
+      .in('id', productIds)
+
+    if (productsError) {
+      console.error('Error fetching products for stock check:', productsError)
+      return new Response(JSON.stringify({ error: 'Inventory check failed' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { data: bins, error: binsError } = await supabaseAdmin
+      .from('package_bins')
+      .select('product_id, package_key, qty, reserved_qty')
+      .eq('tenant_id', orderRequest.tenantId)
+      .in('product_id', productIds)
+
+    if (binsError) {
+      console.error('Error fetching package_bins for stock check:', binsError)
+      return new Response(JSON.stringify({ error: 'Inventory check failed' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const productsById = new Map((products ?? []).map((p) => [p.id, p]))
+    const binsByKey = new Map((bins ?? []).map((b) => [b.package_key, b]))
+
+    const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
+
+    for (const line of orderRequest.lines) {
+      const product = productsById.get(line.productId)
+      const packageKey = buildPackageKey(line.productId, product?.unit, line)
+      const bin = binsByKey.get(packageKey)
+      const reserved = bin?.reserved_qty ?? 0
+      const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null
+      const available = availableFromBin !== null ? availableFromBin : (product?.qty ?? 0)
+      const required = line.qty ?? 1
+
+      if (!bin && (product?.unit || '').toLowerCase() === 'lb') {
+        shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available: 0 })
+        continue
+      }
+
+      if (required > available) {
+        shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+      }
+    }
+
+    if (shortages.length > 0) {
+      console.warn('Blocking order: insufficient stock for lines', shortages)
+      return new Response(JSON.stringify({ error: 'out_of_stock', shortages }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     // Start a transaction by using multiple operations
     // 1. Create the order

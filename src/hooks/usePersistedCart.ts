@@ -123,6 +123,29 @@ export function usePersistedCart() {
     try { trackClearCart(); } catch {}
   };
 
+  // Bulk remove specific cart entries, matching on productId and optional binWeight/weight
+  const removeItems = (itemsToRemove: Array<{ productId: string; binWeight?: number; weight?: number }>) => {
+    if (!Array.isArray(itemsToRemove) || itemsToRemove.length === 0) return;
+
+    setCart(prev => {
+      const filtered = prev.items.filter(item => {
+        return !itemsToRemove.some(toRemove => {
+          if (item.productId !== toRemove.productId) return false;
+          if (toRemove.binWeight !== undefined && item.binWeight !== toRemove.binWeight) return false;
+          if (toRemove.weight !== undefined && item.weight !== toRemove.weight) return false;
+          return true;
+        });
+      });
+
+      // Fire analytics for removals (non-blocking)
+      itemsToRemove.forEach((r) => {
+        try { trackRemoveFromCart({ productId: r.productId, quantity: 1, binWeight: r.binWeight }); } catch {}
+      });
+
+      return { ...prev, items: filtered };
+    });
+  };
+
   const updateCartTotal = (products: any[]) => {
     const total = cart.items.reduce((sum, item) => {
       const product = products.find(p => p.id === item.productId);
@@ -153,6 +176,7 @@ export function usePersistedCart() {
     removeFromCart,
     clearCart,
     updateCartTotal,
+    removeItems,
     // Convenience: explicit bin add helper
     addBinToCart: (productId: string, binWeight: number, unitPriceCents: number) => addToCart(productId, 1, { binWeight, unitPriceCents }),
   };

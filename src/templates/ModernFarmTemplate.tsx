@@ -252,11 +252,21 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
           .filter((i) => i.productId === product.id)
           .reduce((sum, i) => sum + i.quantity, 0);
 
+        // Track how many of each bin weight are currently in the cart for this product
+        const binCountsInCart = cart.items
+          .filter((i) => i.productId === product.id && i.binWeight != null)
+          .reduce<Record<number, number>>((acc, item) => {
+            const key = item.binWeight as number;
+            acc[key] = (acc[key] || 0) + item.quantity;
+            return acc;
+          }, {});
+
         return (
           <ProductCard
             key={product.id}
             product={product}
             quantityInCart={quantityInCart}
+            binCountsInCart={binCountsInCart}
             onAddToCart={(options) => {
               // Debug logging
               console.log('Product clicked:', product.name, 'isSubscription:', product.isSubscription, 'subscriptionData:', product.subscriptionData);

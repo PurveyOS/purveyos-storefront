@@ -6,6 +6,7 @@ import { usePersistedCart } from '../hooks/usePersistedCart';
 import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 interface Discount {
   id: string;
@@ -21,7 +22,7 @@ export function CheckoutPage() {
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
-  const { cart, clearCart, updateCartTotal } = usePersistedCart();
+  const { cart, clearCart, updateCartTotal, removeItems } = usePersistedCart();
   const { createOrder, loading: checkoutLoading, error: checkoutError } = useCheckout();
 
   type ShippingAddress = {
@@ -180,6 +181,76 @@ export function CheckoutPage() {
     const base = [location?.name, location?.address].filter(Boolean).join(' - ').trim();
     const dayTime = [location?.day, location?.time].filter(Boolean).join(' @ ');
     return [base || 'Drop location', dayTime].filter(Boolean).join(' | ');
+  };
+
+  const buildPackageKey = (productId: string, unit: string | null | undefined, item: any) => {
+    const isLb = (unit || '').toLowerCase() === 'lb';
+    const rawWeight = isLb ? (item.binWeight ?? item.weight ?? 0) : 0;
+    const weightBtn = Math.round(rawWeight * 100) / 100;
+    const weightStr = (weightBtn || 0).toString().replace(/\.0+$/, '').replace(/\.([1-9]*)0+$/, '.$1');
+    const safeWeight = weightStr.length > 0 ? weightStr : '0';
+    return `${productId}|${safeWeight}`;
+  };
+
+  const verifyAndPruneCart = async (): Promise<boolean> => {
+    if (!tenant?.id || cart.items.length === 0) return true;
+
+    const productIds = Array.from(new Set(cart.items.map((i: any) => i.productId)));
+
+    const [{ data: latestProducts, error: prodError }, { data: packageBins, error: binError }] = await Promise.all([
+      supabase.from('products').select('id, unit, qty').eq('tenant_id', tenant.id).in('id', productIds),
+      supabase.from('package_bins').select('product_id, package_key, qty, reserved_qty').eq('tenant_id', tenant.id).in('product_id', productIds),
+    ]);
+
+    if (prodError || binError) {
+      console.error('Inventory preflight failed:', { prodError, binError });
+      toast.error('Could not verify inventory. Please try again.');
+      return false;
+    }
+
+    const productsById = new Map((latestProducts || []).map((p: any) => [p.id, p]));
+    const binsByKey = new Map((packageBins || []).map((b: any) => [b.package_key, b]));
+
+    const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number }> = [];
+
+    cart.items.forEach((item: any) => {
+      const product = productsById.get(item.productId);
+      const packageKey = buildPackageKey(item.productId, product?.unit, item);
+      const bin = binsByKey.get(packageKey);
+      const reserved = bin?.reserved_qty ?? 0;
+      const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null;
+      // Fallback to product.qty when bin is missing (each-based products)
+      const available = availableFromBin !== null ? availableFromBin : (product?.qty ?? 0);
+      const required = item.quantity ?? 1;
+
+      if (!bin && (product?.unit || '').toLowerCase() === 'lb') {
+        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight });
+        return;
+      }
+
+      if (required > available) {
+        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight });
+      }
+    });
+
+    if (outOfStock.length > 0) {
+      removeItems(outOfStock);
+
+      const productName = (id: string) => storefrontData?.products?.find((p: any) => p.id === id)?.name || 'Item';
+      const removedList = outOfStock
+        .map((item) => {
+          const name = productName(item.productId);
+          if (item.binWeight) return `${name} (${item.binWeight} lb package)`;
+          if (item.weight) return `${name} (${item.weight} lb)`;
+          return name;
+        })
+        .join(', ');
+
+      toast.error(`Removed unavailable items: ${removedList}`);
+      return false;
+    }
+
+    return true;
   };
 
   // Save customer profile (guest or authenticated) with email preference
@@ -538,6 +609,12 @@ export function CheckoutPage() {
         alert('Please provide a full shipping address.');
         return;
       }
+    }
+
+    // Preflight: ensure cart items are still in stock; prune and notify if not
+    const availabilityOk = await verifyAndPruneCart();
+    if (!availabilityOk) {
+      return;
     }
 
     // Save customer profile with email preference

@@ -25,6 +25,8 @@ interface ModernProductCardProps {
   accentColor?: string;
   onAddBinToCart?: (binWeight: number, unitPriceCents: number) => void;
   preOrdersEnabled?: boolean;
+  // Current bin quantities already in the cart (by weightBtn)
+  binCountsInCart?: Record<number, number>;
 }
 
 type ProductCardProps = ClassicProductCardProps | ModernProductCardProps;
@@ -160,14 +162,33 @@ export function ProductCard(props: ProductCardProps) {
   }, [showDepositTooltip]);
   
   // Track local bin quantities to reflect cart additions
-  const [localBins, setLocalBins] = useState(product.weightBins || []);
+  const adjustBinsForCart = (
+    bins: Product['weightBins'],
+    binCountsInCart?: Record<number, number>
+  ) => {
+    const counts = binCountsInCart || {};
+    return (bins || []).map((bin) => ({
+      ...bin,
+      // Subtract reserved from DB and any quantities already in cart for that bin weight
+      qty: Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0) - (counts[bin.weightBtn] || 0)),
+    }));
+  };
+
+  const [localBins, setLocalBins] = useState(
+    adjustBinsForCart(product.weightBins, props.binCountsInCart)
+  );
   
   // Reset local bins when modal opens
   useEffect(() => {
     if (showBinModal) {
-      setLocalBins(product.weightBins || []);
+      setLocalBins(adjustBinsForCart(product.weightBins, props.binCountsInCart));
     }
-  }, [showBinModal, product.weightBins]);
+  }, [showBinModal, product.weightBins, props.binCountsInCart]);
+
+  // Keep badge counts in sync when cart changes even if modal is closed
+  useEffect(() => {
+    setLocalBins(adjustBinsForCart(product.weightBins, props.binCountsInCart));
+  }, [product.weightBins, props.binCountsInCart]);
 
   // Your rule: unit drives behavior
   const unit = (product.unit || "").toLowerCase();
