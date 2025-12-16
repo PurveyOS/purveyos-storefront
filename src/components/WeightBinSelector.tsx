@@ -18,14 +18,23 @@ export function WeightBinSelector({
   onSelect,
   primaryColor = '#0f6fff'
 }: WeightBinSelectorProps) {
-  // Filter bins by available quantity (qty - reservedQty)
-  // Sort bins by weight
-  const sortedBins = [...bins]
-    .filter(b => {
-      const available = (b.qty ?? 0) - (b.reservedQty ?? 0);
-      return available > 0;
-    })
-    .sort((a, b) => a.weightBtn - b.weightBtn);
+  // Maintain local optimistic state so badges decrement immediately on selection
+  const [localBins, setLocalBins] = React.useState<WeightBin[]>(bins);
+
+  // Sync local state when incoming bins change
+  React.useEffect(() => {
+    setLocalBins(bins);
+  }, [bins]);
+
+  // Compute sorted available bins
+  const sortedBins = React.useMemo(() => {
+    return [...localBins]
+      .filter(b => {
+        const available = (b.qty ?? 0) - (b.reservedQty ?? 0);
+        return available > 0;
+      })
+      .sort((a, b) => a.weightBtn - b.weightBtn);
+  }, [localBins]);
 
   return (
     <div className="space-y-2">
@@ -39,8 +48,23 @@ export function WeightBinSelector({
           
           return (
             <button
-              key={bin.weightBtn}
-              onClick={() => onSelect({ weightBtn: bin.weightBtn, unitPriceCents: bin.unitPriceCents })}
+              key={`${bin.weightBtn}-${bin.unitPriceCents}`}
+              onClick={() => {
+                // Optimistically decrement local count
+                setLocalBins(prev => prev.map(b => {
+                  if (b.weightBtn === bin.weightBtn && b.unitPriceCents === bin.unitPriceCents) {
+                    const currentQty = (b.qty ?? 0);
+                    const currentReserved = (b.reservedQty ?? 0);
+                    const available = currentQty - currentReserved;
+                    // If available is positive, decrement qty; otherwise leave
+                    if (available > 0) {
+                      return { ...b, qty: Math.max(0, currentQty - 1) };
+                    }
+                  }
+                  return b;
+                }));
+                onSelect({ weightBtn: bin.weightBtn, unitPriceCents: bin.unitPriceCents });
+              }}
               disabled={availableQty <= 0}
               className="relative flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all duration-200 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
