@@ -459,55 +459,26 @@ serve(async (req) => {
       }
     }
 
-    // Send notification to tenant (don't fail order if notification fails)
-    try {
-      console.log('Invoking order-created-notify function...');
-      const notifyResult = await supabaseAdmin.functions.invoke('order-created-notify', {
-        body: {
-          orderId,
-          tenantId: orderRequest.tenantId,
-          customerName: orderRequest.customerName,
-          customerEmail: orderRequest.customerEmail,
-          customerPhone: orderRequest.customerPhone,
-          totalCents: orderRequest.totalCents,
-          source: 'storefront'
-        }
-      });
-      console.log('Notification result:', notifyResult);
-      if (notifyResult.error) {
-        console.error('Notification function returned error:', notifyResult.error);
-      } else {
-        console.log('✓ Notification sent successfully');
-      }
-    } catch (notifyError) {
-      console.error('Failed to send notification (non-fatal):', notifyError);
-    }
-
-    // Send confirmation email to customer (non-fatal if fails)
+    // Send confirmation email to customer (non-blocking, don't fail order if notification fails)
     try {
       if (orderRequest.customerEmail) {
-        console.log('Sending order confirmation to customer:', orderRequest.customerEmail);
-        const customerNotifyResult = await supabaseAdmin.functions.invoke('order-created-notify', {
+        console.log('📧 Sending order confirmation email to customer:', orderRequest.customerEmail);
+        const notifyResult = await supabaseAdmin.functions.invoke('order-notify', {
           body: {
             orderId,
-            tenantId: orderRequest.tenantId,
-            customerName: orderRequest.customerName,
-            customerEmail: orderRequest.customerEmail,
-            customerPhone: orderRequest.customerPhone,
-            totalCents: orderRequest.totalCents,
-            source: 'storefront',
-            notifyCustomer: true  // Flag to send customer receipt instead of tenant notification
+            emailType: 'order_confirmation',
+            triggerSource: 'storefront'
           }
         });
-        console.log('Customer notification result:', customerNotifyResult);
-        if (customerNotifyResult.error) {
-          console.error('Customer notification function returned error:', customerNotifyResult.error);
+        console.log('✓ Order confirmation notification result:', notifyResult);
+        if (notifyResult.error) {
+          console.error('⚠️ order-notify returned error (non-fatal):', notifyResult.error);
         } else {
-          console.log('✓ Customer confirmation email sent successfully');
+          console.log('✓ Confirmation email sent successfully');
         }
       }
-    } catch (customerNotifyError) {
-      console.error('Failed to send customer notification (non-fatal):', customerNotifyError);
+    } catch (notifyError) {
+      console.error('⚠️ Failed to send confirmation email (non-fatal):', notifyError);
     }
 
     // Return success response
