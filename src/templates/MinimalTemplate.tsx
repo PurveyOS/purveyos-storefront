@@ -416,6 +416,8 @@ export function MinimalTemplate({
             <WeightBinSelector
               bins={activeBinProduct.weightBins}
               unit={activeBinProduct.unit}
+              productId={activeBinProduct.id}
+              cart={cart}
               onSelect={(bin) => {
                 if (onAddBinToCart) {
                   onAddBinToCart(activeBinProduct.id, bin.weightBtn, bin.unitPriceCents);

@@ -267,6 +267,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
             product={product}
             quantityInCart={quantityInCart}
             binCountsInCart={binCountsInCart}
+            cart={cart}
             onAddToCart={(options) => {
               // Debug logging
               console.log('Product clicked:', product.name, 'isSubscription:', product.isSubscription, 'subscriptionData:', product.subscriptionData);

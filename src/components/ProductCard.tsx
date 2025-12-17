@@ -27,6 +27,8 @@ interface ModernProductCardProps {
   preOrdersEnabled?: boolean;
   // Current bin quantities already in the cart (by weightBtn)
   binCountsInCart?: Record<number, number>;
+  // Cart for weight tracking
+  cart?: { items: Array<{ productId: string; quantity: number; binWeight?: number; weight?: number }> };
 }
 
 type ProductCardProps = ClassicProductCardProps | ModernProductCardProps;
@@ -477,6 +479,8 @@ export function ProductCard(props: ProductCardProps) {
                 bins={localBins}
                 unit={product.unit}
                 primaryColor={primaryColor}
+                productId={product.id}
+                cart={cart}
                 onSelect={({ weightBtn, unitPriceCents }) => {
                   if (onAddBinToCart) {
                     onAddBinToCart(weightBtn, unitPriceCents);
