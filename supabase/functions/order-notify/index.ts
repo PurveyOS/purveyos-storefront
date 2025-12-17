@@ -245,15 +245,15 @@ Thanks! We received your order from ${tenantName}.
 ORDER ${order.id}
 Placed: ${order.created_at || ''}
 
-READY NOW (Reserved / In-stock)
+In Stock (NOW) items
 ${nowLines.length ? nowLines.map(lineText).join('\n') : '• None'}
 
-LATER (Pre-order / We'll fill when available)
+Preorder (LATER) items
 ${laterLines.length ? laterLines.map(lineText).join('\n') : '• None'}
 
-Important:
-• LATER items are flexible — final weight and total may change slightly at fulfillment.
-• We'll notify you when your order is ready.
+What to expect:
+• NOW: We're preparing these now.
+• LATER: These items will be fulfilled when inventory becomes available. Final weight/price may vary; we'll confirm before pickup.
 
 Pickup info:
 Location: ${pickupLocation}
