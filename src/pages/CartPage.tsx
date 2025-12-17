@@ -124,8 +124,8 @@ export function CartPage() {
                   const itemTotal = lineUnitPrice * quantity;
                   
                   return (
-                    <div key={`${product.id}-${binWeight ?? weight ?? 'standard'}`} className="flex items-center p-6 border-b border-gray-200 last:border-b-0">
-                      <div className="relative mr-4">
+                    <div key={`${product.id}-${binWeight ?? weight ?? 'standard'}`} className="flex items-start p-4 border-b border-gray-200 last:border-b-0 gap-3">
+                      <div className="relative flex-shrink-0">
                         <img
                           src={product.imageUrl}
                           alt={product.name}
@@ -138,48 +138,53 @@ export function CartPage() {
                         )}
                       </div>
                       
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
-                        </div>
-                        <p className="text-gray-600">{product.description}</p>
-                        <div className="text-sm text-gray-600 mt-1">
-                          <div>{displayInfo}</div>
-                          {quantity > 1 && (
-                            <div className="text-gray-500">${lineUnitPrice.toFixed(2)} × {quantity}</div>
-                          )}
-                          {isPreOrder && product.restockDate && (
-                            <div className="text-blue-600 text-xs mt-1">
-                              Expected: {formatRestockDate(product.restockDate)}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-semibold text-gray-900 leading-tight">{product.name}</h3>
+                            <p className="text-sm text-gray-600 mt-1">{product.description}</p>
+                            <div className="text-sm text-gray-600 mt-1">
+                              <div>{displayInfo}</div>
+                              {quantity > 1 && (
+                                <div className="text-gray-500">${lineUnitPrice.toFixed(2)} × {quantity}</div>
+                              )}
+                              {isPreOrder && product.restockDate && (
+                                <div className="text-blue-600 text-xs mt-1">
+                                  Expected: {formatRestockDate(product.restockDate)}
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
+                          
+                          {/* Quantity controls and price - top right on mobile */}
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => removeFromCart(product.id, { binWeight })}
+                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4"/>
+                                </svg>
+                              </button>
+                              
+                              <span className="w-6 text-center font-medium text-sm">{quantity}</span>
+                              
+                              <button
+                                onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight })}
+                                className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
+                                </svg>
+                              </button>
+                            </div>
+                            
+                            <div className="text-base font-semibold whitespace-nowrap" style={{ color: primaryColor }}>
+                              ${itemTotal.toFixed(2)}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-3">
-                        <button
-                          onClick={() => removeFromCart(product.id, { binWeight })}
-                          className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4"/>
-                          </svg>
-                        </button>
-                        
-                        <span className="w-8 text-center font-medium">{quantity}</span>
-                        
-                        <button
-                          onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight })}
-                          className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/>
-                          </svg>
-                        </button>
-                      </div>
-                      
-                      <div className="ml-6 text-right">
-                        <div className="text-lg font-semibold">${itemTotal.toFixed(2)}</div>
                       </div>
                     </div>
                   );
