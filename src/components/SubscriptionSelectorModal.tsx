@@ -7,6 +7,7 @@ interface SubscriptionSelectorModalProps {
   subscriptionName: string;
   basePrice: number; // dollars
   defaultInterval: SubscriptionInterval;
+  minInterval?: SubscriptionInterval; // Minimum frequency allowed by tenant
   durationType: DurationType;
   seasonStartDate?: string;
   seasonEndDate?: string;
@@ -24,6 +25,7 @@ export default function SubscriptionSelectorModal({
   subscriptionName,
   basePrice,
   defaultInterval,
+  minInterval,
   durationType,
   seasonStartDate,
   seasonEndDate,
@@ -33,6 +35,11 @@ export default function SubscriptionSelectorModal({
   const [selectedInterval, setSelectedInterval] = useState<SubscriptionInterval>(defaultInterval);
   const [selectedDuration, setSelectedDuration] = useState<DurationType>(durationType);
   const [durationCount, setDurationCount] = useState<string>("12");
+
+  // Filter frequencies based on minimum interval (customer can only select equal or less frequent)
+  const frequencyOrder: SubscriptionInterval[] = ["weekly", "biweekly", "monthly"];
+  const minFreqIndex = minInterval ? frequencyOrder.indexOf(minInterval) : 0;
+  const allowedFrequencies = frequencyOrder.slice(minFreqIndex);
 
   const calculateTotal = () => {
     if (selectedDuration === "ongoing") {
@@ -93,10 +100,15 @@ export default function SubscriptionSelectorModal({
                 backgroundSize: '1.5rem'
               }}
             >
-              <option value="weekly">Weekly - Delivery every week</option>
-              <option value="biweekly">Bi-weekly - Delivery every 2 weeks</option>
-              <option value="monthly">Monthly - Delivery once per month</option>
+              {allowedFrequencies.includes("weekly") && <option value="weekly">Weekly - Delivery every week</option>}
+              {allowedFrequencies.includes("biweekly") && <option value="biweekly">Bi-weekly - Delivery every 2 weeks</option>}
+              {allowedFrequencies.includes("monthly") && <option value="monthly">Monthly - Delivery once per month</option>}
             </select>
+            {minInterval && (
+              <p className="text-xs text-neutral-600 mt-2">
+                🔒 Minimum frequency: {minInterval === "biweekly" ? "bi-weekly" : minInterval}
+              </p>
+            )}
           </div>
 
           {/* Subscription Duration Dropdown */}

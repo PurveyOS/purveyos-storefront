@@ -369,6 +369,7 @@ export function MinimalTemplate({
           subscriptionName={subscriptionProduct.name}
           basePrice={subscriptionProduct.subscriptionData.price_per_interval}
           defaultInterval={subscriptionProduct.subscriptionData.interval_type}
+          minInterval={subscriptionProduct.subscriptionData.min_interval}
           durationType={subscriptionProduct.subscriptionData.duration_type}
           seasonStartDate={subscriptionProduct.subscriptionData.season_start_date}
           seasonEndDate={subscriptionProduct.subscriptionData.season_end_date}
