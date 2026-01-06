@@ -6,6 +6,8 @@ interface SubstitutionItem {
   requiredQuantity: number;
   unit: string;
   substitutionGroup?: string;
+  // New: total units allowed for the group this item belongs to
+  groupUnitsAllowed?: number;
 }
 
 interface SubscriptionSubstitutionModalProps {
@@ -31,15 +33,23 @@ export default function SubscriptionSubstitutionModal({
   
   const ungroupedItems = items.filter(item => !item.substitutionGroup);
 
-  // Check if a substitution group has enough selected
-  const isGroupFulfilled = (groupName: string): boolean => {
+  // Compute how many units are allowed for a group (from any item in it, fallback 1)
+  const getGroupAllowedUnits = (groupName: string): number => {
     const groupItems = items.filter(item => item.substitutionGroup === groupName);
-    const totalSelected = groupItems.reduce((sum, item) => {
-      return sum + (selections[item.productId] || 0);
-    }, 0);
-    
-    // Group is fulfilled if at least one item has a selection > 0
-    return groupItems.some(item => (selections[item.productId] || 0) > 0);
+    const fromItems = groupItems.map(i => i.groupUnitsAllowed).find(v => typeof v === 'number' && v! > 0);
+    return typeof fromItems === 'number' && fromItems! > 0 ? (fromItems as number) : 1;
+  };
+
+  const getGroupSelectedTotal = (groupName: string): number => {
+    const groupItems = items.filter(item => item.substitutionGroup === groupName);
+    return groupItems.reduce((sum, item) => sum + (selections[item.productId] || 0), 0);
+  };
+
+  // A group is fulfilled when selected total equals the allowed units
+  const isGroupFulfilled = (groupName: string): boolean => {
+    const allowed = getGroupAllowedUnits(groupName);
+    const totalSelected = getGroupSelectedTotal(groupName);
+    return totalSelected === allowed;
   };
 
   // Check if all substitution groups are fulfilled
@@ -84,6 +94,8 @@ export default function SubscriptionSubstitutionModal({
           {substitutionGroups.map(groupName => {
             const groupItems = items.filter(item => item.substitutionGroup === groupName);
             const groupFulfilled = isGroupFulfilled(groupName);
+            const allowedUnits = getGroupAllowedUnits(groupName);
+            const totalSelected = getGroupSelectedTotal(groupName);
             
             return (
               <div key={groupName} className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-5 border-2 border-purple-200">
@@ -94,26 +106,36 @@ export default function SubscriptionSubstitutionModal({
                       ? 'bg-green-100 text-green-800'
                       : 'bg-orange-100 text-orange-800'
                   }`}>
-                    {groupFulfilled ? '✓ Selected' : 'Select one or more'}
+                    {groupFulfilled ? `✓ ${allowedUnits} selected` : `Select ${allowedUnits} unit${allowedUnits !== 1 ? 's' : ''}`}
                   </span>
                 </div>
                 
-                <p className="text-sm text-purple-700 mb-4">
-                  Choose one product or a mixture to reach your desired amount
-                </p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-purple-700">
+                    Choose any combination to total {allowedUnits} unit{allowedUnits !== 1 ? 's' : ''}
+                  </p>
+                  <p className="text-xs font-medium text-purple-800">
+                    {totalSelected} / {allowedUnits} selected
+                  </p>
+                </div>
 
                 <div className="space-y-3">
                   {groupItems.map(item => {
                     const selected = selections[item.productId] || 0;
+                    const atGroupMax = totalSelected >= allowedUnits;
+                    const perItemMax = item.requiredQuantity > 0 ? item.requiredQuantity : undefined;
+                    const disableIncrement = atGroupMax || (typeof perItemMax === 'number' && selected >= perItemMax);
                     
                     return (
                       <div key={item.productId} className="bg-white rounded-lg p-4 border border-purple-100 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <h4 className="font-medium text-gray-900">{item.productName}</h4>
-                            <p className="text-sm text-gray-600">
-                              Available: {item.requiredQuantity} {item.unit} per delivery
-                            </p>
+                            {item.requiredQuantity > 0 && (
+                              <p className="text-sm text-gray-600">
+                                Up to {item.requiredQuantity} {item.unit} per delivery
+                              </p>
+                            )}
                             {selected > 0 && (
                               <p className="text-sm font-medium text-purple-600 mt-1">
                                 Selected: {selected} {item.unit}
@@ -134,7 +156,7 @@ export default function SubscriptionSubstitutionModal({
                             </span>
                             <button
                               onClick={() => handleQuantityChange(item.productId, 1)}
-                              disabled={selected >= item.requiredQuantity}
+                              disabled={disableIncrement}
                               className="w-8 h-8 rounded-full border-2 border-purple-300 text-purple-600 font-bold hover:bg-purple-50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center"
                             >
                               +

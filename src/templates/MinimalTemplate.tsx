@@ -390,6 +390,7 @@ export function MinimalTemplate({
                   requiredQuantity: opt.requiredQuantity,
                   unit: opt.unit,
                   substitutionGroup: g.groupName,
+                  groupUnitsAllowed: Number(g.allowedUnits ?? 1),
                 }))
               );
 

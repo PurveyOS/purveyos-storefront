@@ -318,6 +318,8 @@ export function useStorefrontData(tenantId: string): {
             const substitutionGroupsRaw = subsGroupsBySubscription.get(sub.id) || [];
             const mappedGroups = substitutionGroupsRaw.map((g: any) => ({
               groupName: g.substitution_group,
+              // New: total units allowed across this group (fallback 1)
+              allowedUnits: Number(g.group_units_allowed ?? 1),
               options: (g.options || []).map((opt: any) => ({
                 productId: opt.product_id,
                 productName: opt.product_name,

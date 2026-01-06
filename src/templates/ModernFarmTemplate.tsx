@@ -334,6 +334,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
                   requiredQuantity: opt.requiredQuantity,
                   unit: opt.unit,
                   substitutionGroup: g.groupName,
+                  groupUnitsAllowed: Number((g as any).allowedUnits ?? 1),
                 }))
               );
 
