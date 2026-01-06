@@ -303,6 +303,7 @@ export function useStorefrontData(tenantId: string): {
               id: sub.id,
               price_per_interval: sub.price_per_interval,
               interval_type: sub.interval_type,
+              min_interval: sub.min_interval, // Add minimum frequency constraint
               duration_type: sub.duration_type,
               season_start_date: sub.season_start_date,
               season_end_date: sub.season_end_date,
