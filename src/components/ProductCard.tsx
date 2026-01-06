@@ -7,6 +7,7 @@ import { isLowStock, formatRestockDate } from "../utils/inventory";
 interface ClassicProductCardProps {
   product: Product;
   onAddToCart: (productId: string, quantity: number) => void;
+  onChooseSubscription?: (product: Product) => void;
   quantityInCart?: never;
   onRemoveFromCart?: never;
   onAddBinToCart?: never;
@@ -21,6 +22,7 @@ interface ModernProductCardProps {
   quantityInCart: number;
   onAddToCart: (options?: { weight?: number; quantity?: number }) => void;
   onRemoveFromCart: () => void;
+  onChooseSubscription?: (product: Product) => void;
   primaryColor?: string;
   accentColor?: string;
   onAddBinToCart?: (binWeight: number, unitPriceCents: number) => void;
@@ -44,7 +46,70 @@ export function ProductCard(props: ProductCardProps) {
   // CLASSIC TEMPLATE VERSION
   // =========================
   if (!isModernProps(props)) {
-    const { onAddToCart } = props;
+    const { onAddToCart, onChooseSubscription } = props;
+
+    // Show subscription button instead of add to cart if this is a subscription product
+    if (product.isSubscription && product.subscriptionData && onChooseSubscription) {
+      return (
+        <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+          <div className="relative overflow-hidden">
+            {product.imageUrl && (
+              <img
+                src={product.imageUrl}
+                alt={product.name}
+                className="w-full h-32 sm:h-36 md:h-40 object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+                loading="lazy"
+              />
+            )}
+            {!product.available && (
+              <div className="absolute inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
+                <span className="bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium">
+                  Out of Stock
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="p-6">
+            <h3
+              className="text-base font-semibold mb-1 line-clamp-2"
+              style={{ color: String(product.available ? "#0f6fff" : "#999") }}
+            >
+              {product.name}
+            </h3>
+
+            {product.description && (
+              <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
+                {product.description}
+              </p>
+            )}
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-left">
+                <span className="text-2xl font-bold text-gray-900">
+                  ${product.pricePer.toFixed(2)}
+                </span>
+                {product.unit && (
+                  <span className="text-sm text-gray-500 ml-1">/{product.unit}</span>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => onChooseSubscription(product)}
+              disabled={!product.available}
+              className={`w-full py-3 px-4 rounded-lg font-medium transition-all duration-200 transform ${
+                product.available
+                  ? "bg-gray-900 hover:bg-gray-800 text-white shadow-md hover:shadow-lg active:scale-95"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+              }`}
+            >
+              Choose Subscription
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
@@ -138,11 +203,61 @@ export function ProductCard(props: ProductCardProps) {
     quantityInCart,
     onAddToCart,
     onRemoveFromCart,
+    onChooseSubscription,
     primaryColor = "#0f6fff",
     accentColor = "#ffcc00",
     onAddBinToCart,
     preOrdersEnabled,
   } = props;
+
+  // Show subscription button instead of regular product card if this is a subscription product
+  if (product.isSubscription && product.subscriptionData && onChooseSubscription) {
+    return (
+      <div className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md hover:shadow-lg transition-shadow duration-200 group border border-slate-200"
+        style={{ borderColor: primaryColor + "22" }}>
+        <div className="relative">
+          {product.imageUrl && (
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="w-full h-32 sm:h-36 md:h-40 object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+              loading="lazy"
+            />
+          )}
+        </div>
+
+        <div className="flex-1 p-3 sm:p-4 flex flex-col">
+          <h3 className="text-sm sm:text-base font-semibold line-clamp-2 mb-2"
+            style={{ color: primaryColor }}>
+            {product.name}
+          </h3>
+
+          {product.description && (
+            <p className="text-xs sm:text-sm text-slate-600 mb-2 line-clamp-2">
+              {product.description}
+            </p>
+          )}
+
+          <div className="flex items-baseline gap-1 mb-3 mt-auto">
+            <span className="text-lg font-bold" style={{ color: primaryColor }}>
+              ${product.pricePer.toFixed(2)}
+            </span>
+            {product.unit && (
+              <span className="text-xs sm:text-sm text-slate-500">/{product.unit}</span>
+            )}
+          </div>
+
+          <button
+            onClick={() => onChooseSubscription(product)}
+            className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+            style={{ backgroundColor: primaryColor }}
+          >
+            Choose Subscription
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const price = product.pricePer ?? 0;
   const [weightAmount, setWeightAmount] = useState<string>("1");
