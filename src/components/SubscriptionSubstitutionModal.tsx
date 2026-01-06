@@ -123,19 +123,13 @@ export default function SubscriptionSubstitutionModal({
                   {groupItems.map(item => {
                     const selected = selections[item.productId] || 0;
                     const atGroupMax = totalSelected >= allowedUnits;
-                    const perItemMax = item.requiredQuantity > 0 ? item.requiredQuantity : undefined;
-                    const disableIncrement = atGroupMax || (typeof perItemMax === 'number' && selected >= perItemMax);
+                    const disableIncrement = atGroupMax;
                     
                     return (
                       <div key={item.productId} className="bg-white rounded-lg p-4 border border-purple-100 shadow-sm">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <h4 className="font-medium text-gray-900">{item.productName}</h4>
-                            {item.requiredQuantity > 0 && (
-                              <p className="text-sm text-gray-600">
-                                Up to {item.requiredQuantity} {item.unit} per delivery
-                              </p>
-                            )}
                             {selected > 0 && (
                               <p className="text-sm font-medium text-purple-600 mt-1">
                                 Selected: {selected} {item.unit}
