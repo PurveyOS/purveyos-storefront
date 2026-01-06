@@ -220,6 +220,7 @@ serve(async (req) => {
         discount_cents: orderRequest.discountCents ?? 0,
         is_weight_estimate: isWeightEstimate,
         estimated_total_cents: estimatedTotalCents,
+        is_subscription_order: orderRequest.subscription?.enabled ?? false,
         source: 'storefront',
         status: 'pending',
         created_at: new Date().toISOString(),
