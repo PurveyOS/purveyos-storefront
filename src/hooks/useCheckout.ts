@@ -9,6 +9,8 @@ export interface SubscriptionRequest {
   startDate?: string; // ISO date
   isCsaBox?: boolean;
   targetWeightLbs?: number; // for weight-based items (CSA box), optional
+  duration?: number; // number of deliveries
+  substitutions?: Record<string, string>; // { substitutionName: selectedOption }
 
   // Optional extra fields to support product-specific subscriptions
   productId?: string;
@@ -26,7 +28,8 @@ export interface CheckoutData {
   paymentDetails?: string; // Card token or payment confirmation
   deliveryNotes?: string;
   fulfillmentLocation?: string; // Selected pickup or dropoff location
-  subscription?: SubscriptionRequest;
+  subscription?: SubscriptionRequest; // Legacy: single subscription
+  subscriptions?: SubscriptionRequest[]; // New: multiple subscriptions
   discountCents?: number;
   shippingChargeCents?: number; // Shipping charge if applicable
 }

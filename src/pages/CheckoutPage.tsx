@@ -7,6 +7,7 @@ import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { SubscriptionCheckoutModal } from '../components/SubscriptionCheckoutModal';
 
 interface Discount {
   id: string;
@@ -50,6 +51,11 @@ export function CheckoutPage() {
   });
 
   const [subscribeToEmails, setSubscribeToEmails] = useState(false);
+
+  // Subscription modal state
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [subscriptionConfigs, setSubscriptionConfigs] = useState<Record<string, any>>({});
+  const [pendingCheckoutData, setPendingCheckoutData] = useState<any>(null);
 
   // Load customer info if logged in
   useEffect(() => {
@@ -631,27 +637,7 @@ export function CheckoutPage() {
       await handleStripeCheckout();
       return;
     }
-    // Check if cart contains a subscription item
-    console.log('🔍 Checking cart for subscription items:', cart.items);
-    const subscriptionItem = cart.items.find((item: any) => item.metadata?.isSubscription);
-    console.log('🔍 Found subscription item:', subscriptionItem);
-    let subscriptionPayload = undefined;
-    
-    if (subscriptionItem) {
-      const metadata = (subscriptionItem as any).metadata;
-      console.log('🔍 Subscription metadata:', metadata);
-      subscriptionPayload = {
-        enabled: true,
-        cadence: metadata.subscriptionInterval as 'weekly' | 'biweekly' | 'monthly',
-        startDate: new Date().toISOString(),
-        subscriptionProductId: metadata.subscriptionProductId, // subscription_products.id
-        quantity: subscriptionItem.quantity,
-      };
-      console.log('🔍 Subscription payload created:', subscriptionPayload);
-    } else {
-      console.log('⚠️ No subscription item found in cart');
-    }
-
+    // Calculate delivery details first (needed for both subscription and regular checkout)
     const shippingChargeCents = formData.deliveryMethod === 'shipping' 
       ? ((storefrontData?.settings as any)?.shipping_charge_cents || 0)
       : 0;
@@ -659,6 +645,27 @@ export function CheckoutPage() {
     const deliveryAddress = formData.deliveryMethod === 'shipping'
       ? formatShippingAddress(shippingAddress)
       : formData.deliveryAddress;
+
+    // Check if cart contains a subscription item
+    console.log('🔍 Checking cart for subscription items:', cart.items);
+    const subscriptionItems = cart.items.filter((item: any) => item.metadata?.isSubscription);
+    console.log('🔍 Found subscription items:', subscriptionItems);
+    
+    if (subscriptionItems.length > 0) {
+      // Show subscription modal instead of proceeding directly
+      setPendingCheckoutData({
+        formData,
+        deliveryAddress,
+        shippingChargeCents,
+        orderValue,
+        subscriptionItems,
+      });
+      setShowSubscriptionModal(true);
+      return;
+    }
+
+    // No subscriptions, proceed with regular checkout
+    let subscriptionPayload = undefined;
 
     console.log('📋 [Order] About to create order with:', {
       tenantId: tenant.id,
@@ -697,6 +704,63 @@ const result = await createOrder(
     } else {
       alert(result.error || 'Failed to create order. Please try again.');
     }
+  };
+
+  const handleSubscriptionConfigured = async (configs: Record<string, any>) => {
+    // Subscription modal confirmed, now proceed with order creation
+    setShowSubscriptionModal(false);
+    setSubscriptionConfigs(configs);
+    
+    if (!pendingCheckoutData) return;
+
+    const { formData: fData, deliveryAddress, shippingChargeCents, orderValue, subscriptionItems } = pendingCheckoutData;
+
+    // Build subscription payload from modal configs
+    const subscriptionPayload = subscriptionItems.map((item: any) => {
+      const config = configs[item.metadata.subscriptionProductId];
+      return {
+        enabled: true,
+        cadence: config.frequency,
+        startDate: new Date().toISOString(),
+        subscriptionProductId: item.metadata.subscriptionProductId,
+        quantity: item.quantity,
+        duration: config.duration,
+        substitutions: config.substitutions || {},
+      };
+    });
+
+    console.log('✅ Creating order with subscription configs:', subscriptionPayload);
+
+    const result = await createOrder(
+      tenant!.id,
+      cart,
+      storefrontData!.products,
+      {
+        ...fData,
+        deliveryAddress,
+        subscriptions: subscriptionPayload,
+        discountCents,
+        shippingChargeCents,
+      },
+      {
+        taxRate: tenant?.tax_rate ?? 0,
+        taxIncluded: !!tenant?.tax_included,
+        chargeTaxOnOnline: tenant?.charge_tax_on_online ?? true,
+      }
+    );
+
+    if (result.success) {
+      setOrderSuccess(true);
+      setOrderId(result.orderId);
+      try {
+        trackPurchase({ orderId: result.orderId!, tenantId: tenant.id, value: orderValue, currency: 'USD', itemsCount: cart.items.length });
+      } catch {}
+      clearCart();
+    } else {
+      alert(result.error || 'Failed to create order. Please try again.');
+    }
+
+    setPendingCheckoutData(null);
   };
 
   const handleApplyCoupon = async (code: string) => {
@@ -849,6 +913,19 @@ const result = await createOrder(
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Subscription Configuration Modal */}
+      {pendingCheckoutData && (
+        <SubscriptionCheckoutModal
+          isOpen={showSubscriptionModal}
+          subscriptionItems={pendingCheckoutData.subscriptionItems}
+          onConfirm={handleSubscriptionConfigured}
+          onCancel={() => {
+            setShowSubscriptionModal(false);
+            setPendingCheckoutData(null);
+          }}
+        />
+      )}
+
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-6">
