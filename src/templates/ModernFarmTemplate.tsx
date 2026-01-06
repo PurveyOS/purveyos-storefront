@@ -268,11 +268,14 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
             quantityInCart={quantityInCart}
             binCountsInCart={binCountsInCart}
             cart={cart}
-            onChooseSubscription={(product) => {
-              setSelectedSubscriptionProduct(product);
-              setShowSubscriptionModal(true);
-            }}
             onAddToCart={(options) => {
+              // If this is a subscription product, show the modal instead
+              if (product.isSubscription && product.subscriptionData) {
+                setSelectedSubscriptionProduct(product);
+                setShowSubscriptionModal(true);
+                return;
+              }
+
               const preOrdersEnabled = features?.preOrdersEnabled !== false;
               const isPreOrder =
                 preOrdersEnabled && product.isSoldOut && product.allowPreOrder;

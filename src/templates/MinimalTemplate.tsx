@@ -221,9 +221,9 @@ export function MinimalTemplate({
                           setSubscriptionProduct(product);
                           setShowSubscriptionModal(true);
                         }}
-                        className="w-full border border-gray-900 text-gray-900 px-4 py-2 text-sm font-medium hover:bg-gray-900 hover:text-white transition-colors"
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium transition-colors rounded-lg"
                       >
-                        Choose Subscription
+                        Add to Cart
                       </button>
                     )}
 
