@@ -150,7 +150,7 @@ export function useStorefrontData(tenantId: string): {
         // Fetch real data from Supabase
         console.log('Fetching data for tenant:', tenantId);
         
-  const [settingsResult, productsResult, binsResult, subscriptionsResult] = await Promise.all([
+  const [settingsResult, productsResult, binsResult, subscriptionsResult, subsGroupsResult] = await Promise.all([
           supabase
             .from('storefront_settings')
             .select('*')
@@ -174,7 +174,11 @@ export function useStorefrontData(tenantId: string): {
             .from('subscription_products')
             .select('*')
             .eq('tenant_id', tenantId)
-            .eq('is_active', true)
+            .eq('is_active', true),
+
+          supabase
+            .from('subscription_substitution_groups')
+            .select('*')
         ]);
 
         // Debug subscription fetch
@@ -292,6 +296,17 @@ export function useStorefrontData(tenantId: string): {
           });
         }
 
+        // Group substitution groups by subscription_product_id
+        const subsGroupsBySubscription = new Map<string, any[]>();
+        if (subsGroupsResult.data) {
+          subsGroupsResult.data.forEach((row: any) => {
+            if (!subsGroupsBySubscription.has(row.subscription_product_id)) {
+              subsGroupsBySubscription.set(row.subscription_product_id, []);
+            }
+            subsGroupsBySubscription.get(row.subscription_product_id)!.push(row);
+          });
+        }
+
         // Group subscriptions by product_id
         const subscriptionsByProduct = new Map<string, any>();
         console.log('📊 Subscription products fetched:', subscriptionsResult.data?.length || 0);
@@ -299,6 +314,19 @@ export function useStorefrontData(tenantId: string): {
         if (subscriptionsResult.data) {
           subscriptionsResult.data.forEach((sub: any) => {
             console.log('🔗 Mapping subscription product_id:', sub.product_id, '-> subscription_id:', sub.id);
+
+            const substitutionGroupsRaw = subsGroupsBySubscription.get(sub.id) || [];
+            const mappedGroups = substitutionGroupsRaw.map((g: any) => ({
+              groupName: g.substitution_group,
+              options: (g.options || []).map((opt: any) => ({
+                productId: opt.product_id,
+                productName: opt.product_name,
+                requiredQuantity: Number(opt.default_quantity ?? 0),
+                unit: opt.unit || 'ea',
+                isOptional: opt.is_optional === true,
+              })),
+            }));
+
             subscriptionsByProduct.set(sub.product_id, {
               id: sub.id,
               price_per_interval: sub.price_per_interval,
@@ -307,6 +335,7 @@ export function useStorefrontData(tenantId: string): {
               duration_type: sub.duration_type,
               season_start_date: sub.season_start_date,
               season_end_date: sub.season_end_date,
+              substitutionGroups: mappedGroups,
             });
           });
         }

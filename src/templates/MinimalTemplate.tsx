@@ -5,6 +5,7 @@ import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { WeightBinSelector } from '../components/WeightBinSelector';
 import SubscriptionSelectorModal from '../components/SubscriptionSelectorModal';
+import SubscriptionSubstitutionModal from '../components/SubscriptionSubstitutionModal';
 import type { Product } from '../types/product';
 
 export function MinimalTemplate({
@@ -20,6 +21,9 @@ export function MinimalTemplate({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [subscriptionProduct, setSubscriptionProduct] = useState<Product | null>(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showSubstitutionModal, setShowSubstitutionModal] = useState(false);
+  const [substitutionItems, setSubstitutionItems] = useState<any[]>([]);
+  const [pendingSubscriptionConfig, setPendingSubscriptionConfig] = useState<any | null>(null);
   const [weightInputs, setWeightInputs] = useState<Record<string, string>>({});
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
   const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
@@ -374,6 +378,28 @@ export function MinimalTemplate({
           seasonStartDate={subscriptionProduct.subscriptionData.season_start_date}
           seasonEndDate={subscriptionProduct.subscriptionData.season_end_date}
           onConfirm={(config) => {
+            const groups = subscriptionProduct.subscriptionData?.substitutionGroups?.filter(
+              (g) => Array.isArray(g.options) && g.options.length > 0
+            ) || [];
+
+            if (groups.length > 0) {
+              const items = groups.flatMap((g) =>
+                g.options.map((opt) => ({
+                  productId: opt.productId,
+                  productName: opt.productName,
+                  requiredQuantity: opt.requiredQuantity,
+                  unit: opt.unit,
+                  substitutionGroup: g.groupName,
+                }))
+              );
+
+              setSubstitutionItems(items);
+              setPendingSubscriptionConfig({ config });
+              setShowSubscriptionModal(false);
+              setShowSubstitutionModal(true);
+              return;
+            }
+
             onAddToCart(subscriptionProduct.id, 1, {
               metadata: {
                 isSubscription: true,
@@ -390,6 +416,35 @@ export function MinimalTemplate({
           onCancel={() => {
             setShowSubscriptionModal(false);
             setSubscriptionProduct(null);
+          }}
+        />
+      )}
+
+      {/* Substitution Modal */}
+      {showSubstitutionModal && subscriptionProduct && pendingSubscriptionConfig && (
+        <SubscriptionSubstitutionModal
+          subscriptionName={subscriptionProduct.name}
+          items={substitutionItems}
+          onConfirm={(selections) => {
+            onAddToCart(subscriptionProduct.id, 1, {
+              metadata: {
+                isSubscription: true,
+                subscriptionProductId: subscriptionProduct.subscriptionData!.id,
+                subscriptionInterval: pendingSubscriptionConfig.config.interval,
+                subscriptionDuration: pendingSubscriptionConfig.config.duration,
+                subscriptionDurationIntervals: pendingSubscriptionConfig.config.durationIntervals,
+                subscriptionTotalPrice: pendingSubscriptionConfig.config.totalPrice,
+                substitutionSelections: selections,
+              }
+            });
+            setShowSubstitutionModal(false);
+            setSubscriptionProduct(null);
+            setPendingSubscriptionConfig(null);
+          }}
+          onCancel={() => {
+            setShowSubstitutionModal(false);
+            setSubscriptionProduct(null);
+            setPendingSubscriptionConfig(null);
           }}
         />
       )}

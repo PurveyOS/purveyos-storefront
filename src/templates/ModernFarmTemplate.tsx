@@ -5,6 +5,7 @@ import { Footer } from '../components/Footer';
 import { ProductCard } from '../components/ProductCard';
 import { CartDrawer } from '../components/CartDrawer';
 import SubscriptionSelectorModal from '../components/SubscriptionSelectorModal';
+import SubscriptionSubstitutionModal from '../components/SubscriptionSubstitutionModal';
 import type { Product } from '../types/product';
 
 export function ModernFarmTemplate({
@@ -19,6 +20,9 @@ export function ModernFarmTemplate({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedSubscriptionProduct, setSelectedSubscriptionProduct] = useState<Product | null>(null);
+  const [showSubstitutionModal, setShowSubstitutionModal] = useState(false);
+  const [substitutionItems, setSubstitutionItems] = useState<any[]>([]);
+  const [pendingSubscriptionConfig, setPendingSubscriptionConfig] = useState<any | null>(null);
  
 
 const categoryLabels = Array.from(
@@ -319,11 +323,32 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
           seasonStartDate={selectedSubscriptionProduct.subscriptionData.season_start_date}
           seasonEndDate={selectedSubscriptionProduct.subscriptionData.season_end_date}
           onConfirm={(config) => {
-            // Add subscription to cart with metadata including subscription_product_id
+            const groups = selectedSubscriptionProduct.subscriptionData?.substitutionGroups || [];
+
+            // If substitutions exist, show substitution modal before adding to cart
+            if (groups.length > 0) {
+              const items = groups.flatMap((g) =>
+                g.options.map((opt) => ({
+                  productId: opt.productId,
+                  productName: opt.productName,
+                  requiredQuantity: opt.requiredQuantity,
+                  unit: opt.unit,
+                  substitutionGroup: g.groupName,
+                }))
+              );
+
+              setSubstitutionItems(items);
+              setPendingSubscriptionConfig({ config });
+              setShowSubscriptionModal(false);
+              setShowSubstitutionModal(true);
+              return;
+            }
+
+            // No substitutions; add directly to cart
             onAddToCart(selectedSubscriptionProduct.id, 1, {
               metadata: {
                 isSubscription: true,
-                subscriptionProductId: selectedSubscriptionProduct.subscriptionData!.id, // subscription_products.id
+                subscriptionProductId: selectedSubscriptionProduct.subscriptionData!.id,
                 subscriptionInterval: config.interval,
                 subscriptionDuration: config.duration,
                 subscriptionDurationIntervals: config.durationIntervals,
@@ -336,6 +361,35 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
           onCancel={() => {
             setShowSubscriptionModal(false);
             setSelectedSubscriptionProduct(null);
+          }}
+        />
+      )}
+
+      {/* Substitution Modal */}
+      {showSubstitutionModal && selectedSubscriptionProduct && pendingSubscriptionConfig && (
+        <SubscriptionSubstitutionModal
+          subscriptionName={selectedSubscriptionProduct.name}
+          items={substitutionItems}
+          onConfirm={(selections) => {
+            onAddToCart(selectedSubscriptionProduct.id, 1, {
+              metadata: {
+                isSubscription: true,
+                subscriptionProductId: selectedSubscriptionProduct.subscriptionData!.id,
+                subscriptionInterval: pendingSubscriptionConfig.config.interval,
+                subscriptionDuration: pendingSubscriptionConfig.config.duration,
+                subscriptionDurationIntervals: pendingSubscriptionConfig.config.durationIntervals,
+                subscriptionTotalPrice: pendingSubscriptionConfig.config.totalPrice,
+                substitutionSelections: selections,
+              }
+            });
+            setShowSubstitutionModal(false);
+            setSelectedSubscriptionProduct(null);
+            setPendingSubscriptionConfig(null);
+          }}
+          onCancel={() => {
+            setShowSubstitutionModal(false);
+            setSelectedSubscriptionProduct(null);
+            setPendingSubscriptionConfig(null);
           }}
         />
       )}

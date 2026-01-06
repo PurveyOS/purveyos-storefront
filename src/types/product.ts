@@ -35,6 +35,16 @@ export interface Product {
     duration_type: 'ongoing' | 'fixed_duration' | 'seasonal';
     season_start_date?: string;
     season_end_date?: string;
+    substitutionGroups?: Array<{
+      groupName: string;
+      options: Array<{
+        productId: string;
+        productName: string;
+        requiredQuantity: number;
+        unit: string;
+        isOptional?: boolean;
+      }>;
+    }>;
   };
   
   // Deposit fields
