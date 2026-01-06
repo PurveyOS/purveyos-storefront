@@ -393,6 +393,16 @@ export function ProductCard(props: ProductCardProps) {
 
         {/* ACTION AREA */}
         <div className="mt-auto space-y-2">
+          {/* For subscription products, just show the Add to Cart button */}
+          {product.isSubscription && product.subscriptionData ? (
+            <button
+              onClick={() => onAddToCart()}
+              className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Add to Cart
+            </button>
+          ) : (
 {/* ========================= */}
 {/* WEIGHT-BASED (lb) PRODUCTS */}
 {/* ========================= */}
@@ -640,6 +650,7 @@ export function ProductCard(props: ProductCardProps) {
                 </div>
               )}
             </>
+          )}
           )}
         </div>
       </div>

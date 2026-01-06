@@ -227,8 +227,8 @@ export function MinimalTemplate({
                       </button>
                     )}
 
-                    {/* Weight-based: bins or custom weight */}
-                    {(() => {
+                    {/* Weight-based: bins or custom weight - Hide for subscriptions */}
+                    {!product.isSubscription && (() => {
                       const unit = (product.unit || '').toLowerCase();
                       const isWeight = product.pricingMode === 'weight' || unit === 'lb';
                       // Account for bins already in the cart when showing availability
