@@ -403,6 +403,7 @@ export function ProductCard(props: ProductCardProps) {
               Add to Cart
             </button>
           ) : (
+            <>
 {/* ========================= */}
 {/* WEIGHT-BASED (lb) PRODUCTS */}
 {/* ========================= */}
@@ -651,6 +652,7 @@ export function ProductCard(props: ProductCardProps) {
               )}
             </>
           )}
+            </>
           )}
         </div>
       </div>
