@@ -334,8 +334,10 @@ export function CheckoutPage() {
             console.log('Customer profile updated successfully');
           }
         } else {
-          // Upsert by unique email+tenant to avoid race/duplicates
-          const { data, error } = await supabase
+          // Guest user - upsert to handle any concurrent submits
+          console.log('Saving customer profile for guest:', { email: formData.customerEmail, tenantId: tenant.id, subscribed: subscribeToEmails });
+
+          const { error } = await supabase
             .from('customer_profiles')
             .upsert({
               tenant_id: tenant.id,
@@ -344,12 +346,12 @@ export function CheckoutPage() {
               email: formData.customerEmail,
               email_notifications: subscribeToEmails,
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'email,tenant_id' });
+            });
 
           if (error) {
             console.error('Error saving customer profile:', error);
           } else {
-            console.log('Customer profile upserted successfully:', data);
+            console.log('Customer profile saved successfully');
           }
         }
       }
