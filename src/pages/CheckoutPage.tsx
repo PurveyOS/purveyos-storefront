@@ -5,7 +5,7 @@ import { useStorefrontData } from '../hooks/useStorefrontData';
 import { usePersistedCart } from '../hooks/usePersistedCart';
 import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
 
 interface Discount {
@@ -253,90 +253,31 @@ export function CheckoutPage() {
     return true;
   };
 
-  // Save customer profile (guest or authenticated) with email preference
+  // Save customer profile via secure Edge Function (service role)
   const saveCustomerProfile = async () => {
-    if (!supabase || !tenant?.id || !formData.customerEmail) {
-      console.log('saveCustomerProfile skipped:', { supabase: !!supabase, tenantId: tenant?.id, email: formData.customerEmail });
+    if (!tenant?.id || !formData.customerEmail) {
+      console.log('saveCustomerProfile skipped:', { tenantId: tenant?.id, email: formData.customerEmail });
       return;
     }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user?.id) {
-        // Authenticated user - upsert by email+tenant (unique constraint handles duplicates)
-        console.log('Saving customer profile for authenticated user:', { userId: user.id, email: formData.customerEmail, subscribed: subscribeToEmails });
-
-        const { error } = await supabase
-          .from('customer_profiles')
-          .upsert({
-            tenant_id: tenant.id,
-            full_name: formData.customerName,
-            phone: formData.customerPhone || null,
-            email: formData.customerEmail,
-            email_notifications: subscribeToEmails,
-            updated_at: new Date().toISOString(),
-          });
-
-        if (error) {
-          console.error('Error saving customer profile:', error);
-        } else {
-          console.log('Customer profile saved successfully');
+      const { data, error } = await supabase.functions.invoke('save-customer-profile', {
+        body: {
+          tenantId: tenant.id,
+          full_name: formData.customerName,
+          phone: formData.customerPhone || null,
+          email: formData.customerEmail,
+          email_notifications: subscribeToEmails,
         }
+      });
+
+      if (error) {
+        console.error('Error saving customer profile (function):', error);
       } else {
-        // Guest user - check if profile exists by email, otherwise insert
-        console.log('Saving customer profile for guest:', { email: formData.customerEmail, tenantId: tenant.id, subscribed: subscribeToEmails });
-
-        // First, try to find existing profile by email and tenant
-        const { data: existing } = await supabase
-          .from('customer_profiles')
-          .select('id')
-          .eq('email', formData.customerEmail)
-          .eq('tenant_id', tenant.id)
-          .maybeSingle();
-
-        if (existing?.id) {
-          // Update existing profile
-          const { error } = await supabase
-            .from('customer_profiles')
-            .update({
-              full_name: formData.customerName,
-              phone: formData.customerPhone || null,
-              email_notifications: subscribeToEmails,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existing.id);
-
-          if (error) {
-            console.error('Error updating customer profile:', error);
-          } else {
-            console.log('Customer profile updated successfully');
-          }
-        } else {
-          // Guest user - upsert to handle any concurrent submits
-          console.log('Saving customer profile for guest:', { email: formData.customerEmail, tenantId: tenant.id, subscribed: subscribeToEmails });
-
-          const { error } = await supabase
-            .from('customer_profiles')
-            .upsert({
-              tenant_id: tenant.id,
-              full_name: formData.customerName,
-              phone: formData.customerPhone || null,
-              email: formData.customerEmail,
-              email_notifications: subscribeToEmails,
-              updated_at: new Date().toISOString(),
-            });
-
-          if (error) {
-            console.error('Error saving customer profile:', error);
-          } else {
-            console.log('Customer profile saved successfully');
-          }
-        }
+        console.log('Customer profile saved via function:', data);
       }
     } catch (err) {
-      console.error('Exception saving customer profile:', err);
-      // Don't block checkout if profile save fails
+      console.error('Exception saving customer profile (function):', err);
     }
   };
 

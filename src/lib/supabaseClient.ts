@@ -10,7 +10,7 @@ console.log('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Set' : '❌ Missin
 
 // Allow app to run without Supabase for development/testing
 // In production, you MUST set these environment variables in Cloudflare Pages
-let supabaseInstance = null;
+let supabaseInstance: ReturnType<typeof createClient> | null = null;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('⚠️ Supabase environment variables not configured.');
@@ -28,6 +28,27 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = supabaseInstance as any;
+
+// Create a configured Supabase client with tenant header for RLS
+export function createTenantAwareClient(tenantId: string) {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn('⚠️ Cannot create tenant-aware client: Supabase not configured');
+    return supabaseInstance;
+  }
+  
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    },
+    global: {
+      headers: {
+        'x-tenant-id': tenantId
+      }
+    }
+  });
+}
 
 export type Database = {
   public: {
