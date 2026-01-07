@@ -264,33 +264,12 @@ export function CheckoutPage() {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (user?.id) {
-        // Authenticated user
+        // Authenticated user - upsert by email+tenant (unique constraint handles duplicates)
         console.log('Saving customer profile for authenticated user:', { userId: user.id, email: formData.customerEmail, subscribed: subscribeToEmails });
 
-        // Check if a guest profile exists with this email
-        const { data: existing } = await supabase
-          .from('customer_profiles')
-          .select('id')
-          .eq('email', formData.customerEmail)
-          .eq('tenant_id', tenant.id)
-          .maybeSingle();
-
-        if (existing?.id && existing.id !== user.id) {
-          // Guest profile exists - migrate it to authenticated user ID
-          console.log('Migrating guest profile to authenticated user:', { guestId: existing.id, userId: user.id });
-          
-          // Delete the guest profile and create new one with user ID
-          await supabase
-            .from('customer_profiles')
-            .delete()
-            .eq('id', existing.id);
-        }
-
-        // Upsert with authenticated user ID
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('customer_profiles')
           .upsert({
-            id: user.id,
             tenant_id: tenant.id,
             full_name: formData.customerName,
             phone: formData.customerPhone || null,
@@ -302,7 +281,7 @@ export function CheckoutPage() {
         if (error) {
           console.error('Error saving customer profile:', error);
         } else {
-          console.log('Customer profile saved successfully:', data);
+          console.log('Customer profile saved successfully');
         }
       } else {
         // Guest user - check if profile exists by email, otherwise insert
