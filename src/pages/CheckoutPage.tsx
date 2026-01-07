@@ -570,7 +570,7 @@ export function CheckoutPage() {
         subscriptionProductId: metadata.subscriptionProductId,
         quantity: subscriptionItem.quantity,
         duration: metadata.duration,
-        substitutions: metadata.substitutions || {},
+        substitutions: metadata.substitutionSelections || metadata.substitutions || {},
       };
       console.log('🔍 Subscription payload created:', subscriptionPayload);
     } else {
