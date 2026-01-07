@@ -334,21 +334,22 @@ export function CheckoutPage() {
             console.log('Customer profile updated successfully');
           }
         } else {
-          // Insert new profile (let database generate UUID)
+          // Upsert by unique email+tenant to avoid race/duplicates
           const { data, error } = await supabase
             .from('customer_profiles')
-            .insert({
+            .upsert({
               tenant_id: tenant.id,
               full_name: formData.customerName,
               phone: formData.customerPhone || null,
               email: formData.customerEmail,
               email_notifications: subscribeToEmails,
-            });
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'email,tenant_id' });
 
           if (error) {
-            console.error('Error inserting customer profile:', error);
+            console.error('Error saving customer profile:', error);
           } else {
-            console.log('Customer profile created successfully:', data);
+            console.log('Customer profile upserted successfully:', data);
           }
         }
       }
