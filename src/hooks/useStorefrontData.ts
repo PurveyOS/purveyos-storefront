@@ -159,7 +159,7 @@ export function useStorefrontData(tenantId: string): {
           
           supabase
             .from('products')
-            .select('id, name, pricePer, unit, image, category, qty, online_description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb')
+            .select('id, name, pricePer, unit, image, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb')
             .eq('tenant_id', tenantId)
             .eq('is_online', true)
             .order('name'),
@@ -215,7 +215,7 @@ export function useStorefrontData(tenantId: string): {
             console.warn('Retrying products query without allow_pre_order column');
             const retryProducts = await supabase
               .from('products')
-              .select('id, name, pricePer, unit, image, category, qty, online_description')
+              .select('id, name, pricePer, unit, image, category, qty, description')
               .eq('tenant_id', tenantId)
               .eq('is_online', true)
               .order('name');
@@ -363,7 +363,7 @@ export function useStorefrontData(tenantId: string): {
           const productData = {
             id: p.id,
             name: p.name,
-            description: p.online_description || '', // Use online_description column
+            description: p.description || '', // Use description column
             pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0), // Use subscription price if available
             unit: p.unit || 'lb',
             weightBins: bins,
