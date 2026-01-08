@@ -29,6 +29,7 @@ export function MinimalTemplate({
   const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
   const depositButtonRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
+  const [showDescriptionModal, setShowDescriptionModal] = useState<string | null>(null);
 
   const filteredProducts = selectedCategory 
     ? products.filter(product => product.categoryId === selectedCategory)
@@ -182,12 +183,24 @@ export function MinimalTemplate({
                     </div>
                   </div>
                   <div className="px-4 pb-5 pt-3 space-y-3">
-                    <div className="flex items-start justify-between">
-                      {product.description && (
-                        <p className="text-sm text-gray-600 line-clamp-2 flex-1">{product.description}</p>
-                      )}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        {product.description && (
+                          <div className="flex items-start gap-2">
+                            <p className="text-sm text-gray-600 line-clamp-2 flex-1">{product.description}</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowDescriptionModal(product.id)}
+                              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-gray-700 hover:bg-gray-200 transition-colors"
+                              title="View product details"
+                            >
+                              i
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       {product.is_deposit_product && (
-                        <div className="relative ml-3">
+                        <div className="relative">
                           <button
                             type="button"
                             ref={(el) => {
@@ -488,6 +501,38 @@ export function MinimalTemplate({
           </div>
         </div>
       )}
+
+      {/* DESCRIPTION MODAL */}
+      {showDescriptionModal && (() => {
+        const product = filteredProducts.find(p => p.id === showDescriptionModal);
+        return product ? (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+            onClick={() => setShowDescriptionModal(null)}
+          >
+            <div 
+              className="bg-white rounded-xl shadow-lg max-w-md w-full mx-4 p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-semibold text-slate-900 flex-1 pr-4">
+                  {product.name}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowDescriptionModal(null)}
+                  className="text-slate-500 hover:text-slate-700 text-xl font-bold flex-shrink-0"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
+                {product.description}
+              </div>
+            </div>
+          </div>
+        ) : null;
+      })()}
     </div>
   );
 }

@@ -150,6 +150,7 @@ export function ProductCard(props: ProductCardProps) {
   const [showBinModal, setShowBinModal] = useState(false);
   const [showDepositTooltip, setShowDepositTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+  const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const depositButtonRef = useRef<HTMLButtonElement>(null);
   
   // Calculate tooltip position when it shows
@@ -340,12 +341,25 @@ export function ProductCard(props: ProductCardProps) {
 
       {/* CONTENT */}
       <div className="flex-1 p-3 sm:p-4 flex flex-col">
-        <h3
-          className="text-base font-semibold mb-1 line-clamp-2"
-          style={{ color: primaryColor }}
-        >
-          {product.name}
-        </h3>
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3
+            className="text-base font-semibold line-clamp-2 flex-1"
+            style={{ color: primaryColor }}
+          >
+            {product.name}
+          </h3>
+          {product.description && (
+            <button
+              type="button"
+              onClick={() => setShowDescriptionModal(true)}
+              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold transition-colors hover:bg-gray-200"
+              style={{ color: primaryColor }}
+              title="View product details"
+            >
+              i
+            </button>
+          )}
+        </div>
 
         {product.description && (
           <p className="text-sm text-slate-600 mb-2 line-clamp-2">
@@ -656,6 +670,35 @@ export function ProductCard(props: ProductCardProps) {
           )}
         </div>
       </div>
+
+      {/* DESCRIPTION MODAL */}
+      {showDescriptionModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setShowDescriptionModal(false)}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-lg max-w-md w-full mx-4 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-900 flex-1 pr-4">
+                {product.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDescriptionModal(false)}
+                className="text-slate-500 hover:text-slate-700 text-xl font-bold flex-shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
+              {product.description}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
