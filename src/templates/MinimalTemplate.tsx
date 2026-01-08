@@ -26,8 +26,6 @@ export function MinimalTemplate({
   const [pendingSubscriptionConfig, setPendingSubscriptionConfig] = useState<any | null>(null);
   const [weightInputs, setWeightInputs] = useState<Record<string, string>>({});
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
-  const [depositTooltip, setDepositTooltip] = useState<string | null>(null);
-  const depositButtonRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
   const [showDescriptionModal, setShowDescriptionModal] = useState<string | null>(null);
 
@@ -183,53 +181,19 @@ export function MinimalTemplate({
                     </div>
                   </div>
                   <div className="px-4 pb-5 pt-3 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        {product.description && (
-                          <div className="flex items-start gap-2">
-                            <p className="text-sm text-gray-600 line-clamp-2 flex-1">{product.description}</p>
-                            <button
-                              type="button"
-                              onClick={() => setShowDescriptionModal(product.id)}
-                              className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-gray-700 hover:bg-gray-200 transition-colors"
-                              title="View product details"
-                            >
-                              i
-                            </button>
-                          </div>
-                        )}
+                    {product.description && (
+                      <div className="flex items-start gap-2">
+                        <p className="text-sm text-gray-600 line-clamp-2 flex-1">{product.description}</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowDescriptionModal(product.id)}
+                          className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-gray-700 hover:bg-gray-200 transition-colors"
+                          title="View product details"
+                        >
+                          i
+                        </button>
                       </div>
-                      {product.is_deposit_product && (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            ref={(el) => {
-                              depositButtonRefs.current[product.id] = el;
-                            }}
-                            onMouseEnter={() => setDepositTooltip(product.id)}
-                            onMouseLeave={() => setDepositTooltip(null)}
-                            className="w-6 h-6 flex items-center justify-center rounded-full border text-[11px] text-gray-700 hover:bg-gray-100"
-                            title="Deposit details"
-                          >
-                            i
-                          </button>
-                          {depositTooltip === product.id && depositButtonRefs.current[product.id] && (() => {
-                            const rect = depositButtonRefs.current[product.id]!.getBoundingClientRect();
-                            return (
-                              <div 
-                                className="fixed w-52 bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs text-gray-700 z-50"
-                                style={{
-                                  top: `${rect.bottom + 8}px`,
-                                  left: `${rect.right + 8}px`
-                                }}
-                              >
-                                This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-                    </div>
+                    )}
 
                     {/* Subscription CTA */}
                     {product.isSubscription && product.subscriptionData && (

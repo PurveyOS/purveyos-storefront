@@ -148,21 +148,7 @@ export function ProductCard(props: ProductCardProps) {
   const [weightAmount, setWeightAmount] = useState<string>("1");
   const [fixedQty, setFixedQty] = useState<number>(1);
   const [showBinModal, setShowBinModal] = useState(false);
-  const [showDepositTooltip, setShowDepositTooltip] = useState(false);
-  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
-  const depositButtonRef = useRef<HTMLButtonElement>(null);
-  
-  // Calculate tooltip position when it shows
-  useLayoutEffect(() => {
-    if (showDepositTooltip && depositButtonRef.current) {
-      const rect = depositButtonRef.current.getBoundingClientRect();
-      setTooltipPosition({
-        top: rect.top - 50,
-        left: rect.left - 75,
-      });
-    }
-  }, [showDepositTooltip]);
   
   // Track local bin quantities to reflect cart additions
   const adjustBinsForCart = (
@@ -278,36 +264,6 @@ export function ProductCard(props: ProductCardProps) {
             <span className="bg-orange-500 text-white px-2 py-1 rounded-full text-xs font-medium shadow-lg">
               Low Stock
             </span>
-          </div>
-        )}
-
-        {/* Deposit Product Info Button */}
-        {product.is_deposit_product && (
-          <div className="absolute top-2 left-2">
-            <button
-              ref={depositButtonRef}
-              type="button"
-              onMouseEnter={() => setShowDepositTooltip(true)}
-              onMouseLeave={() => setShowDepositTooltip(false)}
-              onClick={() => setShowDepositTooltip(!showDepositTooltip)}
-              className="w-6 h-6 rounded-full text-white flex items-center justify-center text-sm font-bold transition-colors shadow-lg"
-              style={{ backgroundColor: accentColor }}
-              title="Deposit information"
-            >
-              i
-            </button>
-            {showDepositTooltip && depositButtonRef.current && (
-              <div className="fixed z-50 text-white text-xs rounded-lg px-3 py-2 shadow-lg max-w-xs pointer-events-none"
-                style={{
-                  backgroundColor: accentColor,
-                  top: tooltipPosition.top + 'px',
-                  left: tooltipPosition.left + 'px',
-                  width: '200px',
-                  textAlign: 'center',
-                }}>
-                This is a deposit only. Total cost will be {product.deposit_prod_price_per_lb ? `$${product.deposit_prod_price_per_lb}/lb` : 'price per lb'} × hanging weight.
-              </div>
-            )}
           </div>
         )}
 
