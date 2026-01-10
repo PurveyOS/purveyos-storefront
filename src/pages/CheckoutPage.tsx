@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
-import { usePersistedCart } from '../hooks/usePersistedCart';
-import { useCheckout, type CheckoutData } from '../hooks/useCheckout';
+import { useCart } from '../context/CartContext';
+import { useCheckout, type CheckoutData, type GroupChoice } from '../hooks/useCheckout';
+import { SubscriptionBoxSelector } from '../components/SubscriptionBoxSelector';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { supabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
@@ -22,7 +23,7 @@ export function CheckoutPage() {
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
-  const { cart, clearCart, updateCartTotal, removeItems } = usePersistedCart();
+  const { cart, clearCart, updateCartTotal, removeItems } = useCart();
   const { createOrder, loading: checkoutLoading, error: checkoutError } = useCheckout();
 
   type ShippingAddress = {
@@ -50,6 +51,13 @@ export function CheckoutPage() {
   });
 
   const [subscribeToEmails, setSubscribeToEmails] = useState(false);
+  
+  // Subscription state
+  const [subscriptionProducts, setSubscriptionProducts] = useState<any[]>([]);
+  const [enableSubscription, setEnableSubscription] = useState(false);
+  const [selectedSubscriptionProductId, setSelectedSubscriptionProductId] = useState('');
+  const [subscriptionSelections, setSubscriptionSelections] = useState<Record<string, GroupChoice[]>>({});
+  const [loadingSubscriptionProducts, setLoadingSubscriptionProducts] = useState(false);
 
   // Load customer info if logged in
   useEffect(() => {
@@ -88,6 +96,36 @@ export function CheckoutPage() {
 
     loadCustomerInfo();
   }, []);
+
+  // Load subscription products when tenant is available
+  useEffect(() => {
+    async function loadSubscriptionProducts() {
+      if (!tenant?.id) return;
+      
+      setLoadingSubscriptionProducts(true);
+      try {
+        const { data, error } = await supabase
+          .from('subscription_products')
+          .select('id, name, description, price_per_interval, interval_type, is_active')
+          .eq('tenant_id', tenant.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.error('Error loading subscription products:', error);
+          return;
+        }
+
+        setSubscriptionProducts(data || []);
+      } catch (err) {
+        console.error('Error loading subscription products:', err);
+      } finally {
+        setLoadingSubscriptionProducts(false);
+      }
+    }
+
+    loadSubscriptionProducts();
+  }, [tenant?.id]);
 
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderId, setOrderId] = useState<string>();
@@ -554,15 +592,36 @@ export function CheckoutPage() {
       await handleStripeCheckout();
       return;
     }
-    // Check if cart contains a subscription item (already configured at add-to-cart)
+    // Build subscription payload
     console.log('🔍 Checking cart for subscription items:', cart.items);
     const subscriptionItem = cart.items.find((item: any) => item.metadata?.isSubscription);
     console.log('🔍 Found subscription item:', subscriptionItem);
+
     let subscriptionPayload = undefined;
-    
-    if (subscriptionItem) {
+
+    if (enableSubscription) {
+      if (!selectedSubscriptionProductId) {
+        alert('Please choose a subscription box.');
+        return;
+      }
+
+      const selectedProduct = subscriptionProducts.find(
+        (p) => p.id === selectedSubscriptionProductId
+      );
+
+      subscriptionPayload = {
+        enabled: true,
+        cadence: selectedProduct?.cadence,
+        startDate: new Date().toISOString(),
+        subscriptionProductId: selectedSubscriptionProductId,
+        quantity: 1,
+        substitutions: subscriptionSelections,
+      };
+
+      console.log('🔍 Subscription payload from checkout selection:', subscriptionPayload);
+    } else if (subscriptionItem) {
       const metadata = (subscriptionItem as any).metadata;
-      console.log('🔍 Subscription metadata:', metadata);
+      console.log('🔍 Subscription metadata from cart:', metadata);
       subscriptionPayload = {
         enabled: true,
         cadence: metadata.subscriptionInterval as 'weekly' | 'biweekly' | 'monthly',
@@ -572,7 +631,7 @@ export function CheckoutPage() {
         duration: metadata.duration,
         substitutions: metadata.substitutionSelections || metadata.substitutions || {},
       };
-      console.log('🔍 Subscription payload created:', subscriptionPayload);
+      console.log('🔍 Subscription payload from cart:', subscriptionPayload);
     } else {
       console.log('⚠️ No subscription item found in cart');
     }
@@ -745,8 +804,32 @@ const result = await createOrder(
     );
   }
 
-  const cartItems = cart.items.map(item => {
+  const cartItems = cart.items.map((item: any) => {
     const product = storefrontData?.products.find(p => p.id === item.productId);
+
+    if (!product && item?.metadata?.isSubscription) {
+      const meta = item.metadata || {};
+      const subscriptionName = meta.subscriptionName || 'Subscription Box';
+      const interval = meta.subscriptionInterval;
+      const descParts = [subscriptionName];
+      if (interval) descParts.push(`${interval} subscription`);
+
+      const fallbackProduct = {
+        id: item.productId,
+        name: subscriptionName,
+        description: descParts.join(' - '),
+        pricePer: meta.subscriptionTotalPrice || 0,
+        unit: 'ea',
+        imageUrl: '/subscription-placeholder.png',
+        categoryId: 'subscription',
+        available: true,
+        inventory: 1,
+        subscriptionInterval: interval,
+      } as any;
+
+      return { ...item, product: fallbackProduct };
+    }
+
     return product ? { ...item, product } : null;
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 
@@ -757,6 +840,7 @@ const result = await createOrder(
     const weight = (item as any).weight;
     const binWeight = (item as any).binWeight;
     const unitPriceCents = (item as any).unitPriceCents;
+    const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
     const quantity = item.quantity;
     
     let itemTotal = 0;
@@ -765,6 +849,8 @@ const result = await createOrder(
       itemTotal = binWeight * (unitPriceCents / 100) * quantity;
     } else if (weight && weight > 0) {
       itemTotal = item.product.pricePer * weight * quantity;
+    } else if (metaPrice && metaPrice > 0) {
+      itemTotal = metaPrice * quantity;
     } else {
       itemTotal = item.product.pricePer * quantity;
     }
@@ -1177,6 +1263,88 @@ const result = await createOrder(
                     placeholder="Any special requests or notes..."
                   />
                 </div>
+
+                {/* Subscription Section */}
+                {subscriptionProducts.length > 0 && (
+                  <div className="mt-6 border-t pt-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <input
+                        type="checkbox"
+                        id="enableSubscription"
+                        checked={enableSubscription}
+                        onChange={(e) => {
+                          setEnableSubscription(e.target.checked);
+                          if (!e.target.checked) {
+                            setSelectedSubscriptionProductId('');
+                            setSubscriptionSelections({});
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 focus:ring-2"
+                        style={{ accentColor: primaryColor }}
+                      />
+                      <label
+                        htmlFor="enableSubscription"
+                        className="text-sm font-medium text-gray-700 cursor-pointer"
+                      >
+                        Add a subscription to this order
+                      </label>
+                    </div>
+
+                    {enableSubscription && (
+                      <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Choose Subscription Box *
+                          </label>
+                          {loadingSubscriptionProducts ? (
+                            <div className="text-sm text-gray-500">Loading subscription options...</div>
+                          ) : (
+                            <select
+                              value={selectedSubscriptionProductId}
+                              onChange={(e) => {
+                                setSelectedSubscriptionProductId(e.target.value);
+                                setSubscriptionSelections({});
+                              }}
+                              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                              style={{ borderColor: enableSubscription ? primaryColor : '' }}
+                            >
+                              <option value="">Select a box...</option>
+                              {subscriptionProducts.map((product) => (
+                                <option key={product.id} value={product.id}>
+                                  {product.name} - ${product.price_per_interval.toFixed(2)} ({product.interval_type})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        {selectedSubscriptionProductId && (
+                          <SubscriptionBoxSelector
+                            subscriptionProductId={selectedSubscriptionProductId}
+                            primaryColor={primaryColor}
+                            onSelectionChange={(selections) => {
+                              setSubscriptionSelections(selections);
+                              // Update form with subscription data
+                              setFormData((prev) => ({
+                                ...prev,
+                                subscription: {
+                                  enabled: true,
+                                  cadence: subscriptionProducts.find(
+                                    (p) => p.id === selectedSubscriptionProductId
+                                  )?.cadence,
+                                  startDate: new Date().toISOString(),
+                                  subscriptionProductId: selectedSubscriptionProductId,
+                                  quantity: 1,
+                                  substitutions: selections,
+                                },
+                              }));
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1190,6 +1358,7 @@ const result = await createOrder(
                     const weight = (item as any).weight;
                     const binWeight = (item as any).binWeight;
                     const unitPriceCents = (item as any).unitPriceCents;
+                    const metaPrice = item.metadata?.subscriptionTotalPrice;
                     
                     let displayText = '';
                     let itemTotal = 0;
@@ -1202,6 +1371,9 @@ const result = await createOrder(
                       // Weight-based
                       displayText = `${weight} ${item.product.unit} @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;
                       itemTotal = item.product.pricePer * weight;
+                    } else if (metaPrice && metaPrice > 0) {
+                      displayText = `${item.product.name} (${(item.product as any).subscriptionInterval || 'subscription'})`;
+                      itemTotal = metaPrice * item.quantity;
                     } else {
                       // Fixed price
                       displayText = `${item.quantity} × $${item.product.pricePer.toFixed(2)}`;

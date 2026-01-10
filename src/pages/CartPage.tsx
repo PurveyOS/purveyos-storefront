@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useEffect } from 'react';
-import { usePersistedCart } from '../hooks/usePersistedCart';
+import { useCart } from '../context/CartContext';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { formatRestockDate } from '../utils/inventory';
@@ -9,7 +9,7 @@ import { trackBeginCheckout, trackEvent } from '../utils/analytics';
 export function CartPage() {
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData } = useStorefrontData(tenant?.id || '');
-  const { cart, addToCart, removeFromCart, clearCart } = usePersistedCart();
+  const { cart, addToCart, removeFromCart, clearCart } = useCart();
 
   useEffect(() => {
     if (!tenant?.id) return;
@@ -30,9 +30,38 @@ export function CartPage() {
     );
   }
 
-  const cartItems = cart.items.map(item => {
+  const cartItems = cart.items.map((item: any) => {
     const product = storefrontData.products.find(p => p.id === item.productId);
-    return product ? { ...item, product } : null;
+
+    // Fallback: allow subscription lines even if base product is filtered out/not online
+    if (!product && item?.metadata?.isSubscription) {
+      const meta = item.metadata || {};
+      const subscriptionName = meta.subscriptionName || 'Subscription Box';
+      const interval = meta.subscriptionInterval;
+      const descParts = [subscriptionName];
+      if (interval) descParts.push(`${interval} subscription`);
+
+      const fallbackProduct = {
+        id: item.productId,
+        name: subscriptionName,
+        description: descParts.join(' - '),
+        pricePer: meta.subscriptionTotalPrice || 0,
+        unit: 'ea',
+        imageUrl: '/subscription-placeholder.png',
+        categoryId: 'subscription',
+        available: true,
+        inventory: 1,
+        subscriptionInterval: interval,
+      } as any;
+
+      return { ...item, product: fallbackProduct };
+    }
+
+    if (!product) {
+      return null;
+    }
+
+    return { ...item, product };
   }).filter(Boolean);
 
   const isEmpty = cartItems.length === 0;
@@ -45,6 +74,7 @@ export function CartPage() {
     const binWeight: number | undefined = (item as any).binWeight;
     const unitPriceCents: number | undefined = (item as any).unitPriceCents;
     const weight: number | undefined = (item as any).weight;
+    const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
     
     let lineUnitPrice: number;
     
@@ -54,6 +84,9 @@ export function CartPage() {
     } else if (weight && weight > 0) {
       // Weight-based pricing
       lineUnitPrice = product.pricePer * weight;
+    } else if (metaPrice && metaPrice > 0) {
+      // Subscription line with explicit total price
+      lineUnitPrice = metaPrice;
     } else {
       // Fixed pricing
       lineUnitPrice = product.pricePer;
@@ -101,6 +134,7 @@ export function CartPage() {
                   const binWeight: number | undefined = (item as any).binWeight;
                   const unitPriceCents: number | undefined = (item as any).unitPriceCents;
                   const weight: number | undefined = (item as any).weight;
+                  const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
                   const isPreOrder: boolean = (item as any).isPreOrder || false;
                   
                   // Calculate line item price based on pricing mode
@@ -115,6 +149,10 @@ export function CartPage() {
                     // Weight-based pricing (check weight first, don't rely on pricingMode)
                     lineUnitPrice = product.pricePer * weight;
                     displayInfo = `${weight} ${product.unit} @ $${product.pricePer.toFixed(2)}/${product.unit}`;
+                  } else if (metaPrice && metaPrice > 0) {
+                    // Subscription line with explicit total price
+                    lineUnitPrice = metaPrice;
+                    displayInfo = `${product.name} (${(product as any).subscriptionInterval || 'subscription'})`;
                   } else {
                     // Fixed pricing
                     lineUnitPrice = product.pricePer;

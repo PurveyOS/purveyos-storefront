@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
-import { usePersistedCart } from '../hooks/usePersistedCart';
+import { useCart } from '../context/CartContext';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { supabase } from '../lib/supabase';
 
@@ -12,7 +12,7 @@ export function CheckoutSuccessPage() {
   const navigate = useNavigate();
   const sessionId = searchParams.get('session_id');
   const [countdown, setCountdown] = useState(5);
-  const { cart, clearCart } = usePersistedCart();
+  const { cart, clearCart } = useCart();
   const { tenant } = useTenantFromDomain();
   const [orderCreated, setOrderCreated] = useState(false);
   const [error, setError] = useState<string | null>(null);

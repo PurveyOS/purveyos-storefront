@@ -9,6 +9,7 @@ import { CustomerLogin } from './pages/CustomerLogin'
 import { CustomerPortal } from './pages/CustomerPortal'
 import { CustomerProfileSetup } from './pages/CustomerProfileSetup'
 import { SubscriptionManagement } from './pages/SubscriptionManagement'
+import { CartProvider } from './context/CartContext'
 import './App.css'
 import { useEffect } from 'react'
 import { trackPageView } from './utils/analytics'
@@ -23,21 +24,23 @@ function RouteAnalytics() {
 
 function App() {
   return (
-    <Router>
-      <RouteAnalytics />
-      <Routes>
-        <Route path="/" element={<StorefrontRoot />} />
-        <Route path="/product/:productId" element={<ProductPage />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
-        <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
-        <Route path="/checkout/cancel" element={<CheckoutCancelPage />} />
-        <Route path="/login" element={<CustomerLogin />} />
-        <Route path="/account/setup" element={<CustomerProfileSetup />} />
-        <Route path="/account" element={<CustomerPortal />} />
-        <Route path="/subscription/:id" element={<SubscriptionManagement />} />
-      </Routes>
-    </Router>
+    <CartProvider>
+      <Router>
+        <RouteAnalytics />
+        <Routes>
+          <Route path="/" element={<StorefrontRoot />} />
+          <Route path="/product/:productId" element={<ProductPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/checkout" element={<CheckoutPage />} />
+          <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+          <Route path="/checkout/cancel" element={<CheckoutCancelPage />} />
+          <Route path="/login" element={<CustomerLogin />} />
+          <Route path="/account/setup" element={<CustomerProfileSetup />} />
+          <Route path="/account" element={<CustomerPortal />} />
+          <Route path="/subscription/:id" element={<SubscriptionManagement />} />
+        </Routes>
+      </Router>
+    </CartProvider>
   )
 }
 

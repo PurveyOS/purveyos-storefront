@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTenantFromDomain } from './hooks/useTenantFromDomain';
 import { useStorefrontData } from './hooks/useStorefrontData';
-import { usePersistedCart } from './hooks/usePersistedCart';
+import { useCart } from './context/CartContext';
 import { getTemplate } from './templates';
 import { TemplateSwitcher } from './components/TemplateSwitcher';
 import { trackEvent, setAnalyticsEnabled } from './utils/analytics';
@@ -13,7 +13,7 @@ export function StorefrontRoot() {
   const { data: storefrontData, loading: dataLoading, error } = useStorefrontData(tenant?.id || '');
   const [currentTemplate, setCurrentTemplate] = useState('modern');
   
-  const { cart, addToCart, removeFromCart, updateCartTotal, addBinToCart } = usePersistedCart();
+  const { cart, addToCart, removeFromCart, updateCartTotal, addBinToCart } = useCart();
 
   
   // Calculate cart total whenever items change

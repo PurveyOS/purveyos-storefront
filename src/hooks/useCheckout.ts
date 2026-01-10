@@ -3,6 +3,11 @@ import { supabase } from '../lib/supabaseClient';
 import type { Cart } from '../types/storefront';
 import type { Product } from '../types/product';
 
+export interface GroupChoice {
+  productId: string;
+  quantity: number;
+}
+
 export interface SubscriptionRequest {
   enabled: boolean;
   cadence?: 'weekly' | 'biweekly' | 'monthly';
@@ -10,7 +15,7 @@ export interface SubscriptionRequest {
   isCsaBox?: boolean;
   targetWeightLbs?: number; // for weight-based items (CSA box), optional
   duration?: number; // number of deliveries
-  substitutions?: Record<string, string>; // { substitutionName: selectedOption }
+  substitutions?: Record<string, GroupChoice[]>; // { groupName: [{ productId, quantity }, ...] }
 
   // Optional extra fields to support product-specific subscriptions
   productId?: string;
@@ -144,7 +149,25 @@ export function useCheckout() {
 
       // 1) Map cart items → unified line model
       const lines: OutgoingOrderLine[] = cart.items.map((item: any) => {
-        const product = products.find((p) => p.id === item.productId);
+        let product = products.find((p) => p.id === item.productId);
+
+        // Allow subscription lines even if base product is not in products (e.g., not online)
+        if (!product && item?.metadata?.isSubscription) {
+          const meta = item.metadata || {};
+          const subscriptionName = meta.subscriptionName || 'Subscription Box';
+          const interval = meta.subscriptionInterval;
+
+          product = {
+            id: item.productId,
+            name: subscriptionName,
+            pricePer: meta.subscriptionTotalPrice || 0,
+            unit: 'ea',
+            pricingMode: 'fixed',
+            allowPreOrder: false,
+            subscriptionInterval: interval,
+          } as any;
+        }
+
         if (!product) {
           throw new Error(`Product not found: ${item.productId}`);
         }
