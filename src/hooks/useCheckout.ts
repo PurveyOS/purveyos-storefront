@@ -178,10 +178,9 @@ export function useCheckout() {
         const weightLbs: number | null =
           typeof item.weight === 'number' ? item.weight : null;
         
-        // Check if this should be a pre-order based on:
-        // 1. Cart item explicitly marked as pre-order, OR
-        // 2. Product has allow_pre_order enabled (for weight-based items)
-        const isPreOrder: boolean = !!item.isPreOrder || !!(product as any).allowPreOrder;
+        // Pre-order only when explicitly flagged on the cart item
+        // (UI sets this when sold out + pre-order is allowed)
+        const isPreOrder: boolean = !!item.isPreOrder;
 
         const pricingMode: 'weight' | 'fixed' | undefined = (product as any).pricingMode;
 

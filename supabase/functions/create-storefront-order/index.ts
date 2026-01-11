@@ -1,5 +1,10 @@
+// @ts-ignore: Deno deploy provides these remote modules at runtime
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// @ts-ignore: Deno deploy provides these remote modules at runtime
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// Minimal Deno env typing for TypeScript tooling
+declare const Deno: { env: { get(key: string): string | undefined } }
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,7 +65,7 @@ function buildPackageKey(productId: string, unit: string | null | undefined, lin
   return `${productId}|${weightStr}`
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -166,12 +171,21 @@ serve(async (req) => {
       })
     }
 
-    const productsById = new Map((products ?? []).map((p) => [p.id, p]))
-    const binsByKey = new Map((bins ?? []).map((b) => [b.package_key, b]))
+    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null }
+    type PackageBinRow = { package_key: string; qty?: number | null; reserved_qty?: number | null }
+
+    const productsById = new Map<string, ProductRow>((products ?? []).map((p: ProductRow) => [p.id, p]))
+    const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
 
     const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
 
     for (const line of orderRequest.lines) {
+      // Skip inventory check for pre-order items
+      if (line.isPreOrder) {
+        console.log('Skipping inventory check for pre-order item:', line.productId)
+        continue
+      }
+
       const product = productsById.get(line.productId)
       const packageKey = buildPackageKey(line.productId, product?.unit, line)
       const bin = binsByKey.get(packageKey)
@@ -244,7 +258,7 @@ serve(async (req) => {
         is_subscription_order: orderRequest.subscription?.enabled ?? false,
         source: 'storefront',
         status: 'pending',
-        payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'unpaid',
+        payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
         stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -531,7 +545,7 @@ serve(async (req) => {
               ? subscriptionProduct.season_end_date
               : null,
             deliveries_fulfilled: 0,  // Changed from 1 to 0 (not fulfilled yet, just ordered)
-            payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'unpaid',
+            payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
             total_paid_cents: orderRequest.stripePaymentIntentId ? orderRequest.totalCents : 0,
             stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,  // Link for idempotency + tracking
             created_at: new Date().toISOString(),
@@ -574,7 +588,7 @@ serve(async (req) => {
               } else if (!boxItems || boxItems.length === 0) {
                 console.warn('⚠️ [Subscription Setup] No box items found for subscription product')
               } else {
-                console.log('✓ [Subscription Setup] Found', boxItems.length, 'box items:', boxItems.map(b => ({ id: b.id, product_id: b.product_id, group: b.substitution_group })))
+                console.log('✓ [Subscription Setup] Found', boxItems.length, 'box items:', boxItems.map((b: any) => ({ id: b.id, product_id: b.product_id, group: b.substitution_group })))
                 // Build custom_items snapshot (JSONB object, not stringified)
                 const choices = buildChoicesFromRequest(orderRequest, boxItems)
                 console.log('🎁 [Subscription Setup] Built choices:', choices)
@@ -586,7 +600,7 @@ serve(async (req) => {
                     subscription_product_name: subscriptionProduct.name,
                     choices: choices,
                   },
-                  components: boxItems.map(item => ({
+                  components: boxItems.map((item: any) => ({
                     subscription_box_item_id: item.id,
                     product_id: item.product_id,
                     substitution_group: item.substitution_group,
@@ -717,10 +731,11 @@ serve(async (req) => {
       }
     )
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
     console.error('Error in create-storefront-order function:', error)
     return new Response(
       JSON.stringify({
-        error: error.message || 'Internal server error',
+        error: message,
       }),
       {
         status: 500,
