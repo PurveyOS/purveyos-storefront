@@ -252,6 +252,11 @@ export function CheckoutPage() {
     const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number }> = [];
 
     cart.items.forEach((item: any) => {
+      // Pre-orders should bypass inventory checks since they can be ordered even if sold out
+      if (item.isPreOrder) {
+        return;
+      }
+
       const product = productsById.get(item.productId);
       const packageKey = buildPackageKey(item.productId, product?.unit, item);
       const bin = binsByKey.get(packageKey);
@@ -644,16 +649,7 @@ export function CheckoutPage() {
       ? formatShippingAddress(shippingAddress)
       : formData.deliveryAddress;
 
-    console.log('📋 [Order] About to create order with:', {
-      tenantId: tenant.id,
-      discountCents,
-      shippingChargeCents,
-      appliedDiscount: appliedDiscount,
-      cartTotal: cart.total,
-      cartItems: cart.items.length,
-    });
-
-const result = await createOrder(
+    const result = await createOrder(
   tenant.id,
   cart,
   storefrontData.products,

@@ -20,13 +20,10 @@ export function usePersistedCart() {
 
   // Load cart from localStorage on mount
   useEffect(() => {
-    console.log('🔄 Loading cart from localStorage...');
     const savedCart = localStorage.getItem(CART_STORAGE_KEY);
-    console.log('📂 Saved cart:', savedCart);
     if (savedCart) {
       try {
         const parsedCart = JSON.parse(savedCart);
-        console.log('✅ Parsed cart:', { itemsCount: parsedCart.items.length, items: parsedCart.items });
         setCart(parsedCart);
         hasLoadedRef.current = true;
       } catch (error) {
@@ -34,19 +31,14 @@ export function usePersistedCart() {
         hasLoadedRef.current = true;
       }
     } else {
-      console.log('📭 No saved cart found');
       hasLoadedRef.current = true;
     }
   }, []);
 
   // Save cart to localStorage whenever it changes (but skip initial empty state)
   useEffect(() => {
-    console.log('💾 Save effect triggered:', { hasLoaded: hasLoadedRef.current, itemsCount: cart.items.length });
     if (hasLoadedRef.current) {
-      console.log('✅ Saving cart to localStorage:', JSON.stringify(cart));
       localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
-    } else {
-      console.log('⏸️ Skipping save (not loaded yet)');
     }
   }, [cart]);
 
@@ -71,9 +63,7 @@ export function usePersistedCart() {
   }, [cart.items.length]);
 
   const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean; metadata?: any }) => {
-    console.log('🛒 addToCart called:', { productId, quantity, options });
     setCart(prev => {
-      console.log('📦 Current cart before add:', { itemsCount: prev.items.length, items: prev.items });
       const existingItem = prev.items.find(item => 
         item.productId === productId && 
         item.binWeight === options?.binWeight &&
@@ -82,7 +72,6 @@ export function usePersistedCart() {
       );
       
       if (existingItem) {
-        console.log('📦 Item already exists, updating quantity');
         const updated = {
           ...prev,
           items: prev.items.map(item =>
@@ -97,7 +86,6 @@ export function usePersistedCart() {
         return updated;
       }
 
-      console.log('✨ New item, adding to cart');
       const next = {
         ...prev,
         items: [...prev.items, { 
@@ -110,7 +98,6 @@ export function usePersistedCart() {
           metadata: options?.metadata
         }],
       };
-      console.log('✅ New cart after add:', { itemsCount: next.items.length, items: next.items });
       try { trackAddToCart({ productId, quantity, ...options }); } catch {}
       return next;
     });

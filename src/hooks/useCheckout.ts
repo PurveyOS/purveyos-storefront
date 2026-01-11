@@ -208,21 +208,6 @@ export function useCheckout() {
         const unitPriceCents = Math.round(unitPrice * 100);
         const lineTotalCents = Math.round(lineTotal * 100);
 
-        console.log('🛒 Cart item calculation:', {
-          productName: (product as any).name,
-          pricingMode,
-          quantity,
-          binWeight,
-          weightLbs,
-          isPreOrder,
-          productPricePer: (product as any).pricePer,
-          itemUnitPriceCents: item.unitPriceCents,
-          calculatedUnitPrice: unitPrice,
-          calculatedLineTotal: lineTotal,
-          unitPriceCents,
-          lineTotalCents
-        });
-
         const pricePerLabel: OutgoingOrderLine['pricePer'] =
           pricingMode === 'weight' ? 'lb' : 'unit';
 
@@ -242,7 +227,6 @@ export function useCheckout() {
       // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
       const discountCents = checkoutData.discountCents || 0;
       const shippingChargeCents = checkoutData.shippingChargeCents || 0;
-      console.log('🛍️ [useCheckout] Processing order with discountCents:', discountCents, 'shippingChargeCents:', shippingChargeCents);
       
       const totals = calculateTotalsFromCents(
         lines.map((line) => line.lineTotalCents),
@@ -262,14 +246,6 @@ export function useCheckout() {
           (((line.weightLbs ?? 0) > 0 || (line.binWeight ?? 0) > 0) || line.pricePer === 'lb')
       );
       const estimatedTotalCents = isWeightEstimate ? totalCents : undefined;
-
-      console.log('💰 [useCheckout] Calling edge function with totals:', {
-        subtotalCents,
-        taxCents,
-        totalCents,
-        discountCents,
-        shippingChargeCents,
-      });
 
       // 3) Call Edge Function to create order securely (bypasses RLS)
       const { data, error: functionError } = await supabase.functions.invoke(
