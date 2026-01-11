@@ -22,6 +22,7 @@ interface OrderLine {
   isPreOrder?: boolean
   pricePer?: string
   weightBinId?: string
+  fulfillmentBucket?: 'NOW' | 'LATER'
 }
 
 interface OrderRequest {
@@ -346,12 +347,19 @@ serve(async (req: Request) => {
           bin_weight: line.binWeight ?? null,
           weight_lbs: line.weightLbs ?? null,
           is_pre_order: line.isPreOrder ?? false,
+          fulfillment_bucket: line.isPreOrder ? 'LATER' : 'NOW',
           created_at: new Date().toISOString(),
         })
 
       if (lineError) {
         console.error('Error creating order line:', lineError)
         throw lineError
+      }
+
+      // Skip inventory reservation for pre-order items; they should fulfill later
+      if (line.isPreOrder) {
+        console.log(`Skipping inventory decrement for pre-order line ${line.productName}`)
+        continue
       }
 
       // Fetch product to determine unit type (lb vs ea)
