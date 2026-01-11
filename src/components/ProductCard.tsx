@@ -267,32 +267,6 @@ export function ProductCard(props: ProductCardProps) {
           </div>
         )}
 
-        {/* Stock Count Badge - Fixed Price Items */}
-        {isFixedPrice && !isSoldOut && product.inventory !== undefined && (
-          <div className="absolute bottom-2 right-2">
-            <span 
-              className="text-white px-3 py-1.5 rounded-full text-sm font-semibold shadow-lg"
-              style={{ backgroundColor: primaryColor }}
-              title={`${product.inventory - quantityInCart} ${product.inventory - quantityInCart === 1 ? 'item' : 'items'} remaining`}
-            >
-              {Math.max(0, product.inventory - quantityInCart)} Avail
-            </span>
-          </div>
-        )}
-
-        {/* Package Count Badge - Weight-Based Items */}
-        {isWeightBased && !isSoldOut && localBins && localBins.length > 0 && (
-          <div className="absolute bottom-2 right-2">
-            <span 
-              className="text-white px-3 py-1.5 rounded-full text-sm font-semibold shadow-lg"
-              style={{ backgroundColor: primaryColor }}
-              title={`${localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} packages available`}
-            >
-              {localBins.reduce((sum, bin) => sum + (bin.qty || 0), 0)} Avail
-            </span>
-          </div>
-        )}
-
       </div>
 
       {/* CONTENT */}
