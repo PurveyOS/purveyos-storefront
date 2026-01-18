@@ -71,17 +71,26 @@ export function CustomerProfileSetup() {
     setSuccess(null);
 
     try {
-      // Check if profile already exists
-      const { data: existing } = await supabase
+      // Check if profile exists by email+tenant (may be from previous signup attempt)
+      const { data: existingByEmail } = await supabase
         .from('customer_profiles')
         .select('id')
-        .eq('id', user.id)
+        .eq('email', user.email)
         .eq('tenant_id', tenant.id)
         .maybeSingle();
 
-      const isUpdate = !!existing;
+      // If profile exists with different user ID, we need to handle the orphaned record
+      if (existingByEmail && existingByEmail.id !== user.id) {
+        console.log('[ProfileSetup] Found orphaned profile for email+tenant, cleaning up...');
+        // Delete the orphaned profile first
+        await supabase
+          .from('customer_profiles')
+          .delete()
+          .eq('email', user.email)
+          .eq('tenant_id', tenant.id);
+      }
 
-      // Upsert customer profile with tenant_id so portal stops redirecting back to setup
+      // Now upsert with current user ID
       const { error: updateError } = await supabase
         .from('customer_profiles')
         .upsert({
@@ -99,11 +108,12 @@ export function CustomerProfileSetup() {
       if (updateError) throw updateError;
 
       // Show success message
-      setSuccess(isUpdate ? 'Profile updated successfully!' : 'Profile created successfully!');
+      setSuccess(existingByEmail ? 'Profile updated successfully!' : 'Profile created successfully!');
       
       // Redirect to account page after brief delay
       setTimeout(() => navigate('/account'), 1500);
     } catch (err: any) {
+      console.error('[ProfileSetup] Error:', err);
       setError(err.message || 'Failed to save profile');
     } finally {
       setLoading(false);
