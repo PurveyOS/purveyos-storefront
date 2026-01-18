@@ -187,15 +187,15 @@ serve(async (req: Request) => {
         continue
       }
 
-      const product = productsById.get(line.productId)
-      const packageKey = buildPackageKey(line.productId, product?.unit, line)
+      const productRow = productsById.get(line.productId)
+      const packageKey = buildPackageKey(line.productId, productRow?.unit, line)
       const bin = binsByKey.get(packageKey)
       const reserved = bin?.reserved_qty ?? 0
       const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null
-      const available = availableFromBin !== null ? availableFromBin : (product?.qty ?? 0)
+      const available = availableFromBin !== null ? availableFromBin : (productRow?.qty ?? 0)
       const required = line.qty ?? 1
 
-      if (!bin && (product?.unit || '').toLowerCase() === 'lb') {
+      if (!bin && (productRow?.unit || '').toLowerCase() === 'lb') {
         shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available: 0 })
         continue
       }
@@ -331,6 +331,10 @@ serve(async (req: Request) => {
         isPreOrder: line.isPreOrder
       })
 
+      // Build package_key for bin-based items (LB products)
+      const product = productsById.get(line.productId)
+      const packageKey = buildPackageKey(line.productId, product?.unit, line)
+      
       // Insert order line
       const { error: lineError } = await supabaseAdmin
         .from('order_lines')
@@ -348,6 +352,7 @@ serve(async (req: Request) => {
           weight_lbs: line.weightLbs ?? null,
           is_pre_order: line.isPreOrder ?? false,
           fulfillment_bucket: line.isPreOrder ? 'LATER' : 'NOW',
+          selected_bins: line.binWeight ? [{ package_key: packageKey, qty: line.qty, weight_btn: line.binWeight }] : null,
           created_at: new Date().toISOString(),
         })
 
@@ -363,7 +368,7 @@ serve(async (req: Request) => {
       }
 
       // Fetch product to determine unit type (lb vs ea)
-      const { data: product, error: productError } = await supabaseAdmin
+      const { data: fetchedProduct, error: productError } = await supabaseAdmin
         .from('products')
         .select('id, unit, qty')
         .eq('id', line.productId)
@@ -376,7 +381,7 @@ serve(async (req: Request) => {
 
       // Calculate quantity to deduct based on product unit
       let qtyToDeduct = 0
-      if (product.unit === 'lb') {
+      if (fetchedProduct.unit === 'lb') {
         // Weight-based: use binWeight for pre-packaged bins, weightLbs for custom weight
         const weight = line.binWeight ?? line.weightLbs ?? 0
         if (weight > 0) {
@@ -389,7 +394,7 @@ serve(async (req: Request) => {
 
       if (qtyToDeduct > 0) {
         // 1. Update legacy product.qty for compatibility
-        const newProductQty = Math.max(0, (product.qty || 0) - qtyToDeduct)
+        const newProductQty = Math.max(0, (fetchedProduct.qty || 0) - qtyToDeduct)
         const { error: updateError } = await supabaseAdmin
           .from('products')
           .update({
@@ -404,7 +409,7 @@ serve(async (req: Request) => {
         }
 
         // 2. Decrement package_bins (authoritative inventory)
-        if (product.unit === 'lb') {
+        if (fetchedProduct.unit === 'lb') {
           // Weight-based: decrement specific weight bin
           // Use binWeight for pre-packaged bins, weightLbs for custom weight orders
           const weight = line.binWeight ?? line.weightLbs ?? 0
@@ -412,7 +417,7 @@ serve(async (req: Request) => {
           const weightBtn = Math.round(weight * 100) / 100
           // Remove trailing zeros: 1.30 -> 1.3, 1.00 -> 1, 1.56 -> 1.56
           const weightStr = weightBtn.toString().replace(/\.?0+$/, '')
-          const packageKey = `${product.id}|${weightStr}`
+          const packageKey = `${fetchedProduct.id}|${weightStr}`
 
           console.log(`Looking up package_bin: ${packageKey}, binWeight=${line.binWeight}, weightLbs=${line.weightLbs}, qty=${line.qty}, raw weight=${weight}`)
 
@@ -444,7 +449,7 @@ serve(async (req: Request) => {
           }
         } else {
           // Each-based: decrement EA bin (weightBtn = 0, not 0.00)
-          const packageKey = `${product.id}|0`
+          const packageKey = `${fetchedProduct.id}|0`
 
           console.log(`Looking up package_bin (EA): ${packageKey}, qty=${line.qty}`)
 
@@ -491,7 +496,7 @@ serve(async (req: Request) => {
             created_at: new Date().toISOString(),
           })
 
-        console.log(`Decremented inventory for ${line.productName}: product.qty ${product.qty} -> ${newProductQty}, qtyLbs: ${qtyToDeduct}`)
+        console.log(`Decremented inventory for ${line.productName}: product.qty ${fetchedProduct.qty} -> ${newProductQty}, qtyLbs: ${qtyToDeduct}`)
       }
     }
 

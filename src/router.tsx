@@ -8,6 +8,7 @@ import { CheckoutCancelPage } from './pages/CheckoutCancelPage';
 import { TestPage } from './pages/TestPage';
 import { CustomerLogin } from './pages/CustomerLogin';
 import { CustomerPortal } from './pages/CustomerPortal';
+import { PasswordReset } from './pages/PasswordReset';
 import { SubscriptionManagement } from './pages/SubscriptionManagement';
 
 export function AppRouter() {
@@ -24,6 +25,7 @@ export function AppRouter() {
         <Route path="/login" element={<CustomerLogin />} />
         <Route path="/account" element={<CustomerPortal />} />
         <Route path="/account/setup" element={<CustomerPortal />} />
+        <Route path="/account/reset-password" element={<PasswordReset />} />
         <Route path="/customer/portal" element={<CustomerPortal />} />
         <Route path="/subscription/:id" element={<SubscriptionManagement />} />
       </Routes>

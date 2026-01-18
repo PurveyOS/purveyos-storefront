@@ -172,12 +172,6 @@ export function MinimalTemplate({
                           {product.unit && <span>/ {product.unit}</span>}
                         </div>
                       </div>
-                      {/* Quantity Badge - Show only when in stock */}
-                      {product.inventory !== undefined && product.inventory > 0 && (
-                        <div className="text-xs font-semibold px-2 py-1 rounded-full bg-black/60 text-white">
-                          {product.inventory} in stock
-                        </div>
-                      )}
                     </div>
                   </div>
                   <div className="px-4 pb-5 pt-3 space-y-3">

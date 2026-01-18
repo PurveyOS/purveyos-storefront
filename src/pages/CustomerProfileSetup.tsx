@@ -71,70 +71,80 @@ export function CustomerProfileSetup() {
     setSuccess(null);
 
     try {
-      // Check if profile exists by email+tenant (may be from previous signup attempt)
-      const { data: existingByEmail, error: checkError } = await supabase
-        .from('customer_profiles')
-        .select('id, tenant_id, created_at')
-        .eq('email', user.email)
-        .eq('tenant_id', tenant.id)
-        .maybeSingle();
+      console.log('[ProfileSetup] Starting profile setup with:', {
+        userId: user.id,
+        userEmail: user.email,
+        tenantId: tenant.id,
+      });
 
-      if (checkError) {
-        console.error('[ProfileSetup] Error checking existing profile:', checkError);
-        throw checkError;
-      }
+      const profileData = {
+        tenant_id: tenant.id,
+        email: user.email,
+        full_name: formData.fullName,
+        phone: formData.phone || null,
+        default_delivery_address: formData.deliveryAddress || null,
+        default_delivery_notes: formData.deliveryNotes || null,
+        email_notifications: formData.emailNotifications,
+        updated_at: new Date().toISOString(),
+      };
 
-      // If profile exists with different user ID, we need to handle the orphaned record
-      if (existingByEmail && existingByEmail.id !== user.id) {
-        console.log('[ProfileSetup] Found orphaned profile:', existingByEmail);
-        console.log('[ProfileSetup] Current user ID:', user.id, 'Orphaned profile ID:', existingByEmail.id);
-        
-        // Try to delete the orphaned profile
-        const { error: deleteError } = await supabase
-          .from('customer_profiles')
-          .delete()
-          .eq('id', existingByEmail.id)
-          .eq('tenant_id', tenant.id);
-
-        if (deleteError) {
-          console.error('[ProfileSetup] Failed to delete orphaned profile:', deleteError);
-          // Show helpful error message
-          throw new Error(
-            'Your email is already associated with this store. ' +
-            'Please contact support to resolve this issue, or try logging out and back in.'
-          );
-        }
-
-        console.log('[ProfileSetup] Successfully deleted orphaned profile');
-      }
-
-      // Now upsert with current user ID
-      const { error: updateError } = await supabase
+      // Try to upsert with current user ID
+      let updateResult = await supabase
         .from('customer_profiles')
         .upsert({
           id: user.id,
-          tenant_id: tenant.id,
-          email: user.email,
-          full_name: formData.fullName,
-          phone: formData.phone || null,
-          default_delivery_address: formData.deliveryAddress || null,
-          default_delivery_notes: formData.deliveryNotes || null,
-          email_notifications: formData.emailNotifications,
-          updated_at: new Date().toISOString(),
+          ...profileData,
         }, { onConflict: 'id' });
 
-      if (updateError) {
-        console.error('[ProfileSetup] Upsert error:', updateError);
-        throw updateError;
+      console.log('[ProfileSetup] Initial upsert result:', {
+        data: updateResult.data,
+        error: updateResult.error?.message,
+      });
+
+      // If we hit duplicate constraint on email+tenant, there's an orphaned profile
+      // We need to find its actual ID and update that one instead
+      if (updateResult.error?.code === '23505') {
+        console.log('[ProfileSetup] Hit duplicate constraint, calling RPC to find and update existing profile...');
+        
+        // Call RPC function that bypasses RLS to find and update the profile
+        const { data: rpcResult, error: rpcError } = await supabase.rpc(
+          'update_customer_profile_by_email',
+          {
+            p_email: user.email,
+            p_tenant_id: tenant.id,
+            p_full_name: formData.fullName,
+            p_phone: formData.phone || null,
+            p_default_delivery_address: formData.deliveryAddress || null,
+            p_default_delivery_notes: formData.deliveryNotes || null,
+            p_email_notifications: formData.emailNotifications,
+          }
+        );
+
+        console.log('[ProfileSetup] RPC result:', { data: rpcResult, error: rpcError?.message });
+
+        if (rpcError) {
+          throw rpcError;
+        }
+
+        if (!rpcResult || rpcResult.length === 0 || !rpcResult[0]?.profile_id) {
+          throw new Error(
+            'An account with this email exists but could not be updated. ' +
+            'Please contact support for assistance.'
+          );
+        }
+
+        console.log('[ProfileSetup] Successfully updated existing profile:', rpcResult[0].profile_id);
+      } else if (updateResult.error) {
+        throw updateResult.error;
       }
 
-      // Show success message
-      setSuccess(existingByEmail ? 'Profile updated successfully!' : 'Profile created successfully!');
+      console.log('[ProfileSetup] Profile update successful');
+      setSuccess('Profile saved successfully!');
       
       // Redirect to account page after brief delay
       setTimeout(() => navigate('/account'), 1500);
     } catch (err: any) {
-      console.error('[ProfileSetup] Error:', err);
+      console.error('[ProfileSetup] Exception caught:', err);
       setError(err.message || 'Failed to save profile');
     } finally {
       setLoading(false);

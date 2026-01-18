@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { User, Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 export function CustomerLogin() {
   const navigate = useNavigate();
+  const { tenant } = useTenantFromDomain();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -77,6 +79,31 @@ export function CustomerLogin() {
     }
 
     try {
+      // FIRST: Check if a customer profile already exists for this email+tenant
+      // This prevents orphaned profiles when users forget they have an account
+      if (tenant) {
+        const { data: existingProfile } = await supabase
+          .from('customer_profiles')
+          .select('id, email, full_name')
+          .eq('email', email)
+          .eq('tenant_id', tenant.id)
+          .maybeSingle();
+
+        if (existingProfile) {
+          setError(
+            `An account already exists for ${email} at this store. ` +
+            `Please sign in below, or use "Forgot Password" if you don't remember your password.`
+          );
+          setTimeout(() => {
+            setMode('login');
+            setEmail(email);
+          }, 2500);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Proceed with signup only if no profile exists
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -106,13 +133,13 @@ export function CustomerLogin() {
       }
     } catch (err: any) {
       // Handle duplicate email error with helpful message
-      if (err.message?.includes('duplicate') || err.code === '23505') {
-        setError('This email already has an account. Please sign in instead.');
+      if (err.message?.includes('duplicate') || err.code === '23505' || err.message?.includes('already registered')) {
+        setError('This email already has an account for this store. Please sign in instead, or use "Forgot Password" to reset your password.');
         // Switch to login mode and populate email
         setTimeout(() => {
           setMode('login');
           setEmail(email);
-        }, 500);
+        }, 2000);
       } else {
         setError(err.message || 'Failed to create account');
       }
@@ -130,7 +157,7 @@ export function CustomerLogin() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: `${window.location.origin}/account`,
+        redirectTo: `${window.location.origin}/account/reset-password`,
       });
 
       if (error) throw error;

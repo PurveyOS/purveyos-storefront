@@ -106,6 +106,8 @@ export type Database = {
           enable_zelle: boolean
           venmo_handle: string
           zelle_instructions: string
+          venmo_qr_url: string | null
+          zelle_qr_url: string | null
           created_at: string
           updated_at: string
         }
