@@ -72,22 +72,40 @@ export function CustomerProfileSetup() {
 
     try {
       // Check if profile exists by email+tenant (may be from previous signup attempt)
-      const { data: existingByEmail } = await supabase
+      const { data: existingByEmail, error: checkError } = await supabase
         .from('customer_profiles')
-        .select('id')
+        .select('id, tenant_id, created_at')
         .eq('email', user.email)
         .eq('tenant_id', tenant.id)
         .maybeSingle();
 
+      if (checkError) {
+        console.error('[ProfileSetup] Error checking existing profile:', checkError);
+        throw checkError;
+      }
+
       // If profile exists with different user ID, we need to handle the orphaned record
       if (existingByEmail && existingByEmail.id !== user.id) {
-        console.log('[ProfileSetup] Found orphaned profile for email+tenant, cleaning up...');
-        // Delete the orphaned profile first
-        await supabase
+        console.log('[ProfileSetup] Found orphaned profile:', existingByEmail);
+        console.log('[ProfileSetup] Current user ID:', user.id, 'Orphaned profile ID:', existingByEmail.id);
+        
+        // Try to delete the orphaned profile
+        const { error: deleteError } = await supabase
           .from('customer_profiles')
           .delete()
-          .eq('email', user.email)
+          .eq('id', existingByEmail.id)
           .eq('tenant_id', tenant.id);
+
+        if (deleteError) {
+          console.error('[ProfileSetup] Failed to delete orphaned profile:', deleteError);
+          // Show helpful error message
+          throw new Error(
+            'Your email is already associated with this store. ' +
+            'Please contact support to resolve this issue, or try logging out and back in.'
+          );
+        }
+
+        console.log('[ProfileSetup] Successfully deleted orphaned profile');
       }
 
       // Now upsert with current user ID
@@ -105,7 +123,10 @@ export function CustomerProfileSetup() {
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' });
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('[ProfileSetup] Upsert error:', updateError);
+        throw updateError;
+      }
 
       // Show success message
       setSuccess(existingByEmail ? 'Profile updated successfully!' : 'Profile created successfully!');
