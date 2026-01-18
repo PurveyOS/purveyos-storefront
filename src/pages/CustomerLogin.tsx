@@ -105,7 +105,17 @@ export function CustomerLogin() {
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create account');
+      // Handle duplicate email error with helpful message
+      if (err.message?.includes('duplicate') || err.code === '23505') {
+        setError('This email already has an account. Please sign in instead.');
+        // Switch to login mode and populate email
+        setTimeout(() => {
+          setMode('login');
+          setEmail(email);
+        }, 500);
+      } else {
+        setError(err.message || 'Failed to create account');
+      }
     } finally {
       setLoading(false);
     }
@@ -216,6 +226,9 @@ export function CustomerLogin() {
                 setMode('login');
                 setError(null);
                 setMessage(null);
+                setPassword('');
+                setConfirmPassword('');
+                setFullName('');
               }}
               className={`flex-1 py-2 px-4 rounded-md font-medium transition ${
                 mode === 'login'
@@ -230,6 +243,8 @@ export function CustomerLogin() {
                 setMode('signup');
                 setError(null);
                 setMessage(null);
+                setPassword('');
+                setConfirmPassword('');
               }}
               className={`flex-1 py-2 px-4 rounded-md font-medium transition ${
                 mode === 'signup'

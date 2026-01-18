@@ -23,6 +23,7 @@ export function AppRouter() {
         <Route path="/checkout/cancel" element={<CheckoutCancelPage />} />
         <Route path="/login" element={<CustomerLogin />} />
         <Route path="/account" element={<CustomerPortal />} />
+        <Route path="/account/setup" element={<CustomerPortal />} />
         <Route path="/customer/portal" element={<CustomerPortal />} />
         <Route path="/subscription/:id" element={<SubscriptionManagement />} />
       </Routes>
