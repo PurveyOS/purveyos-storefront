@@ -190,11 +190,11 @@ export function CheckoutSuccessPage() {
         </div>
         
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
-          Payment Successful!
+          Order Received!
         </h1>
         
         <p className="text-lg text-gray-600 mb-2">
-          Thank you for your order.
+          Thank you for your order. We'll prepare it for pickup/delivery.
         </p>
         
         <p className="text-sm text-gray-500 mb-8">

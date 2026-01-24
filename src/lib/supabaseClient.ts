@@ -104,6 +104,8 @@ export type Database = {
           enable_card: boolean
           enable_venmo: boolean
           enable_zelle: boolean
+          enable_cash: boolean
+          enable_cashapp: boolean
           venmo_handle: string
           zelle_instructions: string
           venmo_qr_url: string | null

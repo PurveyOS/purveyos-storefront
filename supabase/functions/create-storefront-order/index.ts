@@ -253,7 +253,9 @@ serve(async (req: Request) => {
         tax_cents: orderRequest.taxCents,
         shipping_cents: orderRequest.shippingChargeCents ?? 0,
         total_cents: orderRequest.totalCents,
+        total: (orderRequest.totalCents / 100).toFixed(2),
         discount_cents: orderRequest.discountCents ?? 0,
+        payment_method: orderRequest.paymentMethod,
         is_weight_estimate: isWeightEstimate,
         estimated_total_cents: estimatedTotalCents,
         is_subscription_order: orderRequest.subscription?.enabled ?? false,
@@ -319,7 +321,7 @@ serve(async (req: Request) => {
     for (const line of orderRequest.lines) {
       // Convert unitPriceCents to dollars for price_per field
       const pricePerDollars = line.unitPriceCents / 100
-      
+
       console.log('📦 Processing line:', {
         productName: line.productName,
         qty: line.qty,
@@ -334,8 +336,42 @@ serve(async (req: Request) => {
       // Build package_key for bin-based items (LB products)
       const product = productsById.get(line.productId)
       const packageKey = buildPackageKey(line.productId, product?.unit, line)
-      
-      // Insert order line
+
+      // Cash-like payments should reserve inventory instead of decrementing immediately
+      const shouldReserve = !line.isPreOrder
+        && ['cash', 'venmo', 'zelle'].includes(orderRequest.paymentMethod)
+        && !orderRequest.stripePaymentIntentId
+
+      // Selected bins payload (used for reservation and order_lines.selected_bins)
+      const selectedBinsPayload = line.isPreOrder
+        ? null
+        : [{
+            package_key: packageKey,
+            qty: line.qty,
+            weight_btn: line.binWeight ?? line.weightLbs ?? 0,
+          }]
+
+      // Reserve bins for cash-like payments
+      let reservedAt: string | null = null
+      let reservationExpiresAt: string | null = null
+      if (shouldReserve && selectedBinsPayload) {
+        const { data: reserveData, error: reserveError } = await supabaseAdmin.rpc('reserve_selected_bins', {
+          p_tenant_id: orderRequest.tenantId,
+          p_selected_bins: selectedBinsPayload,
+          p_expiration_minutes: null  // NULL = no expiration for storefront orders (customer may pick up days later)
+        })
+
+        if (reserveError) {
+          console.error('Error reserving bins for storefront order:', reserveError)
+          throw reserveError
+        }
+
+        reservedAt = reserveData?.reserved_at ?? new Date().toISOString()
+        reservationExpiresAt = reserveData?.reservation_expires_at ?? null
+        console.log('✅ Reserved bins for cash-like payment (no expiration):', { packageKey, reservedAt, reservationExpiresAt })
+      }
+
+      // Insert order line with reservation metadata (if any)
       const { error: lineError } = await supabaseAdmin
         .from('order_lines')
         .insert({
@@ -352,7 +388,9 @@ serve(async (req: Request) => {
           weight_lbs: line.weightLbs ?? null,
           is_pre_order: line.isPreOrder ?? false,
           fulfillment_bucket: line.isPreOrder ? 'LATER' : 'NOW',
-          selected_bins: line.binWeight ? [{ package_key: packageKey, qty: line.qty, weight_btn: line.binWeight }] : null,
+          selected_bins: selectedBinsPayload,
+          reserved_at: reservedAt,
+          reservation_expires_at: reservationExpiresAt,
           created_at: new Date().toISOString(),
         })
 
@@ -364,6 +402,12 @@ serve(async (req: Request) => {
       // Skip inventory reservation for pre-order items; they should fulfill later
       if (line.isPreOrder) {
         console.log(`Skipping inventory decrement for pre-order line ${line.productName}`)
+        continue
+      }
+
+      // If we already reserved (cash-like payments), do not decrement inventory now
+      if (shouldReserve) {
+        console.log(`Reserved (no decrement) for cash-like payment on ${line.productName}`)
         continue
       }
 

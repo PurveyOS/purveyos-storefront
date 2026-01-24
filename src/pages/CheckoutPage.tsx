@@ -1146,6 +1146,7 @@ export function CheckoutPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Payment Method</h2>
                 <div className="grid grid-cols-2 gap-3 mb-4">
+                  {(storefrontData?.settings as any)?.enable_cash && (
                   <button
                     type="button"
                     onClick={() => handleInputChange('paymentMethod', 'cash')}
@@ -1165,6 +1166,7 @@ export function CheckoutPage() {
                       <div className="text-xs text-gray-500 mt-1">Pay at {formData.deliveryMethod === 'delivery' ? 'delivery' : 'pickup'}</div>
                     </div>
                   </button>
+                  )}
 
                   {cardPaymentAvailable && (
                     <button
@@ -1188,6 +1190,7 @@ export function CheckoutPage() {
                     </button>
                   )}
 
+                  {(storefrontData?.settings as any)?.enable_venmo && (
                   <button
                     type="button"
                     onClick={() => handleInputChange('paymentMethod', 'venmo')}
@@ -1207,7 +1210,9 @@ export function CheckoutPage() {
                       <div className="text-xs text-gray-500 mt-1">Pay later</div>
                     </div>
                   </button>
+                  )}
 
+                  {(storefrontData?.settings as any)?.enable_zelle && (
                   <button
                     type="button"
                     onClick={() => handleInputChange('paymentMethod', 'zelle')}
@@ -1227,7 +1232,9 @@ export function CheckoutPage() {
                       <div className="text-xs text-gray-500 mt-1">Pay later</div>
                     </div>
                   </button>
+                  )}
 
+                  {(storefrontData?.settings as any)?.enable_cashapp && (
                   <button
                     type="button"
                     onClick={() => handleInputChange('paymentMethod', 'cashapp')}
@@ -1247,6 +1254,7 @@ export function CheckoutPage() {
                       <div className="text-xs text-gray-500 mt-1">Pay later</div>
                     </div>
                   </button>
+                  )}
                 </div>
 
                 {formData.paymentMethod && formData.paymentMethod !== 'card' && (

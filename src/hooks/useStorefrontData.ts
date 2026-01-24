@@ -257,6 +257,10 @@ export function useStorefrontData(tenantId: string): {
             ?? settingsResult.data.enable_card
             ?? settingsResult.data.accept_card
             ?? false,
+          enable_cash: settingsResult.data.enable_cash ?? false,
+          enable_venmo: settingsResult.data.enable_venmo ?? false,
+          enable_zelle: settingsResult.data.enable_zelle ?? false,
+          enable_cashapp: (settingsResult.data as any).enable_cashapp ?? false,
           shipping_charge_cents: settingsResult.data.shipping_charge_cents ?? 0,
           pickup_locations: Array.isArray(settingsResult.data.pickup_locations)
             ? settingsResult.data.pickup_locations
