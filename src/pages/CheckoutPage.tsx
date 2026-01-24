@@ -1227,6 +1227,26 @@ export function CheckoutPage() {
                       <div className="text-xs text-gray-500 mt-1">Pay later</div>
                     </div>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleInputChange('paymentMethod', 'cashapp')}
+                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                      formData.paymentMethod === 'cashapp'
+                        ? 'border-current shadow-lg'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={formData.paymentMethod === 'cashapp' ? {
+                      borderColor: primaryColor,
+                      boxShadow: `0 0 20px ${primaryColor}40`
+                    } : {}}
+                  >
+                    <div className="text-center">
+                      <div className="text-2xl mb-2">💚</div>
+                      <div className="font-medium text-gray-800">CashApp</div>
+                      <div className="text-xs text-gray-500 mt-1">Pay later</div>
+                    </div>
+                  </button>
                 </div>
 
                 {formData.paymentMethod && formData.paymentMethod !== 'card' && (
