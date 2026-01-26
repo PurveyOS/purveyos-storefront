@@ -167,8 +167,7 @@ export function useStorefrontData(tenantId: string): {
           supabase
             .from('package_bins')
             .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty')
-            .eq('tenant_id', tenantId)
-            .gt('qty', 0), // Only show bins with inventory
+            .eq('tenant_id', tenantId),
           
           supabase
             .from('subscription_products')
@@ -349,7 +348,7 @@ export function useStorefrontData(tenantId: string): {
         console.log('📦 Subscription product IDs:', Array.from(subscriptionsByProduct.keys()));
 
         const products: Product[] = (productsRows || []).map(p => {
-          const bins = binsByProduct.get(p.id);
+          const allBins = binsByProduct.get(p.id);
           const subscription = subscriptionsByProduct.get(p.id);
           
           console.log('🔍 Processing product:', p.id, p.name);
@@ -360,9 +359,14 @@ export function useStorefrontData(tenantId: string): {
           }
           
           // Calculate total inventory from package_bins (authoritative source)
-          const totalInventory = bins 
-            ? bins.reduce((sum, bin) => sum + ((bin.qty - (bin.reserved_qty || 0)) || 0), 0)
+          const totalInventory = allBins 
+            ? allBins.reduce((sum, bin) => sum + ((bin.qty - (bin.reservedQty || 0)) || 0), 0)
             : 0;
+          
+          // Only include bins with available inventory (qty - reserved_qty > 0)
+          const availableBins = allBins
+            ? allBins.filter(bin => (bin.qty - (bin.reservedQty || 0)) > 0)
+            : undefined;
           
           const productData = {
             id: p.id,
@@ -370,10 +374,10 @@ export function useStorefrontData(tenantId: string): {
             description: p.description || '', // Use description column
             pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0), // Use subscription price if available
             unit: p.unit || 'lb',
-            weightBins: bins,
+            weightBins: availableBins,
             imageUrl: p.image || '/demo-product.svg', // Use image column
             categoryId: p.category || '', // Use category column
-            available: true,
+            available: totalInventory > 0 || (p.allow_pre_order === true), // Available if inventory exists OR pre-order enabled
             inventory: totalInventory,
             allowPreOrder: p.allow_pre_order === true,
             isSubscription: !!subscription,
