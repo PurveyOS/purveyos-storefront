@@ -339,7 +339,7 @@ serve(async (req: Request) => {
 
       // Cash-like payments should reserve inventory instead of decrementing immediately
       const shouldReserve = !line.isPreOrder
-        && ['cash', 'venmo', 'zelle'].includes(orderRequest.paymentMethod)
+        && ['cash', 'venmo', 'zelle', 'cashapp'].includes(orderRequest.paymentMethod)
         && !orderRequest.stripePaymentIntentId
 
       // Selected bins payload (used for reservation and order_lines.selected_bins)
