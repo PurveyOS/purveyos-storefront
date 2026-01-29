@@ -340,7 +340,7 @@ export function useStorefrontData(tenantId: string): {
             pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0),
             unit: p.unit || 'lb',
             weightBins: availableBins,
-            imageUrl: p.image || '/demo-product.svg',
+            imageUrl: p.image_url || p.image || '/demo-product.svg', // Prefer image_url (Storage), fallback to image (base64)
             categoryId: p.category || '',
             available: totalInventory > 0 || (p.allow_pre_order === true),
             inventory: totalInventory,
