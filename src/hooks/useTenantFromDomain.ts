@@ -106,6 +106,12 @@ export function useTenantFromDomain(): UseTenantResult {
           setTenant(null);
         } else {
           console.log("✅ Resolved tenant:", data);
+          
+          // Store slug in localStorage for Edge Function calls
+          if (typeof window !== "undefined") {
+            localStorage.setItem('tenant_slug', slug);
+          }
+          
           setTenant(data as Tenant);
           setError(null);
         }

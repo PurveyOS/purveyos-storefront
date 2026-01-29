@@ -29,25 +29,25 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = supabaseInstance as any;
 
-// Create a configured Supabase client with tenant header for RLS
+// Create a configured Supabase client (regular client works now)
 export function createTenantAwareClient(tenantId: string) {
   if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('⚠️ Cannot create tenant-aware client: Supabase not configured');
     return supabaseInstance;
   }
   
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  // Regular client - tenant isolation handled by RLS + application-level filtering
+  const client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true
-    },
-    global: {
-      headers: {
-        'x-tenant-id': tenantId
-      }
     }
   });
+  
+  console.log(`🔐 Created client for tenant: ${tenantId}`);
+  
+  return client;
 }
 
 export type Database = {

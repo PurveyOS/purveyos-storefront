@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { fetchStorefrontCatalog, fetchStorefrontProductsDirectRLS } from '../lib/storefrontApi';
 import type { StorefrontData } from '../types/storefront';
 import type { Product } from '../types/product';
 import type { Category } from '../types/category';
@@ -150,130 +151,126 @@ export function useStorefrontData(tenantId: string): {
         // Fetch real data from Supabase
         console.log('Fetching data for tenant:', tenantId);
         
-  const [settingsResult, productsResult, binsResult, subscriptionsResult, subsGroupsResult] = await Promise.all([
-          supabase
-            .from('storefront_settings')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .single(),
-          
-          supabase
-            .from('products')
-            .select('id, name, pricePer, unit, image, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb')
-            .eq('tenant_id', tenantId)
-            .eq('is_online', true)
-            .order('name'),
-          
-          supabase
-            .from('package_bins')
-            .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty')
-            .eq('tenant_id', tenantId),
-          
-          supabase
-            .from('subscription_products')
-            .select('*')
-            .eq('tenant_id', tenantId)
-            .eq('is_active', true),
-
-          supabase
-            .from('subscription_substitution_groups')
-            .select('*')
-        ]);
-
-        // Debug subscription fetch
-        if (subscriptionsResult.error) {
-          console.error('❌ Error fetching subscription_products:', subscriptionsResult.error);
-        }
-        console.log('🔍 Subscription query filter:', { tenant_id: tenantId, is_active: true });
-        console.log('📦 Raw subscription result:', subscriptionsResult);
+        // ============================================================================
+        // PHASE B: Use Edge Function for public browsing (products + categories)
+        // ============================================================================
+        // Why Edge Function instead of direct RLS?
+        // 1) Validates tenant existence before returning products
+        // 2) Avoids header injection issues with supabase-js
+        // 3) Provides strong server-side tenant isolation
+        // 4) No expensive RLS subqueries = better performance
+        //
+        // Get tenant slug from localStorage (set by useTenantFromDomain)
+        const tenantSlug = localStorage.getItem('tenant_slug');
         
-        // Try fetching ALL subscriptions without filters to debug
-        const { data: allSubs, error: allSubsError } = await supabase
+        if (!tenantSlug) {
+          throw new Error('Tenant slug not resolved');
+        }
+
+        // Fetch catalog via Edge Function (products + categories + tenant validation)
+        let catalogData;
+        try {
+          catalogData = await fetchStorefrontCatalog(tenantSlug, {
+            includeBins: true,
+            includeCategories: true,
+          });
+        } catch (error) {
+          console.error('❌ Edge Function failed, falling back to direct RLS:', error);
+          // Fallback to direct RLS query (only if Edge Function is unavailable)
+          const products = await fetchStorefrontProductsDirectRLS(tenantId);
+          const categories = Array.from(new Set(products.map(p => p.category).filter(Boolean) as string[]));
+          catalogData = {
+            tenant: { id: tenantId, slug: tenantSlug, name: '' },
+            products,
+            categories,
+            bins: [],
+          };
+        }
+
+        // ============================================================================
+        // Fetch settings (still use supabase directly since it's scoped by tenant_id)
+        // ============================================================================
+        const { data: settingsData, error: settingsError } = await supabase
+          .from('storefront_settings')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .single();
+
+        if (settingsError) {
+          console.error('Settings error:', settingsError);
+          throw settingsError;
+        }
+
+        // ============================================================================
+        // Fetch package bins (for inventory/pricing info)
+        // ============================================================================
+        const { data: binsData, error: binsError } = await supabase
+          .from('package_bins')
+          .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty')
+          .eq('tenant_id', tenantId);
+
+        if (binsError) {
+          console.warn('Bins fetch warning (non-critical):', binsError);
+        }
+
+        // ============================================================================
+        // Fetch subscription products (for subscription UI)
+        // ============================================================================
+        const { data: subscriptionsData, error: subscriptionsError } = await supabase
           .from('subscription_products')
-          .select('*');
-        console.log('🌐 ALL subscription_products (no filter):', allSubs?.length || 0, allSubs);
-        if (allSubsError) {
-          console.error('❌ Error fetching ALL subscriptions:', allSubsError);
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .eq('is_active', true);
+
+        if (subscriptionsError) {
+          console.error('Subscriptions error:', subscriptionsError);
         }
 
-        console.log('Settings result:', settingsResult);
-        console.log('Products result:', productsResult);
-  console.log('Bins result:', binsResult);
+        console.log('📦 Fetched catalog:', {
+          products: catalogData.products.length,
+          categories: catalogData.categories.length,
+        });
+        console.log('🔧 Settings:', settingsData);
+        console.log('📦 Subscription products:', subscriptionsData?.length || 0);
 
-        // Check for errors
-        if (settingsResult.error) {
-          console.error('Settings error:', settingsResult.error);
-          throw settingsResult.error;
-        }
-        // Handle missing column fallback (e.g., allow_pre_order not present)
-        let productsRows: any[] | null = null;
-        if (productsResult.error) {
-          console.error('Products error:', productsResult.error);
-          if ((productsResult.error as any).code === '42703') {
-            // Retry without the optional column to avoid breaking the site
-            console.warn('Retrying products query without allow_pre_order column');
-            const retryProducts = await supabase
-              .from('products')
-              .select('id, name, pricePer, unit, image, category, qty, description')
-              .eq('tenant_id', tenantId)
-              .eq('is_online', true)
-              .order('name');
-            if (retryProducts.error) {
-              console.error('Products retry error:', retryProducts.error);
-              throw retryProducts.error;
-            }
-            productsRows = retryProducts.data ?? [];
-          } else {
-            throw productsResult.error;
-          }
-        } else {
-          productsRows = productsResult.data ?? [];
-        }
-
-        // Transform the data to match our interfaces
-        const settings = settingsResult.data ? {
-          templateId: settingsResult.data.template_id || "modern",
-          primaryColor: settingsResult.data.primary_color || "#0f6fff",
-          accentColor: settingsResult.data.accent_color || "#ffcc00",
-          logoUrl: settingsResult.data.logo_url || "/demo-logo.svg",
-          heroImageUrl: settingsResult.data.hero_image_url || "/demo-hero.svg",
-          heroHeading: settingsResult.data.hero_heading || "Farm Fresh Goodness",
-          heroSubtitle: settingsResult.data.hero_subtitle || "From our pasture to your table.",
-          farmName: settingsResult.data.farm_name || "Demo Farm",
-          farmDescription: settingsResult.data.farm_description,
-          contactEmail: settingsResult.data.contact_email,
-          contactPhone: settingsResult.data.contact_phone,
-          darkMode: settingsResult.data.enable_dark_mode || false,
-          allow_pickup: settingsResult.data.allow_pickup ?? false,
-          allow_shipping: settingsResult.data.allow_shipping ?? true,
-          allow_dropoff: settingsResult.data.allow_dropoff ?? false,
-          allow_other: settingsResult.data.allow_other ?? false,
-          enable_card: settingsResult.data.enable_card
-            ?? settingsResult.data.allow_card
-            ?? settingsResult.data.accept_card
-            ?? false,
-          allow_card: settingsResult.data.allow_card
-            ?? settingsResult.data.enable_card
-            ?? settingsResult.data.accept_card
-            ?? false,
-          enable_cash: settingsResult.data.enable_cash ?? false,
-          enable_venmo: settingsResult.data.enable_venmo ?? false,
-          enable_zelle: settingsResult.data.enable_zelle ?? false,
-          enable_cashapp: (settingsResult.data as any).enable_cashapp ?? false,
-          shipping_charge_cents: settingsResult.data.shipping_charge_cents ?? 0,
-          pickup_locations: Array.isArray(settingsResult.data.pickup_locations)
-            ? settingsResult.data.pickup_locations
-            : [],
-          dropoff_locations: Array.isArray(settingsResult.data.dropoff_locations)
-            ? settingsResult.data.dropoff_locations.map((loc: any) => ({
+        // ============================================================================
+        // Transform settings data
+        // ============================================================================
+        const settings = settingsData ? {
+          templateId: settingsData.template_id || "modern",
+          primaryColor: settingsData.primary_color || "#0f6fff",
+          accentColor: settingsData.accent_color || "#ffcc00",
+          logoUrl: settingsData.logo_url || "/demo-logo.svg",
+          heroImageUrl: settingsData.hero_image_url || "/demo-hero.svg",
+          heroHeading: settingsData.hero_heading || "Farm Fresh Goodness",
+          heroSubtitle: settingsData.hero_subtitle || "From our pasture to your table.",
+          farmName: settingsData.farm_name || "Demo Farm",
+          farmDescription: settingsData.farm_description,
+          contactEmail: settingsData.contact_email,
+          contactPhone: settingsData.contact_phone,
+          darkMode: settingsData.enable_dark_mode || false,
+          allow_pickup: settingsData.allow_pickup ?? false,
+          allow_shipping: settingsData.allow_shipping ?? true,
+          allow_dropoff: settingsData.allow_dropoff ?? false,
+          allow_other: settingsData.allow_other ?? false,
+          enable_card: settingsData.enable_card ?? settingsData.allow_card ?? false,
+          allow_card: settingsData.allow_card ?? settingsData.enable_card ?? false,
+          enable_cash: settingsData.enable_cash ?? false,
+          enable_venmo: settingsData.enable_venmo ?? false,
+          enable_zelle: settingsData.enable_zelle ?? false,
+          enable_cashapp: (settingsData as any).enable_cashapp ?? false,
+          shipping_charge_cents: settingsData.shipping_charge_cents ?? 0,
+          pickup_locations: Array.isArray(settingsData.pickup_locations) ? settingsData.pickup_locations : [],
+          dropoff_locations: Array.isArray(settingsData.dropoff_locations)
+            ? settingsData.dropoff_locations.map((loc: any) => ({
                 name: loc?.name || '',
                 address: loc?.address || '',
                 day: loc?.day || '',
                 time: loc?.time || '',
               }))
             : [],
-          featureSections: Array.isArray(settingsResult.data.feature_sections)
-            ? settingsResult.data.feature_sections.map((s: any) => ({
+          featureSections: Array.isArray(settingsData.feature_sections)
+            ? settingsData.feature_sections.map((s: any) => ({
                 imageUrl: s.image_url,
                 heading: s.heading,
                 subtitle: s.subtitle,
@@ -283,10 +280,12 @@ export function useStorefrontData(tenantId: string): {
             : []
         } : MOCK_SETTINGS;
 
-        // Group bins by product_id
+        // ============================================================================
+        // Group bins by product_id (for inventory/pricing)
+        // ============================================================================
         const binsByProduct = new Map<string, Array<{ weightBtn: number; unitPriceCents: number; qty: number; reservedQty?: number }>>();
-        if (binsResult.data) {
-          binsResult.data.forEach((bin: any) => {
+        if (binsData) {
+          binsData.forEach((bin: any) => {
             if (!binsByProduct.has(bin.product_id)) {
               binsByProduct.set(bin.product_id, []);
             }
@@ -299,85 +298,51 @@ export function useStorefrontData(tenantId: string): {
           });
         }
 
-        // Group substitution groups by subscription_product_id
-        const subsGroupsBySubscription = new Map<string, any[]>();
-        if (subsGroupsResult.data) {
-          subsGroupsResult.data.forEach((row: any) => {
-            if (!subsGroupsBySubscription.has(row.subscription_product_id)) {
-              subsGroupsBySubscription.set(row.subscription_product_id, []);
-            }
-            subsGroupsBySubscription.get(row.subscription_product_id)!.push(row);
-          });
-        }
-
+        // ============================================================================
         // Group subscriptions by product_id
+        // ============================================================================
         const subscriptionsByProduct = new Map<string, any>();
-        console.log('📊 Subscription products fetched:', subscriptionsResult.data?.length || 0);
-        console.log('📊 Raw subscription data:', JSON.stringify(subscriptionsResult.data, null, 2));
-        if (subscriptionsResult.data) {
-          subscriptionsResult.data.forEach((sub: any) => {
-            console.log('🔗 Mapping subscription product_id:', sub.product_id, '-> subscription_id:', sub.id);
-
-            const substitutionGroupsRaw = subsGroupsBySubscription.get(sub.id) || [];
-            const mappedGroups = substitutionGroupsRaw.map((g: any) => ({
-              groupName: g.substitution_group,
-              // New: total units allowed across this group (fallback 1)
-              allowedUnits: Number(g.group_units_allowed ?? 1),
-              options: (g.options || []).map((opt: any) => ({
-                productId: opt.product_id,
-                productName: opt.product_name,
-                requiredQuantity: Number(opt.default_quantity ?? 0),
-                unit: opt.unit || 'ea',
-                isOptional: opt.is_optional === true,
-              })),
-            }));
-
+        if (subscriptionsData) {
+          subscriptionsData.forEach((sub: any) => {
             subscriptionsByProduct.set(sub.product_id, {
               id: sub.id,
               price_per_interval: sub.price_per_interval,
               interval_type: sub.interval_type,
-              min_interval: sub.min_interval, // Add minimum frequency constraint
+              min_interval: sub.min_interval,
               duration_type: sub.duration_type,
               season_start_date: sub.season_start_date,
               season_end_date: sub.season_end_date,
-              substitutionGroups: mappedGroups,
             });
           });
         }
-        console.log('📦 Subscriptions by product map size:', subscriptionsByProduct.size);
-        console.log('📦 Subscription product IDs:', Array.from(subscriptionsByProduct.keys()));
 
-        const products: Product[] = (productsRows || []).map(p => {
+        // ============================================================================
+        // Transform products from Edge Function response
+        // ============================================================================
+        const products: Product[] = (catalogData.products || []).map(p => {
           const allBins = binsByProduct.get(p.id);
           const subscription = subscriptionsByProduct.get(p.id);
           
-          console.log('🔍 Processing product:', p.id, p.name);
-          console.log('   Has subscription data?', !!subscription);
-          console.log('   is_deposit_product from DB:', p.is_deposit_product);
-          if (subscription) {
-            console.log('   ✅ Subscription data:', JSON.stringify(subscription, null, 2));
-          }
-          
-          // Calculate total inventory from package_bins (authoritative source)
+          // Calculate total inventory from package_bins
           const totalInventory = allBins 
             ? allBins.reduce((sum, bin) => sum + ((bin.qty - (bin.reservedQty || 0)) || 0), 0)
             : 0;
           
-          // Only include bins with available inventory (qty - reserved_qty > 0)
+          // Only include bins with available inventory
           const availableBins = allBins
             ? allBins.filter(bin => (bin.qty - (bin.reservedQty || 0)) > 0)
             : undefined;
           
-          const productData = {
+          return {
             id: p.id,
             name: p.name,
-            description: p.description || '', // Use description column
-            pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0), // Use subscription price if available
+            description: p.description || '',
+            pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0),
             unit: p.unit || 'lb',
             weightBins: availableBins,
-            imageUrl: p.image || '/demo-product.svg', // Use image column
-            categoryId: p.category || '', // Use category column
-            available: totalInventory > 0 || (p.allow_pre_order === true), // Available if inventory exists OR pre-order enabled
+            imageUrl: p.image || '/demo-product.svg',
+            categoryId: p.category || '',
+            available: totalInventory > 0 || (p.allow_pre_order === true),
             inventory: totalInventory,
             allowPreOrder: p.allow_pre_order === true,
             isSubscription: !!subscription,
@@ -385,32 +350,19 @@ export function useStorefrontData(tenantId: string): {
             is_deposit_product: p.is_deposit_product === true,
             deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,
           };
-
-          
-          if (subscription) {
-            console.log('   📦 Final product with subscription:', {
-              id: productData.id,
-              name: productData.name,
-              isSubscription: productData.isSubscription,
-              subscriptionData: productData.subscriptionData
-            });
-          }
-          
-          return productData;
         });
 
-        // Generate categories from unique product categories
-        const uniqueCategoryIds = Array.from(new Set(products.map(p => p.categoryId).filter(Boolean))) as string[];
-        const categories: Category[] = uniqueCategoryIds.map((categoryId, index) => ({
+        // Generate categories
+        const categories: Category[] = (catalogData.categories || []).map((categoryId, index) => ({
           id: categoryId,
-          name: categoryId, // Use category ID as the display name
+          name: categoryId,
           description: `${categoryId} products`,
           imageUrl: '/demo-category.svg',
           sortOrder: index + 1,
         }));
 
-        console.log('Generated categories from products:', categories);
-        console.log('Products loaded:', products.length);
+        console.log('✅ Products loaded:', products.length);
+        console.log('✅ Categories:', categories.length);
 
         setData({
           settings,
