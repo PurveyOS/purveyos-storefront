@@ -128,6 +128,7 @@ export function CheckoutPage() {
   }, [tenant?.id]);
 
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string>();
   
   // Discount state
@@ -669,13 +670,16 @@ export function CheckoutPage() {
 
     if (result.success) {
       setOrderSuccess(true);
+      setOrderError(null);
       setOrderId(result.orderId);
       try {
         trackPurchase({ orderId: result.orderId!, tenantId: tenant.id, value: orderValue, currency: 'USD', itemsCount: cart.items.length });
       } catch {}
       clearCart();
     } else {
-      alert(result.error || 'Failed to create order. Please try again.');
+      const errorMessage = result.error || 'Failed to create order. Please try again.';
+      setOrderError(errorMessage);
+      console.error('[Checkout] Order creation failed:', errorMessage);
     }
   };
 
@@ -763,6 +767,39 @@ export function CheckoutPage() {
             style={{ borderColor: primaryColor }}
           ></div>
           <p className="text-gray-600">Loading checkout...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (orderError) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Order Failed</h1>
+          <p className="text-gray-600 mb-4">
+            {orderError}
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => setOrderError(null)}
+              className="w-full text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full text-gray-600 py-3 px-4 rounded-lg font-medium border border-gray-300 transition-all duration-200 hover:bg-gray-50"
+            >
+              Return to Home
+            </button>
+          </div>
         </div>
       </div>
     );
