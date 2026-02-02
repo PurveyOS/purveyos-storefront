@@ -321,7 +321,8 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         const products: Product[] = (catalogData.products || []).map(p => {
           const allBins = binsByProduct.get(p.id);
-          const subscription = subscriptionsByProduct.get(p.id);
+          const subscription = (p as any).subscriptionData || subscriptionsByProduct.get(p.id);
+          const hasSubscription = Boolean((p as any).isSubscription || subscription);
           
           // Calculate total inventory from package_bins
           const totalInventory = allBins 
@@ -345,7 +346,7 @@ export function useStorefrontData(tenantId: string): {
             available: totalInventory > 0 || (p.allow_pre_order === true),
             inventory: totalInventory,
             allowPreOrder: p.allow_pre_order === true,
-            isSubscription: !!subscription,
+            isSubscription: hasSubscription,
             subscriptionData: subscription,
             is_deposit_product: p.is_deposit_product === true,
             deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,

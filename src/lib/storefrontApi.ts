@@ -26,6 +26,28 @@ export interface StorefrontProduct {
   allow_pre_order?: boolean
   is_deposit_product?: boolean
   deposit_prod_price_per_lb?: number
+  // Subscription fields
+  isSubscription?: boolean
+  subscriptionData?: {
+    id: string
+    price_per_interval: number
+    interval_type: 'weekly' | 'biweekly' | 'monthly'
+    duration_type: 'ongoing' | 'fixed_duration' | 'seasonal'
+    season_start_date?: string
+    season_end_date?: string
+    min_interval?: number
+    substitutionGroups?: Array<{
+      groupName: string
+      allowedUnits: number
+      options: Array<{
+        productId: string
+        productName: string
+        requiredQuantity: number
+        unit: string
+        isOptional?: boolean
+      }>
+    }>
+  }
 }
 
 export interface StorefrontCatalog {
@@ -118,18 +140,90 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
   console.warn('⚠️ Using direct RLS query for products (fallback)')
 
   try {
-    const { data, error } = await supabase
+    // Fetch products
+    const { data: products, error: productsError } = await supabase
       .from('products')
       .select('id, name, pricePer, unit, image, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb')
       .eq('tenant_id', tenantId)
       .eq('is_online', true)
       .order('name')
 
-    if (error) {
-      throw error
+    if (productsError) {
+      throw productsError
     }
 
-    return data || []
+    // Fetch subscription products
+    const { data: subscriptionProducts, error: subscriptionError } = await supabase
+      .from('subscription_products')
+      .select('id, product_id, price_per_interval, interval_type, duration_type, season_start_date, season_end_date, min_interval')
+      .eq('tenant_id', tenantId)
+      .eq('is_active', true)
+
+    // Fetch subscription box items
+    // Only fetch items that are actual substitution options (excludes regular box items)
+    const { data: subscriptionBoxItems } = await supabase
+      .from('subscription_box_items')
+      .select('subscription_product_id, product_id, substitution_group, default_quantity, substitution_group_units_allowed, is_optional')
+      .in('subscription_product_id', subscriptionProducts?.map((sp: any) => sp.id) || [])
+      .eq('is_substitution_option', true)
+      .not('substitution_group', 'is', null)
+
+    // Build subscription map
+    const subscriptionMap = new Map()
+    if (subscriptionProducts && !subscriptionError) {
+      for (const sp of subscriptionProducts as any[]) {
+        const boxItems = subscriptionBoxItems?.filter((item: any) => item.subscription_product_id === sp.id) || []
+        
+        // Group by substitution_group
+        const groupsMap = new Map()
+        for (const item of boxItems) {
+          const groupName = item.substitution_group || 'default'
+          if (!groupsMap.has(groupName)) {
+            groupsMap.set(groupName, {
+              groupName,
+              allowedUnits: item.substitution_group_units_allowed || 1,
+              options: []
+            })
+          }
+
+          const itemProduct = products?.find((p: any) => p.id === item.product_id)
+          if (itemProduct) {
+            groupsMap.get(groupName).options.push({
+              productId: item.product_id,
+              productName: itemProduct.name,
+              requiredQuantity: item.default_quantity || 1,
+              unit: itemProduct.unit || 'ea',
+              isOptional: item.is_optional || false
+            })
+          }
+        }
+
+        const substitutionGroups = Array.from(groupsMap.values()).filter(g => g.options.length > 0)
+
+        subscriptionMap.set(sp.product_id, {
+          id: sp.id,
+          price_per_interval: sp.price_per_interval,
+          interval_type: sp.interval_type,
+          duration_type: sp.duration_type,
+          season_start_date: sp.season_start_date,
+          season_end_date: sp.season_end_date,
+          min_interval: sp.min_interval,
+          substitutionGroups: substitutionGroups.length > 0 ? substitutionGroups : undefined
+        })
+      }
+    }
+
+    // Enrich products with subscription data
+    const enrichedProducts = products?.map((p: any) => {
+      const subscriptionData = subscriptionMap.get(p.id)
+      return {
+        ...p,
+        isSubscription: !!subscriptionData,
+        subscriptionData: subscriptionData || undefined
+      }
+    }) || []
+
+    return enrichedProducts
   } catch (error) {
     console.error('Error fetching products (fallback):', error)
     throw error

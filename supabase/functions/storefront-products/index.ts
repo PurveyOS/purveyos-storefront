@@ -103,10 +103,91 @@ Deno.serve(async (req) => {
     }
 
     // ============================================================================
+    // STEP 2.5: Fetch subscription data for products
+    // ============================================================================
+    const subscriptionFetchStart = Date.now()
+    const { data: subscriptionProducts, error: subscriptionError } = await supabase
+      .from('subscription_products')
+      .select('id, product_id, price_per_interval, interval_type, duration_type, season_start_date, season_end_date, min_interval')
+      .eq('tenant_id', tenant.id)
+      .eq('is_active', true)
+
+    const subscriptionFetchTime = Date.now() - subscriptionFetchStart
+    console.log(`[storefront-products] Subscription fetch took ${subscriptionFetchTime}ms (found ${subscriptionProducts?.length || 0} subscriptions)`)
+
+    // Fetch subscription box items for building substitutionGroups
+    // Only fetch items that are actual substitution options (excludes regular box items)
+    const { data: subscriptionBoxItems, error: boxItemsError } = await supabase
+      .from('subscription_box_items')
+      .select('subscription_product_id, product_id, substitution_group, default_quantity, substitution_group_units_allowed, is_optional')
+      .in('subscription_product_id', subscriptionProducts?.map(sp => sp.id) || [])
+      .eq('is_substitution_option', true)
+      .not('substitution_group', 'is', null)
+
+    console.log(`[storefront-products] Found ${subscriptionBoxItems?.length || 0} subscription box items`)
+
+    // Build subscription map with substitutionGroups
+    const subscriptionMap = new Map()
+    if (subscriptionProducts && !subscriptionError) {
+      for (const sp of subscriptionProducts) {
+        // Get all box items for this subscription
+        const boxItems = subscriptionBoxItems?.filter(item => item.subscription_product_id === sp.id) || []
+        
+        // Group by substitution_group to build substitutionGroups array
+        const groupsMap = new Map()
+        for (const item of boxItems) {
+          const groupName = item.substitution_group || 'default'
+          if (!groupsMap.has(groupName)) {
+            groupsMap.set(groupName, {
+              groupName,
+              allowedUnits: item.substitution_group_units_allowed || 1,
+              options: []
+            })
+          }
+
+          // Find product name for this box item
+          const itemProduct = products?.find(p => p.id === item.product_id)
+          if (itemProduct) {
+            groupsMap.get(groupName).options.push({
+              productId: item.product_id,
+              productName: itemProduct.name,
+              requiredQuantity: item.default_quantity || 1,
+              unit: itemProduct.unit || 'ea',
+              isOptional: item.is_optional || false
+            })
+          }
+        }
+
+        const substitutionGroups = Array.from(groupsMap.values()).filter(g => g.options.length > 0)
+
+        subscriptionMap.set(sp.product_id, {
+          id: sp.id,
+          price_per_interval: sp.price_per_interval,
+          interval_type: sp.interval_type,
+          duration_type: sp.duration_type,
+          season_start_date: sp.season_start_date,
+          season_end_date: sp.season_end_date,
+          min_interval: sp.min_interval,
+          substitutionGroups: substitutionGroups.length > 0 ? substitutionGroups : undefined
+        })
+      }
+    }
+
+    // Enrich products with subscription data
+    const enrichedProducts = products?.map(p => {
+      const subscriptionData = subscriptionMap.get(p.id)
+      return {
+        ...p,
+        isSubscription: !!subscriptionData,
+        subscriptionData: subscriptionData || undefined
+      }
+    }) || []
+
+    // ============================================================================
     // STEP 3: Generate categories from products
     // ============================================================================
     const categories = includeCategories
-      ? Array.from(new Set(products?.map(p => p.category).filter(Boolean) as string[]))
+      ? Array.from(new Set(enrichedProducts?.map(p => p.category).filter(Boolean) as string[]))
       : []
 
     // ============================================================================
@@ -133,7 +214,7 @@ Deno.serve(async (req) => {
         slug: tenant.slug,
         name: tenant.name,
       },
-      products: products || [],
+      products: enrichedProducts,
       categories,
       bins: includeBins ? bins : [],
     }
