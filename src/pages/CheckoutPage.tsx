@@ -342,7 +342,7 @@ export function CheckoutPage() {
   const handleStripeCheckout = async () => {
     if (!tenant || !storefrontData?.products) return;
     if (!cardPaymentAvailable) {
-      alert('Card payments are not available for this store.');
+      setOrderError('Card payments are not available for this store.');
       return;
     }
 
@@ -524,7 +524,7 @@ export function CheckoutPage() {
       // Check for error in function response
       if (data?.error) {
         console.error('❌ Function returned error:', data.error);
-        alert(`Checkout failed: ${data.error}`);
+        setOrderError(`Checkout failed: ${data.error}`);
         return;
       }
       
@@ -538,7 +538,7 @@ export function CheckoutPage() {
       window.location.href = data.url;
     } catch (error) {
       console.error('Stripe checkout error:', error);
-      alert('Failed to start checkout. Please try again.');
+      setOrderError('Failed to start checkout. Please try again.');
     }
   };
 
@@ -546,34 +546,34 @@ export function CheckoutPage() {
     e.preventDefault();
 
     if (!tenant || !storefrontData?.products) {
-      alert('Unable to process order. Please try again.');
+      setOrderError('Unable to process order. Please try again.');
       return;
     }
 
     // Validate required fields
     if (!formData.customerName || !formData.customerEmail || !formData.customerPhone) {
-      alert('Please fill in all required fields.');
+      setOrderError('Please fill in all required fields.');
       return;
     }
 
     if (!formData.paymentMethod) {
-      alert('Please select a payment method.');
+      setOrderError('Please select a payment method.');
       return;
     }
 
     if (formData.deliveryMethod === 'delivery' && !formData.deliveryAddress) {
-      alert('Please provide a delivery address.');
+      setOrderError('Please provide a delivery address.');
       return;
     }
 
     if (formData.deliveryMethod === 'shipping') {
       if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.zip) {
-        alert('Please provide street, city, state, and ZIP for shipping.');
+        setOrderError('Please provide street, city, state, and ZIP for shipping.');
         return;
       }
       const formattedAddress = formatShippingAddress(shippingAddress);
       if (!formattedAddress) {
-        alert('Please provide a full shipping address.');
+        setOrderError('Please provide a full shipping address.');
         return;
       }
     }
@@ -592,7 +592,7 @@ export function CheckoutPage() {
     // Handle Stripe checkout for card payments
     if (formData.paymentMethod === 'card') {
       if (!cardPaymentAvailable) {
-        alert('Card payments are not available for this store. Please choose another method.');
+        setOrderError('Card payments are not available for this store. Please choose another method.');
         return;
       }
       await handleStripeCheckout();
@@ -607,7 +607,7 @@ export function CheckoutPage() {
 
     if (enableSubscription) {
       if (!selectedSubscriptionProductId) {
-        alert('Please choose a subscription box.');
+        setOrderError('Please choose a subscription box.');
         return;
       }
 
@@ -650,6 +650,21 @@ export function CheckoutPage() {
       ? formatShippingAddress(shippingAddress)
       : formData.deliveryAddress;
 
+    console.log('📦 [ORDER] Starting order creation with parameters:', {
+      tenantId: tenant.id,
+      cartItemCount: cart.items.length,
+      cartTotal: cart.total,
+      deliveryMethod: formData.deliveryMethod,
+      paymentMethod: formData.paymentMethod,
+      deliveryAddress,
+      subscriptionPayload,
+      discountCents,
+      shippingChargeCents,
+      taxRate: tenant?.tax_rate,
+      taxIncluded: tenant?.tax_included,
+      chargeTaxOnOnline: tenant?.charge_tax_on_online
+    });
+
     const result = await createOrder(
   tenant.id,
   cart,
@@ -668,7 +683,15 @@ export function CheckoutPage() {
   }
 );
 
+    console.log('📦 [ORDER] Result received:', {
+      success: result.success,
+      orderId: result.orderId,
+      error: result.error,
+      fullResult: result
+    });
+
     if (result.success) {
+      console.log('✅ [ORDER] Order created successfully:', result.orderId);
       setOrderSuccess(true);
       setOrderError(null);
       setOrderId(result.orderId);
@@ -678,8 +701,12 @@ export function CheckoutPage() {
       clearCart();
     } else {
       const errorMessage = result.error || 'Failed to create order. Please try again.';
+      console.error('❌ [ORDER] Order creation failed:', {
+        errorMessage,
+        rawError: result.error,
+        fullResult: result
+      });
       setOrderError(errorMessage);
-      console.error('[Checkout] Order creation failed:', errorMessage);
     }
   };
 

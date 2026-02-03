@@ -131,24 +131,37 @@ export function useCheckout() {
     checkoutData: CheckoutData,
     taxConfig?: TenantTaxConfig
   ): Promise<CheckoutResult> => {
+    console.log('🔧 [createOrder] Function called with:', {
+      tenantId,
+      cartItemsCount: cart.items?.length,
+      productsCount: products?.length,
+      checkoutData,
+      taxConfig
+    });
+
     setLoading(true);
     setError(null);
 
     try {
       if (!supabase) {
+        console.error('❌ [createOrder] Supabase client not initialized');
         throw new Error('Supabase client not initialized');
       }
 
       if (!tenantId) {
+        console.error('❌ [createOrder] Tenant ID is required');
         throw new Error('Tenant ID is required');
       }
 
       if (!cart.items || cart.items.length === 0) {
+        console.error('❌ [createOrder] Cart is empty');
         throw new Error('Cart is empty');
       }
 
       // 1) Map cart items → unified line model
+      console.log('📝 [createOrder] Mapping cart items to order lines...');
       const lines: OutgoingOrderLine[] = cart.items.map((item: any) => {
+        console.log('  → Processing item:', { productId: item.productId, quantity: item.quantity, metadata: item.metadata });
         let product = products.find((p) => p.id === item.productId);
 
         // Allow subscription lines even if base product is not in products (e.g., not online)
@@ -169,6 +182,7 @@ export function useCheckout() {
         }
 
         if (!product) {
+          console.error('❌ [createOrder] Product not found:', item.productId);
           throw new Error(`Product not found: ${item.productId}`);
         }
 
@@ -224,9 +238,13 @@ export function useCheckout() {
         };
       });
 
+      console.log('✅ [createOrder] Mapped lines:', lines);
+
       // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
       const discountCents = checkoutData.discountCents || 0;
       const shippingChargeCents = checkoutData.shippingChargeCents || 0;
+      
+      console.log('💰 [createOrder] Calculating totals:', { discountCents, shippingChargeCents, taxConfig });
       
       const totals = calculateTotalsFromCents(
         lines.map((line) => line.lineTotalCents),
@@ -239,6 +257,8 @@ export function useCheckout() {
       // Add shipping charge to the final total
       const totalCents = totals.totalCents + shippingChargeCents;
 
+      console.log('💰 [createOrder] Calculated totals:', { subtotalCents, taxCents, totalCents, shippingChargeCents });
+
       // Flag weight-based pre-orders so orders can be marked as estimates server-side
       const isWeightEstimate = lines.some(
         (line) =>
@@ -248,45 +268,55 @@ export function useCheckout() {
       const estimatedTotalCents = isWeightEstimate ? totalCents : undefined;
 
       // 3) Call Edge Function to create order securely (bypasses RLS)
+      const edgeFunctionPayload = {
+        tenantId,
+        customerName: checkoutData.customerName,
+        customerEmail: checkoutData.customerEmail,
+        customerPhone: checkoutData.customerPhone,
+        deliveryMethod: checkoutData.deliveryMethod,
+        deliveryAddress: checkoutData.deliveryAddress,
+        deliveryNotes: checkoutData.deliveryNotes,
+        paymentMethod: checkoutData.paymentMethod,
+        fulfillmentLocation: checkoutData.fulfillmentLocation,
+
+        // Canonical line structure
+        lines,
+        subtotalCents,
+        taxCents,
+        totalCents,
+        discountCents,
+        shippingChargeCents,
+
+        // Weight-based pre-order flags used by the Edge Function
+        isWeightEstimate,
+        estimatedTotalCents,
+
+        // Optional subscription payload (for storefront_subscriptions)
+        subscription: checkoutData.subscription,
+      };
+
+      console.log('🚀 [createOrder] Calling Edge Function with payload:', edgeFunctionPayload);
+
       const { data, error: functionError } = await supabase.functions.invoke(
         'create-storefront-order',
         {
-          body: {
-            tenantId,
-            customerName: checkoutData.customerName,
-            customerEmail: checkoutData.customerEmail,
-            customerPhone: checkoutData.customerPhone,
-            deliveryMethod: checkoutData.deliveryMethod,
-            deliveryAddress: checkoutData.deliveryAddress,
-            deliveryNotes: checkoutData.deliveryNotes,
-            paymentMethod: checkoutData.paymentMethod,
-            fulfillmentLocation: checkoutData.fulfillmentLocation,
-
-            // Canonical line structure
-            lines,
-            subtotalCents,
-            taxCents,
-            totalCents,
-            discountCents,
-            shippingChargeCents,
-
-            // Weight-based pre-order flags used by the Edge Function
-            isWeightEstimate,
-            estimatedTotalCents,
-
-            // Optional subscription payload (for storefront_subscriptions)
-            subscription: checkoutData.subscription,
-          },
+          body: edgeFunctionPayload,
         }
       );
 
+      console.log('📨 [createOrder] Edge Function response:', { data, error: functionError });
+
       if (functionError) {
+        console.error('❌ [createOrder] Edge Function returned error:', functionError);
         throw functionError;
       }
 
       if (!(data as any)?.success) {
+        console.error('❌ [createOrder] Order creation failed:', (data as any)?.error);
         throw new Error((data as any)?.error || 'Failed to create order');
       }
+
+      console.log('✅ [createOrder] Order created successfully:', (data as any).orderId);
 
       return {
         success: true,
@@ -295,12 +325,14 @@ export function useCheckout() {
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to create order';
+      console.error('❌ [createOrder] Caught exception:', { err, errorMessage });
       setError(errorMessage);
       return {
         success: false,
         error: errorMessage,
       };
     } finally {
+      console.log('🏁 [createOrder] Function complete');
       setLoading(false);
     }
   };
