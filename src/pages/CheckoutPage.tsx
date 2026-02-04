@@ -230,12 +230,9 @@ export function CheckoutPage() {
     return [base || 'Drop location', dayTime].filter(Boolean).join(' | ');
   };
 
-  const buildPackageKey = (productId: string, unit: string | null | undefined, binWeight?: number) => {
-    const isLb = (unit || '').toLowerCase() === 'lb';
-    const rawWeight = isLb ? (binWeight ?? 0) : 0;
-    const weightBtn = Math.round(rawWeight * 100) / 100;
-    const weightStr = (weightBtn || 0).toString().replace(/\.0+$/, '').replace(/\.([1-9]*)0+$/, '.$1');
-    const safeWeight = weightStr.length > 0 ? weightStr : '0';
+  const buildBinKey = (productId: string, binWeight?: number) => {
+    const weightBtn = Math.round((binWeight ?? 0) * 100) / 100;
+    const safeWeight = Number.isFinite(weightBtn) ? weightBtn : 0;
     return `${productId}|${safeWeight}`;
   };
 
@@ -246,7 +243,7 @@ export function CheckoutPage() {
 
     const [{ data: latestProducts, error: prodError }, { data: packageBins, error: binError }] = await Promise.all([
       supabase.from('products').select('id, unit, qty').eq('tenant_id', tenant.id).in('id', productIds),
-      supabase.from('package_bins').select('product_id, package_key, qty, reserved_qty').eq('tenant_id', tenant.id).in('product_id', productIds),
+      supabase.from('package_bins').select('product_id, weight_btn, qty, reserved_qty').eq('tenant_id', tenant.id).in('product_id', productIds),
     ]);
 
     if (prodError || binError) {
@@ -256,7 +253,9 @@ export function CheckoutPage() {
     }
 
     const productsById = new Map((latestProducts || []).map((p: any) => [p.id, p]));
-    const binsByKey = new Map((packageBins || []).map((b: any) => [b.package_key, b]));
+    const binsByKey = new Map(
+      (packageBins || []).map((b: any) => [buildBinKey(b.product_id, b.weight_btn), b])
+    );
 
     const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number }> = [];
 
@@ -268,8 +267,8 @@ export function CheckoutPage() {
 
       const product = productsById.get(item.productId);
       const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
-      const packageKey = hasBinSelection ? buildPackageKey(item.productId, product?.unit, item.binWeight) : null;
-      const bin = packageKey ? binsByKey.get(packageKey) : undefined;
+      const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
+      const bin = binKey ? binsByKey.get(binKey) : undefined;
       const reserved = bin?.reserved_qty ?? 0;
       const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null;
       // Fallback to product.qty when bin is missing (pack-for-you / weight entries)
