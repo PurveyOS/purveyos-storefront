@@ -242,7 +242,7 @@ export function CheckoutPage() {
     const productIds = Array.from(new Set(cart.items.map((i: any) => i.productId)));
 
     const [{ data: latestProducts, error: prodError }, { data: packageBins, error: binError }] = await Promise.all([
-      supabase.from('products').select('id, unit, qty').eq('tenant_id', tenant.id).in('id', productIds),
+      supabase.from('products').select('id, unit, qty, is_deposit_product').eq('tenant_id', tenant.id).in('id', productIds),
       supabase.from('package_bins').select('product_id, weight_btn, qty, reserved_qty').eq('tenant_id', tenant.id).in('product_id', productIds),
     ]);
 
@@ -266,6 +266,9 @@ export function CheckoutPage() {
       }
 
       const product = productsById.get(item.productId);
+      if (product?.is_deposit_product) {
+        return;
+      }
       const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
       const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
       const bin = binKey ? binsByKey.get(binKey) : undefined;
