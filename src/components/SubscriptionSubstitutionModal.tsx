@@ -71,7 +71,10 @@ export default function SubscriptionSubstitutionModal({
       alert('Please select at least one option from each product group');
       return;
     }
-    onConfirm(selections);
+    const filtered = Object.fromEntries(
+      Object.entries(selections).filter(([, qty]) => Number(qty) > 0)
+    );
+    onConfirm(filtered);
   };
 
   return (

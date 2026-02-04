@@ -144,6 +144,7 @@ export function useStorefrontData(tenantId: string): {
             settings: MOCK_SETTINGS,
             products: MOCK_PRODUCTS,
             categories: MOCK_CATEGORIES,
+            tenantDefaultOrderMode: 'exact_package',
           });
           return;
         }
@@ -199,6 +200,19 @@ export function useStorefrontData(tenantId: string): {
         if (settingsError) {
           console.error('Settings error:', settingsError);
           throw settingsError;
+        }
+
+        // ============================================================================
+        // Fetch tenant policy (payment timing)
+        // ============================================================================
+        const { data: tenantPolicyData, error: tenantPolicyError } = await supabase
+          .from('tenants')
+          .select('storefront_payment_policy')
+          .eq('id', tenantId)
+          .single();
+
+        if (tenantPolicyError) {
+          console.warn('Tenant policy fetch warning (non-critical):', tenantPolicyError);
         }
 
         // ============================================================================
@@ -269,6 +283,7 @@ export function useStorefrontData(tenantId: string): {
                 time: loc?.time || '',
               }))
             : [],
+          storefront_payment_policy: (tenantPolicyData as any)?.storefront_payment_policy ?? 'pay_now',
           featureSections: Array.isArray(settingsData.feature_sections)
             ? settingsData.feature_sections.map((s: any) => ({
                 imageUrl: s.image_url,
@@ -369,6 +384,7 @@ export function useStorefrontData(tenantId: string): {
           settings,
           products,
           categories,
+          tenantDefaultOrderMode: catalogData?.tenant?.storefront_default_order_mode ?? 'exact_package',
         });
       } catch (err) {
         console.error('Error loading storefront data:', err);

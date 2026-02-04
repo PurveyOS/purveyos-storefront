@@ -12,6 +12,7 @@ export function ModernFarmTemplate({
   settings,
   products,
   cart,
+  tenantDefaultOrderMode,
   onAddToCart,
   onRemoveFromCart,
   onAddBinToCart,
@@ -285,10 +286,13 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
                 preOrdersEnabled && product.isSoldOut && product.allowPreOrder;
 
               const weight = options?.weight;
+              const requestedWeightLbs = options?.requestedWeightLbs;
               const quantity = options?.quantity ?? 1;
 
               // For weight-based products, pass weight; for quantity-based, just pass quantity
-              if (weight && weight > 0) {
+              if (requestedWeightLbs && requestedWeightLbs > 0) {
+                onAddToCart(product.id, 1, { requestedWeightLbs, lineType: 'pack_for_you' });
+              } else if (weight && weight > 0) {
                 onAddToCart(product.id, 1, { weight, isPreOrder });
               } else {
                 onAddToCart(product.id, quantity, { isPreOrder });
@@ -303,6 +307,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
             primaryColor={settings.primaryColor}
             accentColor={settings.accentColor}
             preOrdersEnabled={features?.preOrdersEnabled !== false}
+            tenantDefaultOrderMode={tenantDefaultOrderMode}
           />
         );
       })}
@@ -346,6 +351,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
             }
 
             // No substitutions; add directly to cart
+            // Add subscription product with metadata
             onAddToCart(selectedSubscriptionProduct.id, 1, {
               metadata: {
                 isSubscription: true,
@@ -354,8 +360,22 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
                 subscriptionDuration: config.duration,
                 subscriptionDurationIntervals: config.durationIntervals,
                 subscriptionTotalPrice: config.totalPrice,
+                subscriptionName: selectedSubscriptionProduct.name,
               }
             });
+
+            // Add each box content item as a separate line
+            const boxContents = selectedSubscriptionProduct.subscriptionData?.boxContents || [];
+            boxContents.forEach((item) => {
+              onAddToCart(item.productId, item.quantity, {
+                metadata: {
+                  isPartOfSubscription: true,
+                  parentSubscriptionId: selectedSubscriptionProduct.subscriptionData!.id,
+                  parentSubscriptionName: selectedSubscriptionProduct.name,
+                }
+              });
+            });
+
             setShowSubscriptionModal(false);
             setSelectedSubscriptionProduct(null);
           }}
@@ -372,6 +392,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
           subscriptionName={selectedSubscriptionProduct.name}
           items={substitutionItems}
           onConfirm={(selections) => {
+            // Add subscription product with metadata
             onAddToCart(selectedSubscriptionProduct.id, 1, {
               metadata: {
                 isSubscription: true,
@@ -380,9 +401,23 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
                 subscriptionDuration: pendingSubscriptionConfig.config.duration,
                 subscriptionDurationIntervals: pendingSubscriptionConfig.config.durationIntervals,
                 subscriptionTotalPrice: pendingSubscriptionConfig.config.totalPrice,
+                subscriptionName: selectedSubscriptionProduct.name,
                 substitutionSelections: selections,
               }
             });
+
+            // Add each box content item as a separate line
+            const boxContents = selectedSubscriptionProduct.subscriptionData?.boxContents || [];
+            boxContents.forEach((item) => {
+              onAddToCart(item.productId, item.quantity, {
+                metadata: {
+                  isPartOfSubscription: true,
+                  parentSubscriptionId: selectedSubscriptionProduct.subscriptionData!.id,
+                  parentSubscriptionName: selectedSubscriptionProduct.name,
+                }
+              });
+            });
+
             setShowSubstitutionModal(false);
             setSelectedSubscriptionProduct(null);
             setPendingSubscriptionConfig(null);

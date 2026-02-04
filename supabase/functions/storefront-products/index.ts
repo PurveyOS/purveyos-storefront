@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
     const tenantLookupStart = Date.now()
     const { data: tenant, error: tenantError } = await supabase
       .from('tenants')
-      .select('id, slug, name, storefront_enabled, is_active')
+      .select('id, slug, name, storefront_enabled, is_active, storefront_default_order_mode')
       .eq('slug', slug)
       .eq('is_active', true)
       .single()
@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
     const productsFetchStart = Date.now()
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, name, pricePer, unit, image_url, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb', { count: 'exact' })
+      .select('id, name, pricePer, unit, image_url, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, order_mode, pack_for_you_min_lbs, pack_for_you_step_lbs, pack_for_you_max_overage_pct, pack_for_you_max_underage_pct, pack_for_you_price_buffer_pct', { count: 'exact' })
       .eq('tenant_id', tenant.id)
       .eq('is_online', true)
       .limit(500)  // Prevent massive responses
@@ -213,6 +213,7 @@ Deno.serve(async (req) => {
         id: tenant.id,
         slug: tenant.slug,
         name: tenant.name,
+        storefront_default_order_mode: tenant.storefront_default_order_mode || 'exact_package',
       },
       products: enrichedProducts,
       categories,

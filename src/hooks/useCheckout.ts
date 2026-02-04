@@ -30,6 +30,7 @@ export interface CheckoutData {
   deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other';
   deliveryAddress?: string;
   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
+  paymentNowChoice?: 'pay_now' | 'pay_at_pickup';
   paymentDetails?: string; // Card token or payment confirmation
   deliveryNotes?: string;
   fulfillmentLocation?: string; // Selected pickup or dropoff location
@@ -41,6 +42,11 @@ export interface CheckoutData {
 
 export interface CheckoutResult {
   orderId?: string;
+  clientSecret?: string | null;
+  needsStripeConfirmation?: boolean;
+  paymentPolicy?: string;
+  paymentStatus?: string;
+  authAmountCents?: number | null;
   success: boolean;
   error?: string;
 }
@@ -116,6 +122,8 @@ interface OutgoingOrderLine {
   lineTotalCents: number;
   binWeight?: number | null;
   weightLbs?: number | null;
+  requestedWeightLbs?: number | null;
+  lineType?: 'exact_package' | 'pack_for_you';
   isPreOrder?: boolean;
   pricePer?: 'weight' | 'fixed' | 'unit' | 'lb' | string;
 }
@@ -191,6 +199,10 @@ export function useCheckout() {
           typeof item.binWeight === 'number' ? item.binWeight : null;
         const weightLbs: number | null =
           typeof item.weight === 'number' ? item.weight : null;
+        const requestedWeightLbs: number | null =
+          typeof (item as any).requestedWeightLbs === 'number' ? (item as any).requestedWeightLbs : null;
+        const lineType: OutgoingOrderLine['lineType'] =
+          (item as any).lineType === 'pack_for_you' ? 'pack_for_you' : 'exact_package';
         
         // Pre-order only when explicitly flagged on the cart item
         // (UI sets this when sold out + pre-order is allowed)
@@ -205,6 +217,10 @@ export function useCheckout() {
           // Pre-packaged bin: unitPriceCents is per lb; apply to bin weight
           unitPrice = item.unitPriceCents / 100;
           lineTotal = unitPrice * binWeight * quantity;
+        } else if (lineType === 'pack_for_you' && requestedWeightLbs) {
+          // Pack-for-you estimated weight
+          unitPrice = (product as any).pricePer;
+          lineTotal = unitPrice * requestedWeightLbs * quantity;
         } else if (weightLbs) {
           // Weight-based pricing (by lb) - for pre-orders or custom weight
           unitPrice = (product as any).pricePer;
@@ -233,6 +249,8 @@ export function useCheckout() {
           lineTotalCents,
           binWeight,
           weightLbs,
+          requestedWeightLbs,
+          lineType,
           isPreOrder,
           pricePer: pricePerLabel,
         };
@@ -259,13 +277,24 @@ export function useCheckout() {
 
       console.log('💰 [createOrder] Calculated totals:', { subtotalCents, taxCents, totalCents, shippingChargeCents });
 
-      // Flag weight-based pre-orders so orders can be marked as estimates server-side
-      const isWeightEstimate = lines.some(
-        (line) =>
-          (line.isPreOrder ?? false) &&
-          (((line.weightLbs ?? 0) > 0 || (line.binWeight ?? 0) > 0) || line.pricePer === 'lb')
-      );
-      const estimatedTotalCents = isWeightEstimate ? totalCents : undefined;
+      // 2.5) Derive subscription payload from cart metadata if not provided
+      const subscriptionFromCart = cart.items.find((item: any) => item?.metadata?.isSubscription);
+      const derivedSubscription: SubscriptionRequest | undefined = subscriptionFromCart
+        ? {
+            enabled: true,
+            cadence: subscriptionFromCart.metadata?.subscriptionInterval,
+            startDate: new Date().toISOString(),
+            productId: subscriptionFromCart.metadata?.subscriptionProductId ?? subscriptionFromCart.productId,
+            subscriptionProductId: subscriptionFromCart.metadata?.subscriptionProductId,
+            quantity: subscriptionFromCart.quantity ?? 1,
+            substitutions: subscriptionFromCart.metadata?.substitutionSelections,
+            duration: subscriptionFromCart.metadata?.subscriptionDurationIntervals,
+          }
+        : undefined;
+
+      const subscriptionPayload: SubscriptionRequest | undefined = checkoutData.subscription
+        ? { ...checkoutData.subscription, enabled: checkoutData.subscription.enabled ?? true }
+        : derivedSubscription;
 
       // 3) Call Edge Function to create order securely (bypasses RLS)
       const edgeFunctionPayload = {
@@ -277,6 +306,7 @@ export function useCheckout() {
         deliveryAddress: checkoutData.deliveryAddress,
         deliveryNotes: checkoutData.deliveryNotes,
         paymentMethod: checkoutData.paymentMethod,
+        paymentNowChoice: checkoutData.paymentNowChoice,
         fulfillmentLocation: checkoutData.fulfillmentLocation,
 
         // Canonical line structure
@@ -287,12 +317,8 @@ export function useCheckout() {
         discountCents,
         shippingChargeCents,
 
-        // Weight-based pre-order flags used by the Edge Function
-        isWeightEstimate,
-        estimatedTotalCents,
-
         // Optional subscription payload (for storefront_subscriptions)
-        subscription: checkoutData.subscription,
+        subscription: subscriptionPayload,
       };
 
       console.log('🚀 [createOrder] Calling Edge Function with payload:', edgeFunctionPayload);
@@ -316,11 +342,18 @@ export function useCheckout() {
         throw new Error((data as any)?.error || 'Failed to create order');
       }
 
-      console.log('✅ [createOrder] Order created successfully:', (data as any).orderId);
+      const orderId = (data as any)?.order_id ?? (data as any)?.orderId;
+
+      console.log('✅ [createOrder] Order created successfully:', orderId);
 
       return {
         success: true,
-        orderId: (data as any).orderId,
+        orderId,
+        clientSecret: (data as any)?.client_secret ?? null,
+        needsStripeConfirmation: (data as any)?.needs_stripe_confirmation ?? false,
+        paymentPolicy: (data as any)?.payment_policy,
+        paymentStatus: (data as any)?.payment_status,
+        authAmountCents: (data as any)?.auth_amount_cents ?? null,
       };
     } catch (err) {
       const errorMessage =

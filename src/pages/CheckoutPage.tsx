@@ -5,9 +5,15 @@ import { useStorefrontData } from '../hooks/useStorefrontData';
 import { useCart } from '../context/CartContext';
 import { useCheckout, type CheckoutData, type GroupChoice } from '../hooks/useCheckout';
 import { SubscriptionBoxSelector } from '../components/SubscriptionBoxSelector';
+import { StripeAuthorizationForm } from '../components/StripeAuthorizationForm';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { supabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 interface Discount {
   id: string;
@@ -130,6 +136,8 @@ export function CheckoutPage() {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string>();
+  const [needsStripeConfirmation, setNeedsStripeConfirmation] = useState(false);
+  const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   
   // Discount state
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -589,13 +597,8 @@ export function CheckoutPage() {
 
     const orderValue = cart.total - (discountCents / 100);
 
-    // Handle Stripe checkout for card payments
-    if (formData.paymentMethod === 'card') {
-      if (!cardPaymentAvailable) {
-        setOrderError('Card payments are not available for this store. Please choose another method.');
-        return;
-      }
-      await handleStripeCheckout();
+    if (formData.paymentMethod === 'card' && !cardPaymentAvailable) {
+      setOrderError('Card payments are not available for this store. Please choose another method.');
       return;
     }
     // Build subscription payload
@@ -692,9 +695,21 @@ export function CheckoutPage() {
 
     if (result.success) {
       console.log('✅ [ORDER] Order created successfully:', result.orderId);
-      setOrderSuccess(true);
       setOrderError(null);
       setOrderId(result.orderId);
+
+      if (result.needsStripeConfirmation) {
+        if (!stripePromise || !result.clientSecret) {
+          setOrderError('Stripe is not configured for this store. Please contact support.');
+          return;
+        }
+
+        setStripeClientSecret(result.clientSecret || null);
+        setNeedsStripeConfirmation(true);
+        return;
+      }
+
+      setOrderSuccess(true);
       try {
         trackPurchase({ orderId: result.orderId!, tenantId: tenant.id, value: orderValue, currency: 'USD', itemsCount: cart.items.length });
       } catch {}
@@ -778,12 +793,31 @@ export function CheckoutPage() {
     tenant?.stripe_account_id &&
     (((storefrontData?.settings as any)?.enable_card ?? (storefrontData?.settings as any)?.allow_card ?? false))
   );
+  const storefrontPaymentPolicy = (storefrontData?.settings as any)?.storefront_payment_policy ?? 'pay_now';
 
   useEffect(() => {
     if (!cardPaymentAvailable && formData.paymentMethod === 'card') {
       setFormData(prev => ({ ...prev, paymentMethod: 'cash' }));
     }
   }, [cardPaymentAvailable, formData.paymentMethod]);
+
+  useEffect(() => {
+    if (formData.paymentMethod === 'card') {
+      if (storefrontPaymentPolicy === 'both') {
+        setFormData(prev => ({
+          ...prev,
+          paymentNowChoice: prev.paymentNowChoice ?? 'pay_now',
+        }));
+      } else {
+        setFormData(prev => ({
+          ...prev,
+          paymentNowChoice: storefrontPaymentPolicy as 'pay_now' | 'pay_at_pickup',
+        }));
+      }
+    } else {
+      setFormData(prev => ({ ...prev, paymentNowChoice: undefined }));
+    }
+  }, [formData.paymentMethod, storefrontPaymentPolicy]);
 
   if (dataLoading) {
     return (
@@ -827,6 +861,39 @@ export function CheckoutPage() {
               Return to Home
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (needsStripeConfirmation && stripeClientSecret && orderId) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Authorize Payment</h1>
+          <p className="text-gray-600 mb-6">
+            Please authorize your card to complete the order.
+          </p>
+          {stripePromise ? (
+            <Elements stripe={stripePromise} options={{ clientSecret: stripeClientSecret }}>
+              <StripeAuthorizationForm
+                orderId={orderId}
+                onAuthorized={() => {
+                  setNeedsStripeConfirmation(false);
+                  setOrderSuccess(true);
+                  try {
+                    trackPurchase({ orderId, tenantId: tenant?.id, value: cart.total, currency: 'USD', itemsCount: cart.items.length });
+                  } catch {}
+                  clearCart();
+                }}
+                onError={(message) => {
+                  setOrderError(message || 'Payment authorization failed');
+                }}
+              />
+            </Elements>
+          ) : (
+            <div className="text-red-600">Stripe is not configured.</div>
+          )}
         </div>
       </div>
     );
@@ -898,6 +965,7 @@ export function CheckoutPage() {
     if (!item?.product) return sum;
     
     const weight = (item as any).weight;
+    const requestedWeightLbs = (item as any).requestedWeightLbs;
     const binWeight = (item as any).binWeight;
     const unitPriceCents = (item as any).unitPriceCents;
     const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
@@ -907,6 +975,8 @@ export function CheckoutPage() {
     
     if (binWeight && unitPriceCents) {
       itemTotal = binWeight * (unitPriceCents / 100) * quantity;
+    } else if (requestedWeightLbs && requestedWeightLbs > 0) {
+      itemTotal = item.product.pricePer * requestedWeightLbs * quantity;
     } else if (weight && weight > 0) {
       itemTotal = item.product.pricePer * weight * quantity;
     } else if (metaPrice && metaPrice > 0) {
@@ -1321,6 +1391,48 @@ export function CheckoutPage() {
                   )}
                 </div>
 
+                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && (
+                  <div className="rounded-md p-4 mb-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
+                    <p className="text-sm font-medium text-gray-700 mb-3">When would you like to pay?</p>
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="radio"
+                          name="paymentNowChoice"
+                          value="pay_now"
+                          checked={formData.paymentNowChoice === 'pay_now'}
+                          onChange={() => handleInputChange('paymentNowChoice', 'pay_now')}
+                          className="h-4 w-4"
+                          style={{ accentColor: primaryColor }}
+                        />
+                        Pay now (authorize card; final charge adjusted after packing)
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="radio"
+                          name="paymentNowChoice"
+                          value="pay_at_pickup"
+                          checked={formData.paymentNowChoice === 'pay_at_pickup'}
+                          onChange={() => handleInputChange('paymentNowChoice', 'pay_at_pickup')}
+                          className="h-4 w-4"
+                          style={{ accentColor: primaryColor }}
+                        />
+                        Pay at pickup
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && formData.paymentNowChoice && (
+                  <div className="rounded-md p-4 mb-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
+                    <p className="text-sm" style={{ color: primaryColor }}>
+                      {formData.paymentNowChoice === 'pay_now'
+                        ? "You'll authorize your card now. Final charge will be adjusted after packing."
+                        : `You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
+                    </p>
+                  </div>
+                )}
+
                 {formData.paymentMethod && formData.paymentMethod !== 'card' && (
                   <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor}}>
@@ -1329,10 +1441,12 @@ export function CheckoutPage() {
                   </div>
                 )}
 
-                {formData.paymentMethod === 'card' && (
+                {formData.paymentMethod === 'card' && storefrontPaymentPolicy !== 'both' && (
                   <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor }}>
-                      You'll be redirected to Stripe's secure checkout to complete your payment.
+                      {storefrontPaymentPolicy === 'pay_now'
+                        ? "You'll authorize your card now. Final charge will be adjusted after packing."
+                        : `You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
                     </p>
                   </div>
                 )}

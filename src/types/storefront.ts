@@ -29,11 +29,14 @@ export interface StorefrontSettings {
   shipping_charge_cents?: number;
   pickup_locations?: Array<{ name: string; address: string }>;
   dropoff_locations?: Array<{ name: string; address: string; day?: string; time?: string }>;
+  storefront_payment_policy?: 'pay_now' | 'pay_at_pickup' | 'both';
 }
 
 export interface CartItem {
   productId: string;
   quantity: number;
+  lineType?: 'exact_package' | 'pack_for_you';
+  requestedWeightLbs?: number;
   // Optional weight-bin selection (for pre-packaged items)
   binWeight?: number; // e.g., 1.0 lb, 2.5 lb
   unitPriceCents?: number; // price per unit (e.g., per lb) in cents
@@ -62,6 +65,7 @@ export interface StorefrontTemplateProps {
   products: Product[];
   categories: Category[];
   cart: Cart;
+  tenantDefaultOrderMode?: 'exact_package' | 'pack_for_you';
   onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean; metadata?: any }) => void;
   onRemoveFromCart: (productId: string, options?: { binWeight?: number }) => void;
   onAddBinToCart?: (productId: string, binWeight: number, unitPriceCents: number) => void;
@@ -77,4 +81,5 @@ export interface StorefrontData {
   settings: StorefrontSettings;
   products: Product[];
   categories: Category[];
+  tenantDefaultOrderMode?: 'exact_package' | 'pack_for_you';
 }

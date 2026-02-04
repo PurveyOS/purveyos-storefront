@@ -138,6 +138,7 @@ export function StorefrontRoot() {
         products={storefrontData.products}
         categories={storefrontData.categories}
         cart={cart}
+        tenantDefaultOrderMode={storefrontData.tenantDefaultOrderMode}
         onAddToCart={addToCart}
         onRemoveFromCart={removeFromCart}
         onAddBinToCart={addBinToCart}

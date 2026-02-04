@@ -26,6 +26,12 @@ export interface StorefrontProduct {
   allow_pre_order?: boolean
   is_deposit_product?: boolean
   deposit_prod_price_per_lb?: number
+  order_mode?: 'exact_package' | 'pack_for_you' | null
+  pack_for_you_min_lbs?: number | null
+  pack_for_you_step_lbs?: number | null
+  pack_for_you_max_overage_pct?: number | null
+  pack_for_you_max_underage_pct?: number | null
+  pack_for_you_price_buffer_pct?: number | null
   // Subscription fields
   isSubscription?: boolean
   subscriptionData?: {
@@ -36,6 +42,12 @@ export interface StorefrontProduct {
     season_start_date?: string
     season_end_date?: string
     min_interval?: number
+    boxContents?: Array<{
+      productId: string
+      productName: string
+      quantity: number
+      unit: string
+    }>
     substitutionGroups?: Array<{
       groupName: string
       allowedUnits: number
@@ -55,6 +67,7 @@ export interface StorefrontCatalog {
     id: string
     slug: string
     name: string
+    storefront_default_order_mode?: 'exact_package' | 'pack_for_you'
   }
   products: StorefrontProduct[]
   categories: string[]
@@ -160,13 +173,11 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
       .eq('is_active', true)
 
     // Fetch subscription box items
-    // Only fetch items that are actual substitution options (excludes regular box items)
+    // Fetch ALL box items (both regular contents and substitution options)
     const { data: subscriptionBoxItems } = await supabase
       .from('subscription_box_items')
-      .select('subscription_product_id, product_id, substitution_group, default_quantity, substitution_group_units_allowed, is_optional')
+      .select('subscription_product_id, product_id, substitution_group, default_quantity, substitution_group_units_allowed, is_optional, is_substitution_option')
       .in('subscription_product_id', subscriptionProducts?.map((sp: any) => sp.id) || [])
-      .eq('is_substitution_option', true)
-      .not('substitution_group', 'is', null)
 
     // Build subscription map
     const subscriptionMap = new Map()
@@ -174,9 +185,13 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
       for (const sp of subscriptionProducts as any[]) {
         const boxItems = subscriptionBoxItems?.filter((item: any) => item.subscription_product_id === sp.id) || []
         
-        // Group by substitution_group
+        // Separate regular box contents from substitution options
+        const regularBoxContents = boxItems.filter((item: any) => !item.is_substitution_option)
+        const substitutionOptions = boxItems.filter((item: any) => item.is_substitution_option && item.substitution_group)
+        
+        // Group substitution options by substitution_group
         const groupsMap = new Map()
-        for (const item of boxItems) {
+        for (const item of substitutionOptions) {
           const groupName = item.substitution_group || 'default'
           if (!groupsMap.has(groupName)) {
             groupsMap.set(groupName, {
@@ -200,6 +215,17 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
 
         const substitutionGroups = Array.from(groupsMap.values()).filter(g => g.options.length > 0)
 
+        // Build box contents array
+        const boxContents = regularBoxContents.map((item: any) => {
+          const itemProduct = products?.find((p: any) => p.id === item.product_id)
+          return {
+            productId: item.product_id,
+            productName: itemProduct?.name || 'Unknown',
+            quantity: item.default_quantity || 1,
+            unit: itemProduct?.unit || 'ea'
+          }
+        }).filter(item => item.productId) // Only include items with valid product
+
         subscriptionMap.set(sp.product_id, {
           id: sp.id,
           price_per_interval: sp.price_per_interval,
@@ -208,6 +234,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
           season_start_date: sp.season_start_date,
           season_end_date: sp.season_end_date,
           min_interval: sp.min_interval,
+          boxContents, // Regular items that come with every box
           substitutionGroups: substitutionGroups.length > 0 ? substitutionGroups : undefined
         })
       }

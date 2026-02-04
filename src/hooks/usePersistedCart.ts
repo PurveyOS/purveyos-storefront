@@ -62,12 +62,26 @@ export function usePersistedCart() {
     prevItemsRef.current = cart.items;
   }, [cart.items.length]);
 
-  const addToCart = (productId: string, quantity: number = 1, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean; metadata?: any }) => {
+  const addToCart = (
+    productId: string,
+    quantity: number = 1,
+    options?: {
+      binWeight?: number;
+      unitPriceCents?: number;
+      weight?: number;
+      requestedWeightLbs?: number;
+      lineType?: 'exact_package' | 'pack_for_you';
+      isPreOrder?: boolean;
+      metadata?: any;
+    }
+  ) => {
     setCart(prev => {
       const existingItem = prev.items.find(item => 
         item.productId === productId && 
         item.binWeight === options?.binWeight &&
         item.weight === options?.weight &&
+        item.requestedWeightLbs === options?.requestedWeightLbs &&
+        item.lineType === options?.lineType &&
         !options?.metadata?.isSubscription // Don't merge subscription items
       );
       
@@ -94,6 +108,8 @@ export function usePersistedCart() {
           binWeight: options?.binWeight, 
           unitPriceCents: options?.unitPriceCents,
           weight: options?.weight,
+            requestedWeightLbs: options?.requestedWeightLbs,
+            lineType: options?.lineType,
           isPreOrder: options?.isPreOrder,
           metadata: options?.metadata
         }],
@@ -173,6 +189,12 @@ export function usePersistedCart() {
           return sum + linePrice;
         }
         
+        // Handle pack-for-you estimated weight
+        if (item.lineType === 'pack_for_you' && item.requestedWeightLbs && product.pricingMode === 'weight') {
+          const linePrice = (product.pricePer * item.requestedWeightLbs) * item.quantity;
+          return sum + linePrice;
+        }
+
         // Handle weight-based pricing (custom weight entry)
         if (item.weight && product.pricingMode === 'weight') {
           const linePrice = (product.pricePer * item.weight) * item.quantity;

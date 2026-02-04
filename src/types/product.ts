@@ -5,6 +5,13 @@ export interface Product {
   pricePer: number;
   unit: string; // e.g., "lb", "oz", "piece", "dozen"
   pricingMode?: 'fixed' | 'weight'; // fixed = sell by unit count, weight = sell by weight
+  // Storefront ordering modes
+  order_mode?: 'exact_package' | 'pack_for_you' | null; // nullable override
+  pack_for_you_min_lbs?: number | null;
+  pack_for_you_step_lbs?: number | null;
+  pack_for_you_max_overage_pct?: number | null;
+  pack_for_you_max_underage_pct?: number | null;
+  pack_for_you_price_buffer_pct?: number | null;
   weightBins?: Array<{
     weightBtn: number;
     unitPriceCents: number;

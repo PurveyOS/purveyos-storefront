@@ -19,12 +19,13 @@ interface ClassicProductCardProps {
 interface ModernProductCardProps {
   product: Product;
   quantityInCart: number;
-  onAddToCart: (options?: { weight?: number; quantity?: number }) => void;
+  onAddToCart: (options?: { weight?: number; quantity?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }) => void;
   onRemoveFromCart: () => void;
   primaryColor?: string;
   accentColor?: string;
   onAddBinToCart?: (binWeight: number, unitPriceCents: number) => void;
   preOrdersEnabled?: boolean;
+  tenantDefaultOrderMode?: 'exact_package' | 'pack_for_you';
   // Current bin quantities already in the cart (by weightBtn)
   binCountsInCart?: Record<number, number>;
   // Cart for weight tracking
@@ -142,6 +143,7 @@ export function ProductCard(props: ProductCardProps) {
     accentColor = "#ffcc00",
     onAddBinToCart,
     preOrdersEnabled,
+    tenantDefaultOrderMode,
   } = props;
 
   const price = product.pricePer ?? 0;
@@ -194,6 +196,7 @@ export function ProductCard(props: ProductCardProps) {
 
   const isWeightBased = pricingMode === "weight";
   const isFixedPrice = pricingMode === "fixed";
+  const effectiveOrderMode = product.order_mode ?? tenantDefaultOrderMode ?? 'exact_package';
 
   const isSoldOut =
     product.isSoldOut ||
@@ -217,6 +220,13 @@ export function ProductCard(props: ProductCardProps) {
     const weight = parseFloat(weightAmount);
     if (!weight || weight <= 0) return;
     onAddToCart({ weight });
+    setWeightAmount("1");
+  };
+
+  const handleAddPackForYou = () => {
+    const weight = parseFloat(weightAmount);
+    if (!weight || weight <= 0) return;
+    onAddToCart({ requestedWeightLbs: weight, lineType: 'pack_for_you' });
     setWeightAmount("1");
   };
 
@@ -353,7 +363,44 @@ export function ProductCard(props: ProductCardProps) {
 {/* ========================= */}
 {isWeightBased && isPoundUnit && (
   <>
-    {isSoldOut ? (
+    {effectiveOrderMode === 'pack_for_you' ? (
+      <div className="space-y-2">
+        {isSoldOut && !canPreOrder ? (
+          <span className="text-sm text-red-600 font-medium">Out Of Stock</span>
+        ) : (
+          <>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
+                Enter estimated weight (lb)
+              </label>
+              <input
+                type="number"
+                min={product.pack_for_you_min_lbs ?? 0}
+                step={product.pack_for_you_step_lbs ?? 1}
+                value={weightAmount}
+                onChange={(e) => setWeightAmount(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                placeholder="e.g., 5"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                ${price.toFixed(2)} × {weightAmount || 0} lb = $
+                {(price * parseFloat(weightAmount || "0")).toFixed(2)}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                You’re ordering by estimated weight. Final total may vary based on actual package weights.
+              </p>
+            </div>
+            <button
+              onClick={handleAddPackForYou}
+              className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Add Estimated Weight
+            </button>
+          </>
+        )}
+      </div>
+    ) : isSoldOut ? (
       canPreOrder ? (
         // SOLD OUT + PREORDER → weight input as default
         <div className="space-y-2">

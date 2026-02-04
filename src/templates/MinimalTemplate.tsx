@@ -13,6 +13,7 @@ export function MinimalTemplate({
   products,
   categories,
   cart,
+  tenantDefaultOrderMode,
   onAddToCart,
   onRemoveFromCart,
   onAddBinToCart,
@@ -28,6 +29,10 @@ export function MinimalTemplate({
   const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
   const [showDescriptionModal, setShowDescriptionModal] = useState<string | null>(null);
+
+  const getEffectiveOrderMode = (product: Product) => {
+    return product.order_mode ?? tenantDefaultOrderMode ?? 'exact_package';
+  };
 
   const filteredProducts = selectedCategory 
     ? products.filter(product => product.categoryId === selectedCategory)
@@ -206,6 +211,7 @@ export function MinimalTemplate({
                     {!product.isSubscription && (() => {
                       const unit = (product.unit || '').toLowerCase();
                       const isWeight = product.pricingMode === 'weight' || unit === 'lb';
+                      const effectiveOrderMode = getEffectiveOrderMode(product);
                       // Account for bins already in the cart when showing availability
                       const binCountsInCart = cart.items
                         .filter((item) => item.productId === product.id && item.binWeight != null)
@@ -243,6 +249,16 @@ export function MinimalTemplate({
                         setWeightInputs((prev) => ({ ...prev, [product.id]: '1' }));
                       };
 
+                      const handlePackForYou = () => {
+                        const parsed = parseFloat(weightValue);
+                        if (!parsed || parsed <= 0) return;
+                        onAddToCart(product.id, 1, {
+                          requestedWeightLbs: parsed,
+                          lineType: 'pack_for_you',
+                        });
+                        setWeightInputs((prev) => ({ ...prev, [product.id]: '1' }));
+                      };
+
                       const handleFixedAdd = () => {
                         const qty = qtyValue > 0 ? qtyValue : 1;
                         const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
@@ -262,7 +278,7 @@ export function MinimalTemplate({
                       if (isWeight) {
                         return (
                           <div className="space-y-3">
-                            {hasBins && (
+                            {effectiveOrderMode === 'exact_package' && hasBins && (
                               <button
                                 type="button"
                                 onClick={() => setActiveBinProduct({ ...product, weightBins: adjustedBins })}
@@ -276,7 +292,7 @@ export function MinimalTemplate({
                                 {canPreOrder && isSoldOut ? 'Pre-order package' : 'Choose package'}
                               </button>
                             )}
-                            {canPreOrder && (
+                            {effectiveOrderMode === 'exact_package' && canPreOrder && (
                               <div className="flex items-center gap-3">
                                 <input
                                   type="number"
@@ -293,6 +309,30 @@ export function MinimalTemplate({
                                 >
                                   Pre-order weight
                                 </button>
+                              </div>
+                            )}
+                            {effectiveOrderMode === 'pack_for_you' && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="number"
+                                    step={product.pack_for_you_step_lbs ?? 1}
+                                    min={product.pack_for_you_min_lbs ?? 0}
+                                    value={weightValue}
+                                    onChange={(e) => setWeightInputs((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                                    className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                    placeholder="lbs"
+                                  />
+                                  <button
+                                    onClick={handlePackForYou}
+                                    className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white transition-colors"
+                                  >
+                                    Add estimated weight
+                                  </button>
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                  You’re ordering by estimated weight. Final total may vary based on actual package weights.
+                                </p>
                               </div>
                             )}
                           </div>
@@ -372,6 +412,7 @@ export function MinimalTemplate({
               return;
             }
 
+            // Add subscription product with metadata
             onAddToCart(subscriptionProduct.id, 1, {
               metadata: {
                 isSubscription: true,
@@ -380,8 +421,22 @@ export function MinimalTemplate({
                 subscriptionDuration: config.duration,
                 subscriptionDurationIntervals: config.durationIntervals,
                 subscriptionTotalPrice: config.totalPrice,
+                subscriptionName: subscriptionProduct.name,
               }
             });
+
+            // Add each box content item as a separate line
+            const boxContents = subscriptionProduct.subscriptionData?.boxContents || [];
+            boxContents.forEach((item) => {
+              onAddToCart(item.productId, item.quantity, {
+                metadata: {
+                  isPartOfSubscription: true,
+                  parentSubscriptionId: subscriptionProduct.subscriptionData!.id,
+                  parentSubscriptionName: subscriptionProduct.name,
+                }
+              });
+            });
+
             setShowSubscriptionModal(false);
             setSubscriptionProduct(null);
           }}
@@ -398,6 +453,7 @@ export function MinimalTemplate({
           subscriptionName={subscriptionProduct.name}
           items={substitutionItems}
           onConfirm={(selections) => {
+            // Add subscription product with metadata
             onAddToCart(subscriptionProduct.id, 1, {
               metadata: {
                 isSubscription: true,
@@ -406,9 +462,23 @@ export function MinimalTemplate({
                 subscriptionDuration: pendingSubscriptionConfig.config.duration,
                 subscriptionDurationIntervals: pendingSubscriptionConfig.config.durationIntervals,
                 subscriptionTotalPrice: pendingSubscriptionConfig.config.totalPrice,
+                subscriptionName: subscriptionProduct.name,
                 substitutionSelections: selections,
               }
             });
+
+            // Add each box content item as a separate line
+            const boxContents = subscriptionProduct.subscriptionData?.boxContents || [];
+            boxContents.forEach((item) => {
+              onAddToCart(item.productId, item.quantity, {
+                metadata: {
+                  isPartOfSubscription: true,
+                  parentSubscriptionId: subscriptionProduct.subscriptionData!.id,
+                  parentSubscriptionName: subscriptionProduct.name,
+                }
+              });
+            });
+
             setShowSubstitutionModal(false);
             setSubscriptionProduct(null);
             setPendingSubscriptionConfig(null);
