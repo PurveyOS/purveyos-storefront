@@ -230,9 +230,9 @@ export function CheckoutPage() {
     return [base || 'Drop location', dayTime].filter(Boolean).join(' | ');
   };
 
-  const buildPackageKey = (productId: string, unit: string | null | undefined, item: any) => {
+  const buildPackageKey = (productId: string, unit: string | null | undefined, binWeight?: number) => {
     const isLb = (unit || '').toLowerCase() === 'lb';
-    const rawWeight = isLb ? (item.binWeight ?? item.weight ?? 0) : 0;
+    const rawWeight = isLb ? (binWeight ?? 0) : 0;
     const weightBtn = Math.round(rawWeight * 100) / 100;
     const weightStr = (weightBtn || 0).toString().replace(/\.0+$/, '').replace(/\.([1-9]*)0+$/, '.$1');
     const safeWeight = weightStr.length > 0 ? weightStr : '0';
@@ -267,15 +267,17 @@ export function CheckoutPage() {
       }
 
       const product = productsById.get(item.productId);
-      const packageKey = buildPackageKey(item.productId, product?.unit, item);
-      const bin = binsByKey.get(packageKey);
+      const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
+      const packageKey = hasBinSelection ? buildPackageKey(item.productId, product?.unit, item.binWeight) : null;
+      const bin = packageKey ? binsByKey.get(packageKey) : undefined;
       const reserved = bin?.reserved_qty ?? 0;
       const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null;
-      // Fallback to product.qty when bin is missing (each-based products)
+      // Fallback to product.qty when bin is missing (pack-for-you / weight entries)
       const available = availableFromBin !== null ? availableFromBin : (product?.qty ?? 0);
-      const required = item.quantity ?? 1;
+      const unitWeight = item.weight ?? item.requestedWeightLbs;
+      const required = unitWeight ? unitWeight * (item.quantity ?? 1) : (item.quantity ?? 1);
 
-      if (!bin && (product?.unit || '').toLowerCase() === 'lb') {
+      if (hasBinSelection && !bin) {
         outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight });
         return;
       }

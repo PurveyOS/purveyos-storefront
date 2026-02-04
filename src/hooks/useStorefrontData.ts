@@ -339,10 +339,12 @@ export function useStorefrontData(tenantId: string): {
           const subscription = (p as any).subscriptionData || subscriptionsByProduct.get(p.id);
           const hasSubscription = Boolean((p as any).isSubscription || subscription);
           
-          // Calculate total inventory from package_bins
+          // Calculate total inventory from package_bins (fallback to product.qty when no bins)
           const totalInventory = allBins 
             ? allBins.reduce((sum, bin) => sum + ((bin.qty - (bin.reservedQty || 0)) || 0), 0)
             : 0;
+          const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
+          const effectiveInventory = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
           
           // Only include bins with available inventory
           const availableBins = allBins
@@ -358,8 +360,8 @@ export function useStorefrontData(tenantId: string): {
             weightBins: availableBins,
             imageUrl: p.image_url || p.image || '/demo-product.svg', // Prefer image_url (Storage), fallback to image (base64)
             categoryId: p.category || '',
-            available: totalInventory > 0 || (p.allow_pre_order === true),
-            inventory: totalInventory,
+            available: effectiveInventory > 0 || (p.allow_pre_order === true),
+            inventory: effectiveInventory,
             allowPreOrder: p.allow_pre_order === true,
             isSubscription: hasSubscription,
             subscriptionData: subscription,
