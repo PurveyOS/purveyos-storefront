@@ -325,6 +325,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
           basePrice={selectedSubscriptionProduct.subscriptionData.price_per_interval}
           defaultInterval={selectedSubscriptionProduct.subscriptionData.interval_type}
           durationType={selectedSubscriptionProduct.subscriptionData.duration_type}
+          durationIntervals={selectedSubscriptionProduct.subscriptionData.duration_intervals}
           seasonStartDate={selectedSubscriptionProduct.subscriptionData.season_start_date}
           seasonEndDate={selectedSubscriptionProduct.subscriptionData.season_end_date}
           onConfirm={(config) => {

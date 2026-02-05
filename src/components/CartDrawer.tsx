@@ -81,6 +81,12 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
     return item.binWeight * unitPrice * item.quantity;
   }
 
+  // Pack-for-you estimated weight
+  if (item.lineType === 'pack_for_you' && item.requestedWeightLbs && product.pricingMode === "weight") {
+    const unitPrice = product.pricePer; // dollars per lb
+    return unitPrice * item.requestedWeightLbs * item.quantity;
+  }
+
   // Weight-based (pre-order or in-stock by weight)
   if (item.weight && product.pricingMode === "weight") {
     const unitPrice = product.pricePer; // dollars per lb
@@ -101,6 +107,7 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
                           <p className="text-xs text-slate-500">
                             Qty: {item.quantity}
                             {item.weight && ` (${item.weight} lbs)`}
+                            {item.lineType === 'pack_for_you' && item.requestedWeightLbs && ` (${item.requestedWeightLbs} lbs requested)`}
                             {item.binWeight && ` (${item.binWeight} lb pkg)`}
                           </p>
                         </div>

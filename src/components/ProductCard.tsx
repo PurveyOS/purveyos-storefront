@@ -196,7 +196,7 @@ export function ProductCard(props: ProductCardProps) {
 
   const isWeightBased = pricingMode === "weight";
   const isFixedPrice = pricingMode === "fixed";
-  const effectiveOrderMode = product.order_mode ?? tenantDefaultOrderMode ?? 'exact_package';
+  const effectiveOrderMode = tenantDefaultOrderMode ?? 'exact_package';
 
   const isSoldOut =
     product.isSoldOut ||
@@ -369,6 +369,15 @@ export function ProductCard(props: ProductCardProps) {
           <span className="text-sm text-red-600 font-medium">Out Of Stock</span>
         ) : (
           <>
+            {hasBins && (
+              <p className="text-xs text-slate-500">
+                Avg package: {(
+                  product.weightBins && product.weightBins.length
+                    ? (product.weightBins.reduce((sum, b) => sum + b.weightBtn, 0) / product.weightBins.length).toFixed(2)
+                    : '0.00'
+                )} lb • {product.weightBins?.length ?? 0} packages
+              </p>
+            )}
             <div>
               <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
                 Enter estimated weight (lb)

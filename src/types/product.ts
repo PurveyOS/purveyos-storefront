@@ -40,8 +40,10 @@ export interface Product {
     price_per_interval: number;
     interval_type: 'weekly' | 'biweekly' | 'monthly';
     duration_type: 'ongoing' | 'fixed_duration' | 'seasonal';
+    duration_intervals?: number;
     season_start_date?: string;
     season_end_date?: string;
+    min_interval?: number;
     substitutionGroups?: Array<{
       groupName: string;
       options: Array<{

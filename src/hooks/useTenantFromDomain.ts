@@ -58,7 +58,7 @@ export function useTenantFromDomain(): UseTenantResult {
 
         // 1) Decide which slug to use
         const devSlug =
-          import.meta.env.VITE_DEV_TENANT_SLUG || "sweetppastures"; // dev fallback
+          import.meta.env.VITE_DEV_TENANT_SLUG || "testfarmstore"; // dev fallback
 
         let slug: string;
 

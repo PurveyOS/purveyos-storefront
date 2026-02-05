@@ -30,8 +30,8 @@ export function MinimalTemplate({
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
   const [showDescriptionModal, setShowDescriptionModal] = useState<string | null>(null);
 
-  const getEffectiveOrderMode = (product: Product) => {
-    return product.order_mode ?? tenantDefaultOrderMode ?? 'exact_package';
+  const getEffectiveOrderMode = (_product: Product) => {
+    return tenantDefaultOrderMode ?? 'exact_package';
   };
 
   const filteredProducts = selectedCategory 
@@ -313,6 +313,15 @@ export function MinimalTemplate({
                             )}
                             {effectiveOrderMode === 'pack_for_you' && (
                               <div className="space-y-2">
+                                {hasBins && (
+                                  <p className="text-xs text-gray-500">
+                                    Avg package: {(
+                                      adjustedBins.length
+                                        ? (adjustedBins.reduce((sum, b) => sum + b.weightBtn, 0) / adjustedBins.length).toFixed(2)
+                                        : '0.00'
+                                    )} lb • {adjustedBins.length} packages
+                                  </p>
+                                )}
                                 <div className="flex items-center gap-3">
                                   <input
                                     type="number"
@@ -386,6 +395,7 @@ export function MinimalTemplate({
           defaultInterval={subscriptionProduct.subscriptionData.interval_type}
           minInterval={subscriptionProduct.subscriptionData.min_interval}
           durationType={subscriptionProduct.subscriptionData.duration_type}
+          durationIntervals={subscriptionProduct.subscriptionData.duration_intervals}
           seasonStartDate={subscriptionProduct.subscriptionData.season_start_date}
           seasonEndDate={subscriptionProduct.subscriptionData.season_end_date}
           onConfirm={(config) => {

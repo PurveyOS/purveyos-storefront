@@ -74,6 +74,8 @@ export function CartPage() {
     const binWeight: number | undefined = (item as any).binWeight;
     const unitPriceCents: number | undefined = (item as any).unitPriceCents;
     const weight: number | undefined = (item as any).weight;
+    const requestedWeightLbs: number | undefined = (item as any).requestedWeightLbs;
+    const lineType: string | undefined = (item as any).lineType;
     const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
     
     let lineUnitPrice: number;
@@ -81,6 +83,9 @@ export function CartPage() {
     if (binWeight && unitPriceCents) {
       // Pre-packaged weight bin
       lineUnitPrice = binWeight * (unitPriceCents / 100);
+    } else if (lineType === 'pack_for_you' && requestedWeightLbs && requestedWeightLbs > 0) {
+      // Pack-for-you estimated weight
+      lineUnitPrice = product.pricePer * requestedWeightLbs;
     } else if (weight && weight > 0) {
       // Weight-based pricing
       lineUnitPrice = product.pricePer * weight;
@@ -134,6 +139,8 @@ export function CartPage() {
                   const binWeight: number | undefined = (item as any).binWeight;
                   const unitPriceCents: number | undefined = (item as any).unitPriceCents;
                   const weight: number | undefined = (item as any).weight;
+                  const requestedWeightLbs: number | undefined = (item as any).requestedWeightLbs;
+                  const lineType: string | undefined = (item as any).lineType;
                   const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
                   const isPreOrder: boolean = (item as any).isPreOrder || false;
                   
@@ -145,6 +152,10 @@ export function CartPage() {
                     // Pre-packaged weight bin
                     lineUnitPrice = binWeight * (unitPriceCents / 100);
                     displayInfo = `${binWeight} ${product.unit} package`;
+                  } else if (lineType === 'pack_for_you' && requestedWeightLbs && requestedWeightLbs > 0) {
+                    // Pack-for-you estimated weight
+                    lineUnitPrice = product.pricePer * requestedWeightLbs;
+                    displayInfo = `${requestedWeightLbs} ${product.unit} requested @ $${product.pricePer.toFixed(2)}/${product.unit}`;
                   } else if (weight && weight > 0) {
                     // Weight-based pricing (check weight first, don't rely on pricingMode)
                     lineUnitPrice = product.pricePer * weight;
@@ -209,7 +220,7 @@ export function CartPage() {
                               <span className="w-6 text-center font-medium text-sm">{quantity}</span>
                               
                               <button
-                                onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight })}
+                                onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight, requestedWeightLbs, lineType })}
                                 className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

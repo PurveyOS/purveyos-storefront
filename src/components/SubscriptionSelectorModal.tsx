@@ -9,6 +9,7 @@ interface SubscriptionSelectorModalProps {
   defaultInterval: SubscriptionInterval;
   minInterval?: SubscriptionInterval; // Minimum frequency allowed by tenant
   durationType: DurationType;
+  durationIntervals?: number;
   seasonStartDate?: string;
   seasonEndDate?: string;
   onConfirm: (config: {
@@ -27,6 +28,7 @@ export default function SubscriptionSelectorModal({
   defaultInterval,
   minInterval,
   durationType,
+  durationIntervals,
   seasonStartDate,
   seasonEndDate,
   onConfirm,
@@ -34,7 +36,9 @@ export default function SubscriptionSelectorModal({
 }: SubscriptionSelectorModalProps) {
   const [selectedInterval, setSelectedInterval] = useState<SubscriptionInterval>(defaultInterval);
   const [selectedDuration, setSelectedDuration] = useState<DurationType>(durationType);
-  const [durationCount, setDurationCount] = useState<string>("12");
+  const [durationCount, setDurationCount] = useState<string>(
+    durationIntervals && durationIntervals > 0 ? durationIntervals.toString() : "12"
+  );
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Filter frequencies based on minimum interval (customer can only select equal or less frequent)
@@ -107,7 +111,11 @@ export default function SubscriptionSelectorModal({
                 <div className="flex justify-between items-center">
                   <span className="text-neutral-600 font-medium">Duration:</span>
                   <span className="text-neutral-900 font-semibold">
-                    {durationType === 'ongoing' ? 'Ongoing (Cancel anytime)' : durationType === 'fixed_duration' ? '12 Deliveries' : 'Seasonal'}
+                    {durationType === 'ongoing'
+                      ? 'Ongoing (Cancel anytime)'
+                      : durationType === 'fixed_duration'
+                      ? `${durationIntervals && durationIntervals > 0 ? durationIntervals : 12} Deliveries`
+                      : 'Seasonal'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-neutral-200">
@@ -180,7 +188,7 @@ export default function SubscriptionSelectorModal({
                   <input
                     type="number"
                     min="1"
-                    max="52"
+                    max={durationIntervals && durationIntervals > 0 ? durationIntervals : 52}
                     value={durationCount}
                     onChange={(e) => setDurationCount(e.target.value)}
                     className="w-full px-4 py-2 border border-orange-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 text-lg font-semibold text-center"
@@ -189,6 +197,11 @@ export default function SubscriptionSelectorModal({
                   <p className="text-xs text-neutral-600 mt-2 text-center">
                     Total: ${(basePrice * parseInt(durationCount || "0")).toFixed(2)}
                   </p>
+                  {durationIntervals && durationIntervals > 0 && (
+                    <p className="text-xs text-neutral-600 mt-1 text-center">
+                      Maximum {durationIntervals} deliveries available
+                    </p>
+                  )}
                 </div>
               )}
 

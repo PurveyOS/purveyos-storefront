@@ -39,6 +39,7 @@ export interface StorefrontProduct {
     price_per_interval: number
     interval_type: 'weekly' | 'biweekly' | 'monthly'
     duration_type: 'ongoing' | 'fixed_duration' | 'seasonal'
+    duration_intervals?: number
     season_start_date?: string
     season_end_date?: string
     min_interval?: number
@@ -168,7 +169,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
     // Fetch subscription products
     const { data: subscriptionProducts, error: subscriptionError } = await supabase
       .from('subscription_products')
-      .select('id, product_id, price_per_interval, interval_type, duration_type, season_start_date, season_end_date, min_interval')
+      .select('id, product_id, price_per_interval, interval_type, duration_type, duration_intervals, season_start_date, season_end_date, min_interval')
       .eq('tenant_id', tenantId)
       .eq('is_active', true)
 
@@ -231,6 +232,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
           price_per_interval: sp.price_per_interval,
           interval_type: sp.interval_type,
           duration_type: sp.duration_type,
+          duration_intervals: sp.duration_intervals ?? undefined,
           season_start_date: sp.season_start_date,
           season_end_date: sp.season_end_date,
           min_interval: sp.min_interval,

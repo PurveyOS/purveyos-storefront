@@ -203,11 +203,11 @@ export function useStorefrontData(tenantId: string): {
         }
 
         // ============================================================================
-        // Fetch tenant policy (payment timing)
+        // Fetch tenant policy + default order mode
         // ============================================================================
         const { data: tenantPolicyData, error: tenantPolicyError } = await supabase
           .from('tenants')
-          .select('storefront_payment_policy')
+          .select('storefront_payment_policy, storefront_default_order_mode')
           .eq('id', tenantId)
           .single();
 
@@ -232,7 +232,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         const { data: subscriptionsData, error: subscriptionsError } = await supabase
           .from('subscription_products')
-          .select('*')
+          .select('id, product_id, price_per_interval, interval_type, duration_type, duration_intervals, season_start_date, season_end_date, min_interval, is_active')
           .eq('tenant_id', tenantId)
           .eq('is_active', true);
 
@@ -325,6 +325,7 @@ export function useStorefrontData(tenantId: string): {
               interval_type: sub.interval_type,
               min_interval: sub.min_interval,
               duration_type: sub.duration_type,
+              duration_intervals: sub.duration_intervals ?? undefined,
               season_start_date: sub.season_start_date,
               season_end_date: sub.season_end_date,
             });
@@ -336,7 +337,11 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         const products: Product[] = (catalogData.products || []).map(p => {
           const allBins = binsByProduct.get(p.id);
-          const subscription = (p as any).subscriptionData || subscriptionsByProduct.get(p.id);
+          const subscriptionFromCatalog = (p as any).subscriptionData;
+          const subscriptionFromDb = subscriptionsByProduct.get(p.id);
+          const subscription = subscriptionFromCatalog
+            ? { ...subscriptionFromCatalog, ...subscriptionFromDb }
+            : subscriptionFromDb;
           const hasSubscription = Boolean((p as any).isSubscription || subscription);
           
           // Calculate total inventory from package_bins (fallback to product.qty when no bins)
@@ -382,11 +387,15 @@ export function useStorefrontData(tenantId: string): {
         console.log('✅ Products loaded:', products.length);
         console.log('✅ Categories:', categories.length);
 
+        const tenantDefaultOrderMode = (tenantPolicyData as any)?.storefront_default_order_mode
+          ?? catalogData?.tenant?.storefront_default_order_mode
+          ?? 'exact_package';
+
         setData({
           settings,
           products,
           categories,
-          tenantDefaultOrderMode: catalogData?.tenant?.storefront_default_order_mode ?? 'exact_package',
+          tenantDefaultOrderMode,
         });
       } catch (err) {
         console.error('Error loading storefront data:', err);
