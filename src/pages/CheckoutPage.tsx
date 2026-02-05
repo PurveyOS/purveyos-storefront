@@ -64,6 +64,12 @@ export function CheckoutPage() {
   const [selectedSubscriptionProductId, setSelectedSubscriptionProductId] = useState('');
   const [subscriptionSelections, setSubscriptionSelections] = useState<Record<string, GroupChoice[]>>({});
   const [loadingSubscriptionProducts, setLoadingSubscriptionProducts] = useState(false);
+  const payLaterOptions = [
+    (storefrontData?.settings as any)?.enable_cash ? 'Cash' : null,
+    (storefrontData?.settings as any)?.enable_venmo ? 'Venmo' : null,
+    (storefrontData?.settings as any)?.enable_zelle ? 'Zelle' : null,
+    (storefrontData?.settings as any)?.enable_cashapp ? 'CashApp' : null,
+  ].filter(Boolean) as string[];
 
   // Load customer info if logged in
   useEffect(() => {
@@ -1290,26 +1296,28 @@ export function CheckoutPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Payment Method</h2>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  {(storefrontData?.settings as any)?.enable_cash && (
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('paymentMethod', 'cash')}
-                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                      formData.paymentMethod === 'cash'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.paymentMethod === 'cash' ? {
-                      borderColor: primaryColor,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">💵</div>
-                      <div className="font-medium text-gray-800">Cash</div>
-                      <div className="text-xs text-gray-500 mt-1">Pay at {formData.deliveryMethod === 'delivery' ? 'delivery' : 'pickup'}</div>
-                    </div>
-                  </button>
+                  {payLaterOptions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange('paymentMethod', 'pay_later')}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        formData.paymentMethod === 'pay_later'
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.paymentMethod === 'pay_later' ? {
+                        borderColor: primaryColor,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="text-2xl mb-2">🕒</div>
+                        <div className="font-medium text-gray-800">Pay Later</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          {payLaterOptions.join(' • ')}
+                        </div>
+                      </div>
+                    </button>
                   )}
 
                   {cardPaymentAvailable && (
@@ -1334,71 +1342,6 @@ export function CheckoutPage() {
                     </button>
                   )}
 
-                  {(storefrontData?.settings as any)?.enable_venmo && (
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('paymentMethod', 'venmo')}
-                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                      formData.paymentMethod === 'venmo'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.paymentMethod === 'venmo' ? {
-                      borderColor: primaryColor,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">📱</div>
-                      <div className="font-medium text-gray-800">Venmo</div>
-                      <div className="text-xs text-gray-500 mt-1">Pay later</div>
-                    </div>
-                  </button>
-                  )}
-
-                  {(storefrontData?.settings as any)?.enable_zelle && (
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('paymentMethod', 'zelle')}
-                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                      formData.paymentMethod === 'zelle'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.paymentMethod === 'zelle' ? {
-                      borderColor: primaryColor,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">🏦</div>
-                      <div className="font-medium text-gray-800">Zelle</div>
-                      <div className="text-xs text-gray-500 mt-1">Pay later</div>
-                    </div>
-                  </button>
-                  )}
-
-                  {(storefrontData?.settings as any)?.enable_cashapp && (
-                  <button
-                    type="button"
-                    onClick={() => handleInputChange('paymentMethod', 'cashapp')}
-                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                      formData.paymentMethod === 'cashapp'
-                        ? 'border-current shadow-lg'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    style={formData.paymentMethod === 'cashapp' ? {
-                      borderColor: primaryColor,
-                      boxShadow: `0 0 20px ${primaryColor}40`
-                    } : {}}
-                  >
-                    <div className="text-center">
-                      <div className="text-2xl mb-2">💚</div>
-                      <div className="font-medium text-gray-800">CashApp</div>
-                      <div className="text-xs text-gray-500 mt-1">Pay later</div>
-                    </div>
-                  </button>
-                  )}
                 </div>
 
                 {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && (

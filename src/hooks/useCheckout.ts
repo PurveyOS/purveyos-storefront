@@ -29,7 +29,7 @@ export interface CheckoutData {
   customerPhone: string;
   deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other';
   deliveryAddress?: string;
-  paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash';
+  paymentMethod: 'venmo' | 'zelle' | 'cashapp' | 'card' | 'cash' | 'pay_later';
   paymentNowChoice?: 'pay_now' | 'pay_at_pickup';
   paymentDetails?: string; // Card token or payment confirmation
   deliveryNotes?: string;

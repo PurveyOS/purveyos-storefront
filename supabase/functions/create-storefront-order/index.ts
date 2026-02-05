@@ -35,6 +35,7 @@ interface OrderRequest {
   deliveryNotes?: string
   fulfillmentLocation?: string
   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash'
+  paymentNowChoice?: 'pay_now' | 'pay_at_pickup'
   lines: OrderLine[]
   subtotalCents: number
   taxCents: number
@@ -146,7 +147,7 @@ serve(async (req: Request) => {
 
     const { data: products, error: productsError } = await supabaseAdmin
       .from('products')
-      .select('id, unit, qty')
+      .select('id, unit, qty, is_deposit_product, deposit_prod_price_per_lb')
       .eq('tenant_id', orderRequest.tenantId)
       .in('id', productIds)
 
@@ -172,11 +173,16 @@ serve(async (req: Request) => {
       })
     }
 
-    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null }
+    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null }
     type PackageBinRow = { package_key: string; qty?: number | null; reserved_qty?: number | null }
 
     const productsById = new Map<string, ProductRow>((products ?? []).map((p: ProductRow) => [p.id, p]))
     const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
+    const depositProducts = (products ?? []).filter((p: ProductRow) => p.is_deposit_product === true)
+    const hasDepositProduct = depositProducts.length > 0
+    const depositAmount = hasDepositProduct ? (orderRequest.totalCents / 100) : null
+    const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
+    const depositPricePerLb = depositProducts.find((p) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
 
     const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
 
@@ -259,6 +265,15 @@ serve(async (req: Request) => {
         is_weight_estimate: isWeightEstimate,
         estimated_total_cents: estimatedTotalCents,
         is_subscription_order: orderRequest.subscription?.enabled ?? false,
+        ...(hasDepositProduct
+          ? {
+              deposit_amount: depositAmount,
+              deposit_paid_at: depositPaidAt,
+              balance_due: null,
+              hanging_weight_lbs: null,
+              price_per_lb: depositPricePerLb !== undefined && depositPricePerLb !== null ? Number(depositPricePerLb) : null,
+            }
+          : {}),
         source: 'storefront',
         status: 'pending',
         payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
