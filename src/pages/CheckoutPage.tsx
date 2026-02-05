@@ -269,7 +269,8 @@ export function CheckoutPage() {
       const product = productsById.get(item.productId);
       const storefrontProduct = storefrontById.get(item.productId);
       const isDeposit = Boolean(product?.is_deposit_product || storefrontProduct?.is_deposit_product);
-      if (isDeposit) {
+      const isSubscription = Boolean(item?.metadata?.isSubscription || storefrontProduct?.isSubscription);
+      if (isDeposit || isSubscription) {
         return;
       }
       const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
