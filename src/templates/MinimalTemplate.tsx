@@ -315,11 +315,23 @@ export function MinimalTemplate({
                               <div className="space-y-2">
                                 {hasBins && (
                                   <p className="text-xs text-gray-500">
-                                    Avg package: {(
-                                      adjustedBins.length
-                                        ? (adjustedBins.reduce((sum, b) => sum + b.weightBtn, 0) / adjustedBins.length).toFixed(2)
-                                        : '0.00'
-                                    )} lb • {adjustedBins.length} packages
+                                    Avg package: {(() => {
+                                      const totalPackages = adjustedBins.reduce(
+                                        (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
+                                        0
+                                      );
+                                      if (totalPackages <= 0) return '0.00';
+                                      const totalWeight = adjustedBins.reduce((sum, b) => {
+                                        const available = Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0));
+                                        return sum + (b.weightBtn * available);
+                                      }, 0);
+                                      return (totalWeight / totalPackages).toFixed(2);
+                                    })()} lb • {(() => {
+                                      return adjustedBins.reduce(
+                                        (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
+                                        0
+                                      );
+                                    })()} packages
                                   </p>
                                 )}
                                 <div className="flex items-center gap-3">

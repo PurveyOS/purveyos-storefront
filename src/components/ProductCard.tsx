@@ -371,11 +371,25 @@ export function ProductCard(props: ProductCardProps) {
           <>
             {hasBins && (
               <p className="text-xs text-slate-500">
-                Avg package: {(
-                  product.weightBins && product.weightBins.length
-                    ? (product.weightBins.reduce((sum, b) => sum + b.weightBtn, 0) / product.weightBins.length).toFixed(2)
-                    : '0.00'
-                )} lb • {product.weightBins?.length ?? 0} packages
+                Avg package: {(() => {
+                  const bins = product.weightBins || [];
+                  const totalPackages = bins.reduce(
+                    (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
+                    0
+                  );
+                  if (totalPackages <= 0) return '0.00';
+                  const totalWeight = bins.reduce((sum, b) => {
+                    const available = Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0));
+                    return sum + (b.weightBtn * available);
+                  }, 0);
+                  return (totalWeight / totalPackages).toFixed(2);
+                })()} lb • {(() => {
+                  const bins = product.weightBins || [];
+                  return bins.reduce(
+                    (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
+                    0
+                  );
+                })()} packages
               </p>
             )}
             <div>
