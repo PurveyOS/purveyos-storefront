@@ -270,18 +270,20 @@ export function CheckoutPage() {
       const storefrontProduct = storefrontById.get(item.productId);
       const isDeposit = Boolean(product?.is_deposit_product || storefrontProduct?.is_deposit_product);
       const isSubscription = Boolean(item?.metadata?.isSubscription || storefrontProduct?.isSubscription);
-      if (isDeposit || isSubscription) {
-        return;
-      }
       const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
       const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
       const bin = binKey ? binsByKey.get(binKey) : undefined;
       const reserved = bin?.reserved_qty ?? 0;
       const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null;
+      const availableFromProduct = typeof product?.qty === 'number'
+        ? product.qty
+        : (typeof storefrontProduct?.inventory === 'number' ? storefrontProduct.inventory : 0);
       // Fallback to product.qty when bin is missing (pack-for-you / weight entries)
-      const available = availableFromBin !== null ? availableFromBin : (product?.qty ?? 0);
+      const available = availableFromBin !== null ? availableFromBin : availableFromProduct;
       const unitWeight = item.weight ?? item.requestedWeightLbs;
-      const required = unitWeight ? unitWeight * (item.quantity ?? 1) : (item.quantity ?? 1);
+      const required = (isDeposit || isSubscription)
+        ? (item.quantity ?? 1)
+        : (unitWeight ? unitWeight * (item.quantity ?? 1) : (item.quantity ?? 1));
 
       if (hasBinSelection && !bin) {
         outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight });
