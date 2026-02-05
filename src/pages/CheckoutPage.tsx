@@ -253,6 +253,7 @@ export function CheckoutPage() {
     }
 
     const productsById = new Map((latestProducts || []).map((p: any) => [p.id, p]));
+    const storefrontById = new Map((storefrontData?.products || []).map((p: any) => [p.id, p]));
     const binsByKey = new Map(
       (packageBins || []).map((b: any) => [buildBinKey(b.product_id, b.weight_btn), b])
     );
@@ -266,7 +267,9 @@ export function CheckoutPage() {
       }
 
       const product = productsById.get(item.productId);
-      if (product?.is_deposit_product) {
+      const storefrontProduct = storefrontById.get(item.productId);
+      const isDeposit = Boolean(product?.is_deposit_product || storefrontProduct?.is_deposit_product);
+      if (isDeposit) {
         return;
       }
       const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
