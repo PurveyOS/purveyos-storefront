@@ -1,7 +1,7 @@
 // @ts-ignore: Deno deploy provides these remote modules at runtime
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 // @ts-ignore: Deno deploy provides these remote modules at runtime
-import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.95.0'
 
 // Minimal Deno env typing for TypeScript tooling
 declare const Deno: { env: { get(key: string): string | undefined } }
