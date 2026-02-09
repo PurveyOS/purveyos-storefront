@@ -343,25 +343,27 @@ export function useStorefrontData(tenantId: string): {
             ? { ...subscriptionFromCatalog, ...subscriptionFromDb }
             : subscriptionFromDb;
           const hasSubscription = Boolean((p as any).isSubscription || subscription);
-          
+
           // Calculate total inventory from package_bins (fallback to product.qty when no bins)
-          const totalInventory = allBins 
+          const totalInventory = allBins
             ? allBins.reduce((sum, bin) => sum + ((bin.qty - (bin.reservedQty || 0)) || 0), 0)
             : 0;
           const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
           const effectiveInventory = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
-          
+
           // Only include bins with available inventory
           const availableBins = allBins
             ? allBins.filter(bin => (bin.qty - (bin.reservedQty || 0)) > 0)
             : undefined;
-          
+
           return {
             id: p.id,
             name: p.name,
             description: p.description || '',
             pricePer: subscription ? subscription.price_per_interval : (p.pricePer || 0),
             unit: p.unit || 'lb',
+            variantSize: (p as any).variant_size ?? undefined,
+            variantUnit: (p as any).variant_unit ?? undefined,
             weightBins: availableBins,
             imageUrl: p.image_url || p.image || '/demo-product.svg', // Prefer image_url (Storage), fallback to image (base64)
             categoryId: p.category || '',
@@ -374,6 +376,7 @@ export function useStorefrontData(tenantId: string): {
             deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,
           };
         });
+
 
         // Generate categories
         const categories: Category[] = (catalogData.categories || []).map((categoryId, index) => ({

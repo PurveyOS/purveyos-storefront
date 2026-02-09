@@ -214,9 +214,10 @@ export function useCheckout() {
         let lineTotal: number; // dollars
 
         if (binWeight && typeof item.unitPriceCents === 'number') {
-          // Pre-packaged bin: unitPriceCents is per lb; apply to bin weight
+          // Pre-packaged bin: per lb for weight items, per unit for EA variants
           unitPrice = item.unitPriceCents / 100;
-          lineTotal = unitPrice * binWeight * quantity;
+          const isEach = ((product as any)?.unit || '').toLowerCase() === 'ea' || Boolean((product as any)?.variantSize || (product as any)?.variantUnit);
+          lineTotal = isEach ? (unitPrice * quantity) : (unitPrice * binWeight * quantity);
         } else if (lineType === 'pack_for_you' && requestedWeightLbs) {
           // Pack-for-you estimated weight
           unitPrice = (product as any).pricePer;

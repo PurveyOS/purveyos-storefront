@@ -81,8 +81,9 @@ export function CartPage() {
     let lineUnitPrice: number;
     
     if (binWeight && unitPriceCents) {
-      // Pre-packaged weight bin
-      lineUnitPrice = binWeight * (unitPriceCents / 100);
+      // Pre-packaged bin (lb or EA variant)
+      const isEach = (product.unit || '').toLowerCase() === 'ea' || Boolean((product as any).variantSize || (product as any).variantUnit);
+      lineUnitPrice = isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100));
     } else if (lineType === 'pack_for_you' && requestedWeightLbs && requestedWeightLbs > 0) {
       // Pack-for-you estimated weight
       lineUnitPrice = product.pricePer * requestedWeightLbs;
@@ -149,9 +150,13 @@ export function CartPage() {
                   let displayInfo: string;
                   
                   if (binWeight && unitPriceCents) {
-                    // Pre-packaged weight bin
-                    lineUnitPrice = binWeight * (unitPriceCents / 100);
-                    displayInfo = `${binWeight} ${product.unit} package`;
+                    // Pre-packaged bin (lb or EA variant)
+                    const isEach = (product.unit || '').toLowerCase() === 'ea' || Boolean((product as any).variantSize || (product as any).variantUnit);
+                    const sizeUnit = (product as any).variantUnit || product.unit;
+                    lineUnitPrice = isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100));
+                    displayInfo = isEach
+                      ? `${binWeight} ${sizeUnit} @ $${(unitPriceCents / 100).toFixed(2)}`
+                      : `${binWeight} ${product.unit} package`;
                   } else if (lineType === 'pack_for_you' && requestedWeightLbs && requestedWeightLbs > 0) {
                     // Pack-for-you estimated weight
                     lineUnitPrice = product.pricePer * requestedWeightLbs;

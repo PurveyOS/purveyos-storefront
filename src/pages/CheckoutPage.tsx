@@ -308,7 +308,14 @@ export function CheckoutPage() {
       const removedList = outOfStock
         .map((item) => {
           const name = productName(item.productId);
-          if (item.binWeight) return `${name} (${item.binWeight} lb package)`;
+          if (item.binWeight) {
+            const productForDisplay = storefrontData?.products?.find((p: any) => p.id === item.productId);
+            const isEach = ((productForDisplay?.unit) || '').toLowerCase() === 'ea' || Boolean((productForDisplay as any)?.variantSize || (productForDisplay as any)?.variantUnit);
+            const variantUnit = (productForDisplay as any)?.variantUnit;
+            return isEach
+              ? `${name} (${item.binWeight} ${variantUnit || 'ea'})`
+              : `${name} (${item.binWeight} lb package)`;
+          }
           if (item.lineType === 'pack_for_you' && item.requestedWeightLbs) return `${name} (${item.requestedWeightLbs} lb requested)`;
           if (item.weight) return `${name} (${item.weight} lb)`;
           return name;
@@ -385,8 +392,11 @@ export function CheckoutPage() {
         let itemQuantity = item.quantity || 1;
         
         if (item.binWeight && item.unitPriceCents) {
-          // Pre-packaged weight bins: unitPriceCents is price per lb, multiply by binWeight
-          unitPriceInCents = Math.round(item.binWeight * item.unitPriceCents);
+          // Pre-packaged bins: for lb multiply by weight; for EA variants use unit price
+          const isEach = (product?.unit || '').toLowerCase() === 'ea' || Boolean((product as any)?.variantSize || (product as any)?.variantUnit);
+          unitPriceInCents = isEach
+            ? Math.round(item.unitPriceCents)
+            : Math.round(item.binWeight * item.unitPriceCents);
           itemQuantity = item.quantity; // Quantity of bins
         } else if (item.weight && product?.pricingMode === 'weight') {
           // Custom weight entry: price per lb * weight
@@ -991,7 +1001,8 @@ export function CheckoutPage() {
     let itemTotal = 0;
     
     if (binWeight && unitPriceCents) {
-      itemTotal = binWeight * (unitPriceCents / 100) * quantity;
+      const isEach = (item.product.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any).variantSize || (item.product as any).variantUnit);
+      itemTotal = (isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100))) * quantity;
     } else if (requestedWeightLbs && requestedWeightLbs > 0) {
       itemTotal = item.product.pricePer * requestedWeightLbs * quantity;
     } else if (weight && weight > 0) {
@@ -1407,7 +1418,7 @@ export function CheckoutPage() {
 
                 <div className="mt-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Delivery Notes
+                    Notes/Instructions
                   </label>
                   <textarea
                     value={formData.deliveryNotes || ''}
@@ -1522,9 +1533,13 @@ export function CheckoutPage() {
                     let itemTotal = 0;
                     
                     if (binWeight && unitPriceCents) {
-                      // Pre-packaged bin
-                      displayText = `${binWeight} ${item.product.unit} package @ $${(unitPriceCents / 100).toFixed(2)}/${item.product.unit}`;
-                      itemTotal = binWeight * (unitPriceCents / 100) * item.quantity;
+                      // Pre-packaged bin (lb or EA variant)
+                      const isEach = (item.product.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any).variantSize || (item.product as any).variantUnit);
+                      const variantUnit = (item.product as any).variantUnit || item.product.unit;
+                      displayText = isEach
+                        ? `${binWeight} ${variantUnit} @ $${(unitPriceCents / 100).toFixed(2)}`
+                        : `${binWeight} ${item.product.unit} package @ $${(unitPriceCents / 100).toFixed(2)}/${item.product.unit}`;
+                      itemTotal = (isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100))) * item.quantity;
                     } else if (lineType === 'pack_for_you' && requestedWeightLbs && requestedWeightLbs > 0) {
                       // Pack-for-you estimated weight
                       displayText = `${requestedWeightLbs} ${item.product.unit} requested @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;

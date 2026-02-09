@@ -40,6 +40,9 @@ function isModernProps(props: ProductCardProps): props is ModernProductCardProps
 
 export function ProductCard(props: ProductCardProps) {
   const { product } = props;
+  const sizeLabel = product.variantSize
+    ? `${product.variantSize}${product.variantUnit ? ` ${product.variantUnit}` : ''}`
+    : '';
 
   // =========================
   // CLASSIC TEMPLATE VERSION
@@ -74,6 +77,9 @@ export function ProductCard(props: ProductCardProps) {
           >
             {product.name}
           </h3>
+          {sizeLabel && (
+            <p className="text-xs text-gray-500 mb-2">{sizeLabel}</p>
+          )}
 
           {product.description && (
             <p className="text-gray-600 text-sm mb-4 line-clamp-2 leading-relaxed">
@@ -183,12 +189,13 @@ export function ProductCard(props: ProductCardProps) {
 
   // Your rule: unit drives behavior
   const unit = (product.unit || "").toLowerCase();
-  const isEachUnit = unit === "ea"; // fixed-price
+  const isEachUnit = unit === "ea" || Boolean((product as any).variantSize || (product as any).variantUnit); // fixed-price (incl. variants)
   const isPoundUnit = unit === "lb"; // weight-based
 
-  // Only treat bins as size options for lb items
+  // Treat bins as size options for lb items and EA variants (non-zero bin weights)
   const hasBins =
-    isPoundUnit && !!(product.weightBins && product.weightBins.length > 0);
+    (isPoundUnit && !!(product.weightBins && product.weightBins.length > 0)) ||
+    (isEachUnit && !!(product.weightBins && product.weightBins.some(b => (b.weightBtn ?? 0) > 0)));
 
   // Fallback pricing mode based on unit if not explicitly set
   const pricingMode =
@@ -301,6 +308,10 @@ export function ProductCard(props: ProductCardProps) {
           )}
         </div>
 
+        {sizeLabel && (
+          <p className="text-xs text-slate-500 mb-1">{sizeLabel}</p>
+        )}
+
         {product.description && (
           <p className="text-sm text-slate-600 mb-2 line-clamp-2">
             {product.description}
@@ -330,14 +341,30 @@ export function ProductCard(props: ProductCardProps) {
 
         {/* PRICE DISPLAY */}
         <div className="mb-2">
-          <div className="flex items-baseline gap-1">
-            <span className="text-lg font-bold" style={{ color: primaryColor }}>
-              ${price.toFixed(2)}
-            </span>
-            {product.unit && (
-              <span className="text-sm text-slate-500">/{product.unit}</span>
-            )}
-          </div>
+          {(() => {
+            const isEach = (product.unit || '').toLowerCase() === 'ea';
+            const variantBins = isEach
+              ? (product.weightBins || []).filter((b) => (b.weightBtn ?? 0) > 0 && (b.qty ?? 0) - (b.reservedQty ?? 0) > 0)
+              : [];
+            const hasVariantBins = variantBins.length > 0;
+            const variantPrices = hasVariantBins
+              ? variantBins.map((b) => (b.unitPriceCents ?? 0) / 100)
+              : [];
+            const minPrice = hasVariantBins ? Math.min(...variantPrices) : price;
+            const maxPrice = hasVariantBins ? Math.max(...variantPrices) : price;
+            return (
+              <div className="flex items-baseline gap-1">
+                <span className="text-lg font-bold" style={{ color: primaryColor }}>
+                  {hasVariantBins && minPrice !== maxPrice
+                    ? `$${minPrice.toFixed(2)}-$${maxPrice.toFixed(2)}`
+                    : `$${price.toFixed(2)}`}
+                </span>
+                {product.unit && (
+                  <span className="text-sm text-slate-500">/{product.unit}</span>
+                )}
+              </div>
+            );
+          })()}
           {showLowStock && product.inventory !== undefined && (
             <span className="text-xs text-orange-600 font-medium">
               Only {product.inventory} left
@@ -503,8 +530,11 @@ export function ProductCard(props: ProductCardProps) {
               <WeightBinSelector
                 bins={localBins}
                 unit={product.unit}
+                sizeUnit={product.variantUnit}
+                isEachUnit={isEachUnit}
                 primaryColor={primaryColor}
                 productId={product.id}
+                productIds={product.variantProductIds}
                 cart={cart}
                 onSelect={({ weightBtn, unitPriceCents }) => {
                   if (onAddBinToCart) {
@@ -566,7 +596,69 @@ export function ProductCard(props: ProductCardProps) {
           {/* ========================= */}
           {isFixedPrice && isEachUnit && (
             <>
-              {isSoldOut ? (
+              {hasBins ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowBinModal(true)}
+                    className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Choose Package Size
+                  </button>
+
+                  {showBinModal && (
+                    <div 
+                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                      onClick={() => setShowBinModal(false)}
+                    >
+                      <div 
+                        className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-slate-900">
+                            Choose package size
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => setShowBinModal(false)}
+                            className="text-slate-500 hover:text-slate-700 text-sm"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <WeightBinSelector
+                          bins={localBins}
+                          unit={product.unit}
+                          sizeUnit={product.variantUnit}
+                          isEachUnit={isEachUnit}
+                          primaryColor={primaryColor}
+                          productId={product.id}
+                          productIds={product.variantProductIds}
+                          cart={cart}
+                          onSelect={({ weightBtn, unitPriceCents }) => {
+                            if (onAddBinToCart) {
+                              onAddBinToCart(weightBtn, unitPriceCents);
+                            } else {
+                              onAddToCart({ quantity: 1 });
+                            }
+
+                            // Decrement the local bin quantity to prevent overselling
+                            setLocalBins(prev => 
+                              prev.map(bin => 
+                                bin.weightBtn === weightBtn 
+                                  ? { ...bin, qty: Math.max(0, bin.qty - 1) }
+                                  : bin
+                              )
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : isSoldOut ? (
                 canPreOrder ? (
                   <div className="space-y-2">
                     <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">

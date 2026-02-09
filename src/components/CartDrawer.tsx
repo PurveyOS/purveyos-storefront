@@ -77,8 +77,9 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
 
   // Pre-packaged bin item
   if (item.binWeight && item.unitPriceCents) {
-    const unitPrice = item.unitPriceCents / 100; // dollars per lb
-    return item.binWeight * unitPrice * item.quantity;
+    const unitPrice = item.unitPriceCents / 100;
+    const isEach = (item.product?.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any)?.variantSize || (item.product as any)?.variantUnit);
+    return (isEach ? unitPrice : (item.binWeight * unitPrice)) * item.quantity;
   }
 
   // Pack-for-you estimated weight
@@ -108,7 +109,9 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
                             Qty: {item.quantity}
                             {item.weight && ` (${item.weight} lbs)`}
                             {item.lineType === 'pack_for_you' && item.requestedWeightLbs && ` (${item.requestedWeightLbs} lbs requested)`}
-                            {item.binWeight && ` (${item.binWeight} lb pkg)`}
+                            {item.binWeight && ((item.product?.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any)?.variantSize || (item.product as any)?.variantUnit)
+                              ? ` (${item.binWeight} ${(item.product as any)?.variantUnit || 'ea'})`
+                              : ` (${item.binWeight} lb pkg)`)}
                           </p>
                         </div>
                         <p className="text-sm font-semibold text-slate-900">

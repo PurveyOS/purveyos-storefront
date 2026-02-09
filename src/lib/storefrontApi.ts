@@ -19,6 +19,8 @@ export interface StorefrontProduct {
   name: string
   pricePer: number
   unit: string
+  variant_size?: number
+  variant_unit?: string
   image?: string
   category?: string
   qty?: number

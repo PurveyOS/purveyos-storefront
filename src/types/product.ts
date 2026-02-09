@@ -4,6 +4,8 @@ export interface Product {
   description: string;
   pricePer: number;
   unit: string; // e.g., "lb", "oz", "piece", "dozen"
+  variantSize?: number; // e.g., 12 for 12 oz (fixed-price variants)
+  variantUnit?: string; // e.g., "oz", "ml", "fl oz"
   pricingMode?: 'fixed' | 'weight'; // fixed = sell by unit count, weight = sell by weight
   // Storefront ordering modes
   order_mode?: 'exact_package' | 'pack_for_you' | null; // nullable override
@@ -16,6 +18,7 @@ export interface Product {
     weightBtn: number;
     unitPriceCents: number;
     qty: number;
+    reservedQty?: number;
   }>;
   imageUrl: string;
   categoryId: string;

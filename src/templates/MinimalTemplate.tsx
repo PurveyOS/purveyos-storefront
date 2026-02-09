@@ -172,6 +172,11 @@ export function MinimalTemplate({
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 py-3 flex items-center justify-between">
                       <div className="text-left text-white">
                         <h3 className="font-semibold text-sm sm:text-base line-clamp-1">{product.name}</h3>
+                        {product.variantSize && (
+                          <div className="text-xs text-white/80">
+                            {product.variantSize}{product.variantUnit ? ` ${product.variantUnit}` : ''}
+                          </div>
+                        )}
                         <div className="flex items-center gap-2 text-xs sm:text-sm text-white/90">
                           <span className="font-medium">${product.pricePer.toFixed(2)}</span>
                           {product.unit && <span>/ {product.unit}</span>}

@@ -17,6 +17,8 @@ interface CartItem {
 interface WeightBinSelectorProps {
   bins: WeightBin[];
   unit: string;
+  sizeUnit?: string;
+  isEachUnit?: boolean;
   onSelect: (bin: { weightBtn: number; unitPriceCents: number }) => void;
   primaryColor?: string;
   productId?: string; // For cart tracking
@@ -26,6 +28,8 @@ interface WeightBinSelectorProps {
 export function WeightBinSelector({ 
   bins, 
   unit, 
+  sizeUnit,
+  isEachUnit,
   onSelect,
   primaryColor = '#0f6fff',
   productId,
@@ -42,10 +46,11 @@ export function WeightBinSelector({
   // Calculate total weight already in cart for this product
   const totalWeightInCart = React.useMemo(() => {
     if (!cart || !productId) return 0;
-    
+    const isEach = isEachUnit ?? unit.toLowerCase() === 'ea';
     return cart.items
       .filter(item => item.productId === productId)
       .reduce((total, item) => {
+        if (isEach) return total + (item.quantity || 0);
         const weight = item.binWeight || item.weight || 0;
         return total + (weight * item.quantity);
       }, 0);
@@ -67,7 +72,7 @@ export function WeightBinSelector({
       {totalWeightInCart > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-2 text-center">
           <p className="text-xs text-green-700 font-medium">
-            📦 In cart: <span className="font-bold">{totalWeightInCart.toFixed(1)} {unit}</span>
+            📦 In cart: <span className="font-bold">{unit.toLowerCase() === 'ea' ? totalWeightInCart : totalWeightInCart.toFixed(1)} {unit.toLowerCase() === 'ea' ? 'ea' : unit}</span>
           </p>
         </div>
       )}
@@ -77,8 +82,10 @@ export function WeightBinSelector({
       <div className="grid grid-cols-2 gap-2">
   {sortedBins.map((bin) => {
           const pricePerUnit = bin.unitPriceCents / 100;
-          const totalPrice = (bin.weightBtn * pricePerUnit).toFixed(2);
+          const isEach = isEachUnit ?? unit.toLowerCase() === 'ea';
+          const totalPrice = (isEach ? pricePerUnit : (bin.weightBtn * pricePerUnit)).toFixed(2);
           const availableQty = (bin.qty ?? 0) - (bin.reservedQty ?? 0);
+          const displayUnit = isEach ? (sizeUnit || unit) : unit;
           
           return (
             <button
@@ -107,7 +114,7 @@ export function WeightBinSelector({
               }}
             >
               <span className="text-lg font-bold" style={{ color: primaryColor }}>
-                {bin.weightBtn} {unit}
+                {bin.weightBtn} {displayUnit}
               </span>
               <span className="text-sm text-slate-600">
                 ${totalPrice}
