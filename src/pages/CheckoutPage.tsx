@@ -264,7 +264,7 @@ export function CheckoutPage() {
       (packageBins || []).map((b: any) => [buildBinKey(b.product_id, b.weight_btn), b])
     );
 
-    const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number }> = [];
+    const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }> = [];
 
     cart.items.forEach((item: any) => {
       // Pre-orders should bypass inventory checks since they can be ordered even if sold out
@@ -292,12 +292,12 @@ export function CheckoutPage() {
         : (unitWeight ? unitWeight * (item.quantity ?? 1) : (item.quantity ?? 1));
 
       if (hasBinSelection && !bin) {
-        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight });
+        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight, requestedWeightLbs: item.requestedWeightLbs, lineType: item.lineType });
         return;
       }
 
       if (required > available) {
-        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight });
+        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight, requestedWeightLbs: item.requestedWeightLbs, lineType: item.lineType });
       }
     });
 
@@ -309,6 +309,7 @@ export function CheckoutPage() {
         .map((item) => {
           const name = productName(item.productId);
           if (item.binWeight) return `${name} (${item.binWeight} lb package)`;
+          if (item.lineType === 'pack_for_you' && item.requestedWeightLbs) return `${name} (${item.requestedWeightLbs} lb requested)`;
           if (item.weight) return `${name} (${item.weight} lb)`;
           return name;
         })
@@ -1511,6 +1512,8 @@ export function CheckoutPage() {
                 <div className="space-y-4">
                   {cartItems.map((item) => {
                     const weight = (item as any).weight;
+                    const requestedWeightLbs = (item as any).requestedWeightLbs;
+                    const lineType = (item as any).lineType;
                     const binWeight = (item as any).binWeight;
                     const unitPriceCents = (item as any).unitPriceCents;
                     const metaPrice = item.metadata?.subscriptionTotalPrice;
@@ -1522,10 +1525,14 @@ export function CheckoutPage() {
                       // Pre-packaged bin
                       displayText = `${binWeight} ${item.product.unit} package @ $${(unitPriceCents / 100).toFixed(2)}/${item.product.unit}`;
                       itemTotal = binWeight * (unitPriceCents / 100) * item.quantity;
+                    } else if (lineType === 'pack_for_you' && requestedWeightLbs && requestedWeightLbs > 0) {
+                      // Pack-for-you estimated weight
+                      displayText = `${requestedWeightLbs} ${item.product.unit} requested @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;
+                      itemTotal = item.product.pricePer * requestedWeightLbs * item.quantity;
                     } else if (weight && weight > 0) {
                       // Weight-based
                       displayText = `${weight} ${item.product.unit} @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;
-                      itemTotal = item.product.pricePer * weight;
+                      itemTotal = item.product.pricePer * weight * item.quantity;
                     } else if (metaPrice && metaPrice > 0) {
                       displayText = `${item.product.name} (${(item.product as any).subscriptionInterval || 'subscription'})`;
                       itemTotal = metaPrice * item.quantity;
@@ -1536,7 +1543,7 @@ export function CheckoutPage() {
                     }
                     
                     return (
-                      <div key={`${item.productId}-${binWeight ?? weight ?? 'std'}`} className="flex justify-between items-center py-2 border-b">
+                      <div key={`${item.productId}-${binWeight ?? weight ?? requestedWeightLbs ?? lineType ?? 'std'}`} className="flex justify-between items-center py-2 border-b">
                         <div className="flex-1">
                           <h4 className="font-medium text-gray-800">{item.product.name}</h4>
                           <p className="text-sm text-gray-600">

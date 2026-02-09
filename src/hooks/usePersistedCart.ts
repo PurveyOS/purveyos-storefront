@@ -91,7 +91,9 @@ export function usePersistedCart() {
           items: prev.items.map(item =>
             item.productId === productId && 
             item.binWeight === options?.binWeight &&
-            item.weight === options?.weight
+            item.weight === options?.weight &&
+            item.requestedWeightLbs === options?.requestedWeightLbs &&
+            item.lineType === options?.lineType
               ? { ...item, quantity: item.quantity + quantity }
               : item
           ),
@@ -119,9 +121,15 @@ export function usePersistedCart() {
     });
   };
 
-  const removeFromCart = (productId: string, options?: { binWeight?: number }) => {
+  const removeFromCart = (productId: string, options?: { binWeight?: number; weight?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }) => {
     setCart(prev => {
-      const existingItem = prev.items.find(item => item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight));
+      const existingItem = prev.items.find(item =>
+        item.productId === productId &&
+        (options?.binWeight === undefined || item.binWeight === options.binWeight) &&
+        (options?.weight === undefined || item.weight === options.weight) &&
+        (options?.requestedWeightLbs === undefined || item.requestedWeightLbs === options.requestedWeightLbs) &&
+        (options?.lineType === undefined || item.lineType === options.lineType)
+      );
       
       if (!existingItem) {
         return prev;
@@ -130,7 +138,13 @@ export function usePersistedCart() {
       if (existingItem.quantity <= 1) {
         const updated = {
           ...prev,
-          items: prev.items.filter(item => !(item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight))),
+          items: prev.items.filter(item => !(
+            item.productId === productId &&
+            (options?.binWeight === undefined || item.binWeight === options.binWeight) &&
+            (options?.weight === undefined || item.weight === options.weight) &&
+            (options?.requestedWeightLbs === undefined || item.requestedWeightLbs === options.requestedWeightLbs) &&
+            (options?.lineType === undefined || item.lineType === options.lineType)
+          )),
         };
         try { trackRemoveFromCart({ productId, quantity: 1, binWeight: options?.binWeight }); } catch {}
         return updated;
@@ -139,7 +153,11 @@ export function usePersistedCart() {
       const next = {
         ...prev,
         items: prev.items.map(item =>
-          item.productId === productId && (options?.binWeight === undefined || item.binWeight === options.binWeight)
+          item.productId === productId &&
+          (options?.binWeight === undefined || item.binWeight === options.binWeight) &&
+          (options?.weight === undefined || item.weight === options.weight) &&
+          (options?.requestedWeightLbs === undefined || item.requestedWeightLbs === options.requestedWeightLbs) &&
+          (options?.lineType === undefined || item.lineType === options.lineType)
             ? { ...item, quantity: item.quantity - 1 }
             : item
         ),
@@ -154,7 +172,7 @@ export function usePersistedCart() {
   };
 
   // Bulk remove specific cart entries, matching on productId and optional binWeight/weight
-  const removeItems = (itemsToRemove: Array<{ productId: string; binWeight?: number; weight?: number }>) => {
+  const removeItems = (itemsToRemove: Array<{ productId: string; binWeight?: number; weight?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }>) => {
     if (!Array.isArray(itemsToRemove) || itemsToRemove.length === 0) return;
 
     setCart(prev => {
@@ -163,6 +181,8 @@ export function usePersistedCart() {
           if (item.productId !== toRemove.productId) return false;
           if (toRemove.binWeight !== undefined && item.binWeight !== toRemove.binWeight) return false;
           if (toRemove.weight !== undefined && item.weight !== toRemove.weight) return false;
+          if (toRemove.requestedWeightLbs !== undefined && item.requestedWeightLbs !== toRemove.requestedWeightLbs) return false;
+          if (toRemove.lineType !== undefined && item.lineType !== toRemove.lineType) return false;
           return true;
         });
       });

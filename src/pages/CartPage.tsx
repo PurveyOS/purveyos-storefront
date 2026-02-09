@@ -173,7 +173,7 @@ export function CartPage() {
                   const itemTotal = lineUnitPrice * quantity;
                   
                   return (
-                    <div key={`${product.id}-${binWeight ?? weight ?? 'standard'}`} className="flex items-start p-4 border-b border-gray-200 last:border-b-0 gap-3">
+                    <div key={`${product.id}-${binWeight ?? weight ?? requestedWeightLbs ?? lineType ?? 'standard'}`} className="flex items-start p-4 border-b border-gray-200 last:border-b-0 gap-3">
                       <div className="relative flex-shrink-0">
                         <img
                           src={product.imageUrl}
@@ -209,7 +209,7 @@ export function CartPage() {
                           <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center gap-1">
                               <button
-                                onClick={() => removeFromCart(product.id, { binWeight })}
+                                onClick={() => removeFromCart(product.id, { binWeight, weight, requestedWeightLbs, lineType: lineType as any })}
                                 className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
