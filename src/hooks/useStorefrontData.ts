@@ -195,11 +195,15 @@ export function useStorefrontData(tenantId: string): {
           .from('storefront_settings')
           .select('*')
           .eq('tenant_id', tenantId)
-          .single();
+          .maybeSingle();
 
         if (settingsError) {
-          console.error('Settings error:', settingsError);
-          throw settingsError;
+          if ((settingsError as any).code === 'PGRST116') {
+            console.warn('No storefront_settings row found; using defaults.');
+          } else {
+            console.error('Settings error:', settingsError);
+            throw settingsError;
+          }
         }
 
         // ============================================================================
