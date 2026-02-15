@@ -224,7 +224,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         const { data: binsData, error: binsError } = await supabase
           .from('package_bins')
-          .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty')
+          .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs')
           .eq('tenant_id', tenantId);
 
         if (binsError) {
@@ -302,7 +302,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         // Group bins by product_id (for inventory/pricing)
         // ============================================================================
-        const binsByProduct = new Map<string, Array<{ weightBtn: number; unitPriceCents: number; qty: number; reservedQty?: number }>>();
+        const binsByProduct = new Map<string, Array<{ weightBtn: number; unitPriceCents: number; qty: number; reservedQty?: number; binKind?: string | null; qtyLbs?: number | null; reservedLbs?: number }>>();
         if (binsData) {
           binsData.forEach((bin: any) => {
             if (!binsByProduct.has(bin.product_id)) {
@@ -313,6 +313,9 @@ export function useStorefrontData(tenantId: string): {
               unitPriceCents: bin.unit_price_cents,
               qty: bin.qty,
               reservedQty: bin.reserved_qty || 0,
+              binKind: bin.bin_kind || null,
+              qtyLbs: bin.qty_lbs || null,
+              reservedLbs: bin.reserved_lbs || 0,
             });
           });
         }
@@ -349,15 +352,35 @@ export function useStorefrontData(tenantId: string): {
           const hasSubscription = Boolean((p as any).isSubscription || subscription);
 
           // Calculate total inventory from package_bins (fallback to product.qty when no bins)
+          // PHASE 7: Branch inventory aggregation by bin_kind
+          // - Legacy bins (bin_kind=NULL): qty - reserved_qty (discrete packs)
+          // - Bulk bins (bin_kind='bulk_weight'): qty_lbs - reserved_lbs (continuous lbs)
           const totalInventory = allBins
-            ? allBins.reduce((sum, bin) => sum + ((bin.qty - (bin.reservedQty || 0)) || 0), 0)
+            ? allBins.reduce((sum, bin) => {
+                if (bin.binKind === 'bulk_weight') {
+                  // Bulk bin: use lbs directly
+                  return sum + Math.max(0, (bin.qtyLbs || 0) - (bin.reservedLbs || 0));
+                } else {
+                  // Legacy bin: use qty (packs)
+                  return sum + Math.max(0, (bin.qty - (bin.reservedQty || 0)) || 0);
+                }
+              }, 0)
             : 0;
           const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
           const effectiveInventory = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
 
           // Only include bins with available inventory
+          // PHASE 7: Filter by bin_kind
           const availableBins = allBins
-            ? allBins.filter(bin => (bin.qty - (bin.reservedQty || 0)) > 0)
+            ? allBins.filter(bin => {
+                if (bin.binKind === 'bulk_weight') {
+                  // Bulk bin: check lbs available
+                  return (bin.qtyLbs || 0) - (bin.reservedLbs || 0) > 0;
+                } else {
+                  // Legacy bin: check qty available
+                  return (bin.qty - (bin.reservedQty || 0)) > 0;
+                }
+              })
             : undefined;
 
           return {

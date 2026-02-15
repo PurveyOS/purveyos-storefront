@@ -19,6 +19,8 @@ interface OrderLine {
   lineTotalCents: number
   binWeight?: number | null
   weightLbs?: number | null
+  requestedWeightLbs?: number | null
+  lineType?: 'exact_package' | 'pack_for_you'
   isPreOrder?: boolean
   pricePer?: string
   weightBinId?: string
@@ -61,7 +63,7 @@ interface OrderRequest {
 
 function buildPackageKey(productId: string, unit: string | null | undefined, line: OrderLine) {
   const isLb = (unit || '').toLowerCase() === 'lb'
-  const rawWeight = isLb ? (line.binWeight ?? line.weightLbs ?? 0) : 0
+  const rawWeight = isLb ? (line.binWeight ?? line.weightLbs ?? line.requestedWeightLbs ?? 0) : 0
   const weightBtn = Math.round(rawWeight * 100) / 100
   const weightStr = weightBtn.toString().replace(/\.0+$/, '').replace(/\.([1-9]*)0+$/, '.$1') || '0'
   return `${productId}|${weightStr}`
@@ -135,7 +137,7 @@ serve(async (req: Request) => {
     // Derive weight-based pre-order flags (used to mark orders as estimates)
     const isWeightEstimate = orderRequest.isWeightEstimate ?? orderRequest.lines.some((line) => {
       const lineIsPreOrder = line.isPreOrder ?? false
-      const hasWeight = (line.weightLbs ?? 0) > 0 || (line.binWeight ?? 0) > 0
+      const hasWeight = (line.weightLbs ?? 0) > 0 || (line.binWeight ?? 0) > 0 || (line.requestedWeightLbs ?? 0) > 0
       const isWeightPriced = line.pricePer === 'lb'
       return lineIsPreOrder && (hasWeight || isWeightPriced)
     })
@@ -161,7 +163,7 @@ serve(async (req: Request) => {
 
     const { data: bins, error: binsError } = await supabaseAdmin
       .from('package_bins')
-      .select('product_id, package_key, qty, reserved_qty')
+      .select('product_id, package_key, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs')
       .eq('tenant_id', orderRequest.tenantId)
       .in('product_id', productIds)
 
@@ -174,10 +176,24 @@ serve(async (req: Request) => {
     }
 
     type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null }
-    type PackageBinRow = { package_key: string; qty?: number | null; reserved_qty?: number | null }
+    type PackageBinRow = {
+      package_key: string;
+      qty?: number | null;
+      reserved_qty?: number | null;
+      bin_kind?: string | null;
+      qty_lbs?: number | null;
+      reserved_lbs?: number | null;
+      product_id?: string | null;
+    }
 
     const productsById = new Map<string, ProductRow>((products ?? []).map((p: ProductRow) => [p.id, p]))
     const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
+    const bulkBinsByProduct = new Map<string, PackageBinRow>()
+    ;(bins ?? []).forEach((b: PackageBinRow) => {
+      if (b.bin_kind === 'bulk_weight' && b.product_id) {
+        bulkBinsByProduct.set(b.product_id, b)
+      }
+    })
     const depositProducts = (products ?? []).filter((p: ProductRow) => p.is_deposit_product === true)
     const hasDepositProduct = depositProducts.length > 0
     const depositAmount = hasDepositProduct ? (orderRequest.totalCents / 100) : null
@@ -194,6 +210,19 @@ serve(async (req: Request) => {
       }
 
       const productRow = productsById.get(line.productId)
+      const isPackForYou = line.lineType === 'pack_for_you'
+      const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+      const bulkBin = bulkBinsByProduct.get(line.productId)
+
+      if (isPackForYou && bulkBin) {
+        const availableBulk = Math.max(0, (bulkBin.qty_lbs ?? 0) - (bulkBin.reserved_lbs ?? 0))
+        const requiredBulk = requestedWeight * (line.qty ?? 1)
+        if (requiredBulk > availableBulk) {
+          shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available: availableBulk })
+        }
+        continue
+      }
+
       const packageKey = buildPackageKey(line.productId, productRow?.unit, line)
       const bin = binsByKey.get(packageKey)
       const reserved = bin?.reserved_qty ?? 0
@@ -332,7 +361,7 @@ serve(async (req: Request) => {
       }
     }
 
-    // 2. Create order lines and decrement inventory
+    // 2. Create order lines and reserve inventory only (never decrement here)
     for (const line of orderRequest.lines) {
       // Convert unitPriceCents to dollars for price_per field
       const pricePerDollars = line.unitPriceCents / 100
@@ -350,20 +379,25 @@ serve(async (req: Request) => {
 
       // Build package_key for bin-based items (LB products)
       const product = productsById.get(line.productId)
-      const packageKey = buildPackageKey(line.productId, product?.unit, line)
+      const bulkBin = bulkBinsByProduct.get(line.productId)
+      const isPackForYou = line.lineType === 'pack_for_you'
+      const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+      const isBulkReservation = Boolean(isPackForYou && bulkBin)
+      const packageKey = isBulkReservation
+        ? String(bulkBin?.package_key)
+        : buildPackageKey(line.productId, product?.unit, line)
 
-      // Cash-like payments should reserve inventory instead of decrementing immediately
+      // Storefront always reserves (never decrements) for non-preorder lines
       const shouldReserve = !line.isPreOrder
-        && ['cash', 'venmo', 'zelle', 'cashapp'].includes(orderRequest.paymentMethod)
-        && !orderRequest.stripePaymentIntentId
 
       // Selected bins payload (used for reservation and order_lines.selected_bins)
       const selectedBinsPayload = line.isPreOrder
         ? null
         : [{
             package_key: packageKey,
-            qty: line.qty,
-            weight_btn: line.binWeight ?? line.weightLbs ?? 0,
+            qty: isBulkReservation ? requestedWeight : line.qty,
+            weight_btn: isBulkReservation ? requestedWeight : (line.binWeight ?? line.weightLbs ?? requestedWeight ?? 0),
+            ...(isBulkReservation ? { bin_kind: 'bulk_weight' } : {})
           }]
 
       // Reserve bins for cash-like payments
@@ -400,7 +434,7 @@ serve(async (req: Request) => {
           price_per: pricePerDollars,
           line_total_cents: line.lineTotalCents,
           bin_weight: line.binWeight ?? null,
-          weight_lbs: line.weightLbs ?? null,
+          weight_lbs: line.requestedWeightLbs ?? line.weightLbs ?? null,
           is_pre_order: line.isPreOrder ?? false,
           fulfillment_bucket: line.isPreOrder ? 'LATER' : 'NOW',
           selected_bins: selectedBinsPayload,
@@ -414,148 +448,10 @@ serve(async (req: Request) => {
         throw lineError
       }
 
-      // Skip inventory reservation for pre-order items; they should fulfill later
       if (line.isPreOrder) {
-        console.log(`Skipping inventory decrement for pre-order line ${line.productName}`)
-        continue
-      }
-
-      // If we already reserved (cash-like payments), do not decrement inventory now
-      if (shouldReserve) {
-        console.log(`Reserved (no decrement) for cash-like payment on ${line.productName}`)
-        continue
-      }
-
-      // Fetch product to determine unit type (lb vs ea)
-      const { data: fetchedProduct, error: productError } = await supabaseAdmin
-        .from('products')
-        .select('id, unit, qty')
-        .eq('id', line.productId)
-        .single()
-
-      if (productError) {
-        console.error('Error fetching product:', productError)
-        throw productError
-      }
-
-      // Calculate quantity to deduct based on product unit
-      let qtyToDeduct = 0
-      if (fetchedProduct.unit === 'lb') {
-        // Weight-based: use binWeight for pre-packaged bins, weightLbs for custom weight
-        const weight = line.binWeight ?? line.weightLbs ?? 0
-        if (weight > 0) {
-          qtyToDeduct = weight * line.qty
-        }
-      } else {
-        // Each-based: use quantity
-        qtyToDeduct = line.qty
-      }
-
-      if (qtyToDeduct > 0) {
-        // 1. Update legacy product.qty for compatibility
-        const newProductQty = Math.max(0, (fetchedProduct.qty || 0) - qtyToDeduct)
-        const { error: updateError } = await supabaseAdmin
-          .from('products')
-          .update({
-            qty: newProductQty,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', line.productId)
-
-        if (updateError) {
-          console.error('Error updating product.qty:', updateError)
-          throw updateError
-        }
-
-        // 2. Decrement package_bins (authoritative inventory)
-        if (fetchedProduct.unit === 'lb') {
-          // Weight-based: decrement specific weight bin
-          // Use binWeight for pre-packaged bins, weightLbs for custom weight orders
-          const weight = line.binWeight ?? line.weightLbs ?? 0
-          // Round to 2 decimals to match package_bins weight_btn precision
-          const weightBtn = Math.round(weight * 100) / 100
-          // Remove trailing zeros: 1.30 -> 1.3, 1.00 -> 1, 1.56 -> 1.56
-          const weightStr = weightBtn.toString().replace(/\.?0+$/, '')
-          const packageKey = `${fetchedProduct.id}|${weightStr}`
-
-          console.log(`Looking up package_bin: ${packageKey}, binWeight=${line.binWeight}, weightLbs=${line.weightLbs}, qty=${line.qty}, raw weight=${weight}`)
-
-          const { data: bin, error: binQueryError } = await supabaseAdmin
-            .from('package_bins')
-            .select('qty')
-            .eq('package_key', packageKey)
-            .maybeSingle()
-
-          if (binQueryError) {
-            console.error(`Error querying package_bins for ${packageKey}:`, binQueryError)
-          } else if (bin && bin.qty > 0) {
-            const newBinQty = Math.max(0, bin.qty - line.qty)
-            const { error: binUpdateError } = await supabaseAdmin
-              .from('package_bins')
-              .update({
-                qty: newBinQty,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('package_key', packageKey)
-            
-            if (binUpdateError) {
-              console.error('Error updating package_bins:', binUpdateError)
-            } else {
-              console.log(`✓ Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
-            }
-          } else {
-            console.log(`⚠ Skipping package_bins update for ${packageKey}: bin=${JSON.stringify(bin)}`)
-          }
-        } else {
-          // Each-based: decrement EA bin (weightBtn = 0, not 0.00)
-          const packageKey = `${fetchedProduct.id}|0`
-
-          console.log(`Looking up package_bin (EA): ${packageKey}, qty=${line.qty}`)
-
-          const { data: bin, error: binQueryError } = await supabaseAdmin
-            .from('package_bins')
-            .select('qty')
-            .eq('package_key', packageKey)
-            .maybeSingle()
-
-          if (binQueryError) {
-            console.error(`Error querying package_bins for ${packageKey}:`, binQueryError)
-          } else if (bin && bin.qty > 0) {
-            const newBinQty = Math.max(0, bin.qty - line.qty)
-            const { error: binUpdateError } = await supabaseAdmin
-              .from('package_bins')
-              .update({
-                qty: newBinQty,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('package_key', packageKey)
-            
-            if (binUpdateError) {
-              console.error('Error updating package_bins:', binUpdateError)
-            } else {
-              console.log(`✓ Updated package_bins ${packageKey}: ${bin.qty} -> ${newBinQty}`)
-            }
-          } else {
-            console.log(`⚠ Skipping package_bins update for ${packageKey}: bin=${JSON.stringify(bin)}`)
-          }
-        }
-
-        // 3. Create inventory_txns audit record
-        const txnId = `order-${orderId}-${line.productId}-${Date.now()}`
-        await supabaseAdmin
-          .from('inventory_txns')
-          .insert({
-            id: txnId,
-            product_id: line.productId,
-            type: 'OUT',
-            qty_lbs: qtyToDeduct,
-            reason: 'storefront_order',
-            meta_json: { orderId, customerEmail: orderRequest.customerEmail },
-            tenant_id: orderRequest.tenantId,
-            created_at: new Date().toISOString(),
-          })
-
-        console.log(`Decremented inventory for ${line.productName}: product.qty ${fetchedProduct.qty} -> ${newProductQty}, qtyLbs: ${qtyToDeduct}`)
+        console.log(`Skipping inventory reservation for pre-order line ${line.productName}`)
+      } else if (shouldReserve) {
+        console.log(`Reserved (no decrement) for storefront line ${line.productName}`)
       }
     }
 

@@ -192,6 +192,9 @@ export function ProductCard(props: ProductCardProps) {
   const isEachUnit = unit === "ea" || Boolean((product as any).variantSize || (product as any).variantUnit); // fixed-price (incl. variants)
   const isPoundUnit = unit === "lb"; // weight-based
 
+  // Detect if product has a bulk bin (bin_kind='bulk_weight')
+  const hasBulkBin = !!(product.weightBins && product.weightBins.some(b => b.binKind === 'bulk_weight'));
+
   // Treat bins as size options for lb items and EA variants (non-zero bin weights)
   const hasBins =
     (isPoundUnit && !!(product.weightBins && product.weightBins.length > 0)) ||
@@ -203,7 +206,8 @@ export function ProductCard(props: ProductCardProps) {
 
   const isWeightBased = pricingMode === "weight";
   const isFixedPrice = pricingMode === "fixed";
-  const effectiveOrderMode = tenantDefaultOrderMode ?? 'exact_package';
+  // PHASE 6: Override order mode for bulk bins - always use pack_for_you if bulk bin exists
+  const effectiveOrderMode = hasBulkBin ? 'pack_for_you' : (tenantDefaultOrderMode ?? 'exact_package');
 
   const isSoldOut =
     product.isSoldOut ||
@@ -494,8 +498,8 @@ export function ProductCard(props: ProductCardProps) {
           Out Of Stock
         </span>
       )
-    ) : hasBins ? (
-      // IN STOCK + BINS → "Choose Package Size" button + modal
+    ) : (hasBins && !hasBulkBin) ? (
+      // IN STOCK + LEGACY BINS (not bulk) → "Choose Package Size" button + modal
       <div className="space-y-2">
         <button
           type="button"
@@ -596,7 +600,7 @@ export function ProductCard(props: ProductCardProps) {
           {/* ========================= */}
           {isFixedPrice && isEachUnit && (
             <>
-              {hasBins ? (
+              {(hasBins && !hasBulkBin) ? (
                 <div className="space-y-2">
                   <button
                     type="button"

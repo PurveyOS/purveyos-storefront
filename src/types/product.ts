@@ -19,6 +19,9 @@ export interface Product {
     unitPriceCents: number;
     qty: number;
     reservedQty?: number;
+    binKind?: string | null; // null = legacy package_group, 'bulk_weight' = bulk
+    qtyLbs?: number | null; // For bulk bins only: weight on hand (lbs)
+    reservedLbs?: number; // For bulk bins only: weight reserved (lbs)
   }>;
   imageUrl: string;
   categoryId: string;

@@ -249,7 +249,7 @@ export function CheckoutPage() {
 
     const [{ data: latestProducts, error: prodError }, { data: packageBins, error: binError }] = await Promise.all([
       supabase.from('products').select('id, unit, qty, is_deposit_product').eq('tenant_id', tenant.id).in('id', productIds),
-      supabase.from('package_bins').select('product_id, weight_btn, qty, reserved_qty').eq('tenant_id', tenant.id).in('product_id', productIds),
+      supabase.from('package_bins').select('product_id, weight_btn, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs').eq('tenant_id', tenant.id).in('product_id', productIds),
     ]);
 
     if (prodError || binError) {
@@ -262,6 +262,11 @@ export function CheckoutPage() {
     const storefrontById = new Map((storefrontData?.products || []).map((p: any) => [p.id, p]));
     const binsByKey = new Map(
       (packageBins || []).map((b: any) => [buildBinKey(b.product_id, b.weight_btn), b])
+    );
+    const bulkBinsByProduct = new Map(
+      (packageBins || [])
+        .filter((b: any) => b.bin_kind === 'bulk_weight')
+        .map((b: any) => [b.product_id, b])
     );
 
     const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }> = [];
@@ -279,6 +284,18 @@ export function CheckoutPage() {
       const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
       const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
       const bin = binKey ? binsByKey.get(binKey) : undefined;
+      const bulkBin = bulkBinsByProduct.get(item.productId);
+      const isPackForYou = item.lineType === 'pack_for_you';
+      const requestedWeight = item.requestedWeightLbs ?? item.weight;
+      if (isPackForYou && bulkBin && requestedWeight) {
+        const availableBulk = Math.max(0, (bulkBin.qty_lbs ?? 0) - (bulkBin.reserved_lbs ?? 0));
+        const requiredBulk = requestedWeight * (item.quantity ?? 1);
+        if (requiredBulk > availableBulk) {
+          outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight, requestedWeightLbs: item.requestedWeightLbs, lineType: item.lineType });
+        }
+        return;
+      }
+
       const reserved = bin?.reserved_qty ?? 0;
       const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null;
       const availableFromProduct = typeof product?.qty === 'number'
