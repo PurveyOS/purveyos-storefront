@@ -193,7 +193,15 @@ export function ProductCard(props: ProductCardProps) {
   const isPoundUnit = unit === "lb"; // weight-based
 
   // Detect if product has a bulk bin (bin_kind='bulk_weight')
-  const hasBulkBin = !!(product.weightBins && product.weightBins.some(b => b.binKind === 'bulk_weight'));
+  const bulkBin = (product.weightBins || []).find((b) => b.binKind === 'bulk_weight');
+  const hasBulkBin = Boolean(bulkBin);
+  const bulkPackageCount = bulkBin ? (bulkBin.qty ?? 0) : null;
+  const bulkAvgWeight = bulkBin
+    ? ((bulkBin.qty ?? 0) > 0
+      ? Math.max(0, (bulkBin.qtyLbs ?? 0) - (bulkBin.reservedLbs ?? 0)) / bulkBin.qty
+      : 0)
+    : null;
+  const legacyBins = (product.weightBins || []).filter((b) => b.binKind !== 'bulk_weight');
 
   // Treat bins as size options for lb items and EA variants (non-zero bin weights)
   const hasBins =
@@ -400,23 +408,27 @@ export function ProductCard(props: ProductCardProps) {
           <span className="text-sm text-red-600 font-medium">Out Of Stock</span>
         ) : (
           <>
-            {hasBins && (
+            {bulkPackageCount !== null && bulkAvgWeight !== null && (
+              <p className="text-xs text-slate-500">
+                Bulk packages: {bulkPackageCount} • Avg package: {bulkAvgWeight.toFixed(2)} lb
+              </p>
+            )}
+            {legacyBins.length > 0 && (
               <p className="text-xs text-slate-500">
                 Avg package: {(() => {
-                  const bins = product.weightBins || [];
-                  const totalPackages = bins.reduce(
+                  const totalPackages = legacyBins.reduce(
                     (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
                     0
                   );
                   if (totalPackages <= 0) return '0.00';
-                  const totalWeight = bins.reduce((sum, b) => {
+                  const totalWeight = legacyBins.reduce((sum, b) => {
                     const available = Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0));
-                    return sum + (b.weightBtn * available);
+                    const weight = b.weightBtn ?? 0;
+                    return sum + (weight * available);
                   }, 0);
                   return (totalWeight / totalPackages).toFixed(2);
                 })()} lb • {(() => {
-                  const bins = product.weightBins || [];
-                  return bins.reduce(
+                  return legacyBins.reduce(
                     (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
                     0
                   );

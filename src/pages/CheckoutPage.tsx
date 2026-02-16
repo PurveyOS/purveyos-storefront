@@ -144,6 +144,7 @@ export function CheckoutPage() {
   const [orderId, setOrderId] = useState<string>();
   const [needsStripeConfirmation, setNeedsStripeConfirmation] = useState(false);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
+  const [dismissedCheckoutError, setDismissedCheckoutError] = useState(false);
   
   // Discount state
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -863,6 +864,12 @@ export function CheckoutPage() {
     }
   }, [formData.paymentMethod, storefrontPaymentPolicy]);
 
+  useEffect(() => {
+    if (orderError || checkoutError) {
+      setDismissedCheckoutError(false);
+    }
+  }, [orderError, checkoutError]);
+
   if (dataLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -877,38 +884,7 @@ export function CheckoutPage() {
     );
   }
 
-  if (orderError) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8 text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Order Failed</h1>
-          <p className="text-gray-600 mb-4">
-            {orderError}
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={() => setOrderError(null)}
-              className="w-full text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg"
-              style={{ backgroundColor: primaryColor }}
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => navigate('/')}
-              className="w-full text-gray-600 py-3 px-4 rounded-lg font-medium border border-gray-300 transition-all duration-200 hover:bg-gray-50"
-            >
-              Return to Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const checkoutFailureMessage = orderError || (dismissedCheckoutError ? null : checkoutError);
 
   if (needsStripeConfirmation && stripeClientSecret && orderId) {
     return (
@@ -1050,6 +1026,23 @@ export function CheckoutPage() {
             </button>
             <h1 className="text-3xl font-bold text-gray-800">Checkout</h1>
           </div>
+
+          {checkoutFailureMessage && (
+            <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
+              <div className="font-semibold">Order not completed</div>
+              <div className="text-sm">{checkoutFailureMessage}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setOrderError(null);
+                  setDismissedCheckoutError(true);
+                }}
+                className="mt-3 text-sm font-medium text-red-700 hover:text-red-800"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
           
           <form onSubmit={handleSubmit} className="grid lg:grid-cols-2 gap-8">
             {/* Customer Information */}
@@ -1702,11 +1695,6 @@ export function CheckoutPage() {
                 </div>
               )}
 
-              {checkoutError && (
-                <div className="mt-4 bg-red-50 border border-red-200 rounded-md p-4">
-                  <p className="text-sm text-red-800">{checkoutError}</p>
-                </div>
-              )}
 
               {/* Email Opt-in Checkbox */}
               <div className="mt-6 flex items-start gap-3 bg-blue-50 p-4 rounded-lg border border-blue-100">

@@ -163,7 +163,7 @@ serve(async (req: Request) => {
 
     const { data: bins, error: binsError } = await supabaseAdmin
       .from('package_bins')
-      .select('product_id, package_key, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs')
+      .select('product_id, package_key, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs, weight_btn')
       .eq('tenant_id', orderRequest.tenantId)
       .in('product_id', productIds)
 
@@ -183,6 +183,7 @@ serve(async (req: Request) => {
       bin_kind?: string | null;
       qty_lbs?: number | null;
       reserved_lbs?: number | null;
+      weight_btn?: number | null;
       product_id?: string | null;
     }
 
@@ -212,11 +213,13 @@ serve(async (req: Request) => {
       const productRow = productsById.get(line.productId)
       const isPackForYou = line.lineType === 'pack_for_you'
       const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
-      const bulkBin = bulkBinsByProduct.get(line.productId)
+      const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
+      const bulkBinKey = `${line.productId}|bulk`
+      const bulkBin = bulkBinsByProduct.get(line.productId) ?? binsByKey.get(bulkBinKey)
 
       if (isPackForYou && bulkBin) {
         const availableBulk = Math.max(0, (bulkBin.qty_lbs ?? 0) - (bulkBin.reserved_lbs ?? 0))
-        const requiredBulk = requestedWeight * (line.qty ?? 1)
+        const requiredBulk = requestedWeightTotal
         if (requiredBulk > availableBulk) {
           shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available: availableBulk })
         }
@@ -379,24 +382,29 @@ serve(async (req: Request) => {
 
       // Build package_key for bin-based items (LB products)
       const product = productsById.get(line.productId)
-      const bulkBin = bulkBinsByProduct.get(line.productId)
+      const bulkBinKey = `${line.productId}|bulk`
+      const bulkBin = bulkBinsByProduct.get(line.productId) ?? binsByKey.get(bulkBinKey)
       const isPackForYou = line.lineType === 'pack_for_you'
       const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+      const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
       const isBulkReservation = Boolean(isPackForYou && bulkBin)
       const packageKey = isBulkReservation
-        ? String(bulkBin?.package_key)
+        ? String(bulkBin?.package_key ?? bulkBinKey)
         : buildPackageKey(line.productId, product?.unit, line)
 
       // Storefront always reserves (never decrements) for non-preorder lines
       const shouldReserve = !line.isPreOrder
 
       // Selected bins payload (used for reservation and order_lines.selected_bins)
+      const avgWeightBtn = isBulkReservation
+        ? (bulkBin?.weight_btn ?? (requestedWeightTotal / Math.max(1, line.qty ?? 1)))
+        : null
       const selectedBinsPayload = line.isPreOrder
         ? null
         : [{
             package_key: packageKey,
-            qty: isBulkReservation ? requestedWeight : line.qty,
-            weight_btn: isBulkReservation ? requestedWeight : (line.binWeight ?? line.weightLbs ?? requestedWeight ?? 0),
+        qty: isBulkReservation ? requestedWeightTotal : line.qty,
+            weight_btn: isBulkReservation ? (avgWeightBtn ?? requestedWeightTotal) : (line.binWeight ?? line.weightLbs ?? requestedWeight ?? 0),
             ...(isBulkReservation ? { bin_kind: 'bulk_weight' } : {})
           }]
 
@@ -435,6 +443,8 @@ serve(async (req: Request) => {
           line_total_cents: line.lineTotalCents,
           bin_weight: line.binWeight ?? null,
           weight_lbs: line.requestedWeightLbs ?? line.weightLbs ?? null,
+          requested_weight_lbs: line.requestedWeightLbs ?? null,
+          line_type: line.lineType ?? null,
           is_pre_order: line.isPreOrder ?? false,
           fulfillment_bucket: line.isPreOrder ? 'LATER' : 'NOW',
           selected_bins: selectedBinsPayload,

@@ -30,8 +30,9 @@ export function MinimalTemplate({
   const [activeBinProduct, setActiveBinProduct] = useState<Product | null>(null);
   const [showDescriptionModal, setShowDescriptionModal] = useState<string | null>(null);
 
-  const getEffectiveOrderMode = (_product: Product) => {
-    return tenantDefaultOrderMode ?? 'exact_package';
+  const getEffectiveOrderMode = (product: Product) => {
+    const hasBulkBin = (product.weightBins || []).some((b) => b.binKind === 'bulk_weight');
+    return hasBulkBin ? 'pack_for_you' : (tenantDefaultOrderMode ?? 'exact_package');
   };
 
   const filteredProducts = selectedCategory 
@@ -228,10 +229,19 @@ export function MinimalTemplate({
 
                       const adjustedBins = (product.weightBins || []).map((bin) => ({
                         ...bin,
-                        qty: Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0) - (binCountsInCart[bin.weightBtn] || 0)),
+                        qty: Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0) - (binCountsInCart[bin.weightBtn ?? 0] || 0)),
                       }));
 
-                      const hasBins = isWeight && adjustedBins.length > 0;
+                      const legacyBins = adjustedBins.filter((bin) => bin.binKind !== 'bulk_weight');
+                      const bulkBin = adjustedBins.find((bin) => bin.binKind === 'bulk_weight');
+                      const bulkBinRaw = (product.weightBins || []).find((bin) => bin.binKind === 'bulk_weight');
+                      const bulkPackageCount = bulkBinRaw ? (bulkBinRaw.qty ?? 0) : null;
+                      const bulkAvgWeight = bulkBinRaw
+                        ? ((bulkBinRaw.qty ?? 0) > 0
+                          ? Math.max(0, (bulkBinRaw.qtyLbs ?? 0) - (bulkBinRaw.reservedLbs ?? 0)) / bulkBinRaw.qty
+                          : 0)
+                        : null;
+                      const hasBins = isWeight && legacyBins.length > 0;
                       const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
                       const canPreOrder = (features?.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
 
@@ -318,21 +328,27 @@ export function MinimalTemplate({
                             )}
                             {effectiveOrderMode === 'pack_for_you' && (
                               <div className="space-y-2">
-                                {hasBins && (
+                                {bulkPackageCount !== null && bulkAvgWeight !== null && (
+                                  <p className="text-xs text-gray-500">
+                                    Packages: {bulkPackageCount} • Avg package: {bulkAvgWeight.toFixed(2)} lb
+                                  </p>
+                                )}
+                                {legacyBins.length > 0 && (
                                   <p className="text-xs text-gray-500">
                                     Avg package: {(() => {
-                                      const totalPackages = adjustedBins.reduce(
+                                      const totalPackages = legacyBins.reduce(
                                         (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
                                         0
                                       );
                                       if (totalPackages <= 0) return '0.00';
-                                      const totalWeight = adjustedBins.reduce((sum, b) => {
+                                      const totalWeight = legacyBins.reduce((sum, b) => {
                                         const available = Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0));
-                                        return sum + (b.weightBtn * available);
+                                        const weight = b.weightBtn ?? 0;
+                                        return sum + (weight * available);
                                       }, 0);
                                       return (totalWeight / totalPackages).toFixed(2);
                                     })()} lb • {(() => {
-                                      return adjustedBins.reduce(
+                                      return legacyBins.reduce(
                                         (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
                                         0
                                       );
