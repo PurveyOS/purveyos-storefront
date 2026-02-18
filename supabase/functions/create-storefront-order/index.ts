@@ -392,23 +392,28 @@ serve(async (req: Request) => {
         ? String(bulkBin?.package_key ?? bulkBinKey)
         : buildPackageKey(line.productId, product?.unit, line)
 
-      // Storefront always reserves (never decrements) for non-preorder lines
-      const shouldReserve = !line.isPreOrder
+      // Storefront reservation logic:
+      // - Pre-orders: No reservation (tenant fulfills later)
+      // - Pack-for-you: No bin reservation at creation (tenant selects packages during fulfillment)
+      // - Pick-your-pack: Reserve bins immediately (customer selected specific packages)
+      const shouldReserve = !line.isPreOrder && !isPackForYou
 
       // Selected bins payload (used for reservation and order_lines.selected_bins)
+      // Pack-for-you orders should NOT store placeholder bins on the order line.
       const avgWeightBtn = isBulkReservation
         ? (bulkBin?.weight_btn ?? (requestedWeightTotal / Math.max(1, line.qty ?? 1)))
         : null
-      const selectedBinsPayload = line.isPreOrder
+      const selectedBinsPayload = line.isPreOrder || isPackForYou
         ? null
         : [{
             package_key: packageKey,
-        qty: isBulkReservation ? requestedWeightTotal : line.qty,
+            qty: isBulkReservation ? requestedWeightTotal : line.qty,
             weight_btn: isBulkReservation ? (avgWeightBtn ?? requestedWeightTotal) : (line.binWeight ?? line.weightLbs ?? requestedWeight ?? 0),
             ...(isBulkReservation ? { bin_kind: 'bulk_weight' } : {})
           }]
 
-      // Reserve bins for cash-like payments
+      // Reserve bins ONLY for pick-your-pack (where customer selected specific packages)
+      // Pack-for-you orders skip reservation here - tenant will select bins during fulfillment
       let reservedAt: string | null = null
       let reservationExpiresAt: string | null = null
       if (shouldReserve && selectedBinsPayload) {
@@ -425,14 +430,18 @@ serve(async (req: Request) => {
 
         reservedAt = reserveData?.reserved_at ?? new Date().toISOString()
         reservationExpiresAt = reserveData?.reservation_expires_at ?? null
-        console.log('✅ Reserved bins for cash-like payment (no expiration):', { packageKey, reservedAt, reservationExpiresAt })
+        console.log('✅ Reserved bins for pick-your-pack (no expiration):', { packageKey, reservedAt, reservationExpiresAt })
       }
+
+      // For pack-for-you orders: Create product-level reservation (reserves weight, not packages)
+      // This updates products.reserved_lbs via trigger, without touching package_bins.reserved_qty
+      const orderLineId = crypto.randomUUID()
 
       // Insert order line with reservation metadata (if any)
       const { error: lineError } = await supabaseAdmin
         .from('order_lines')
         .insert({
-          id: crypto.randomUUID(),
+          id: orderLineId,
           order_id: orderId,
           tenant_id: orderRequest.tenantId,
           product_id: line.productId,
@@ -456,6 +465,29 @@ serve(async (req: Request) => {
       if (lineError) {
         console.error('Error creating order line:', lineError)
         throw lineError
+      }
+
+      if (isPackForYou && requestedWeightTotal > 0) {
+        const { error: productReservationError } = await supabaseAdmin
+          .from('product_reservations')
+          .insert({
+            id: crypto.randomUUID(),
+            tenant_id: orderRequest.tenantId,
+            order_id: orderId,
+            order_line_id: orderLineId,
+            product_id: line.productId,
+            reserved_weight_lbs: requestedWeightTotal,
+            reserved_qty: null, // NULL for weight-only reservations
+            status: 'active',
+            created_at: new Date().toISOString(),
+          })
+
+        if (productReservationError) {
+          console.error('Error creating product reservation for pack-for-you:', productReservationError)
+          throw productReservationError
+        }
+
+        console.log(`✅ Reserved ${requestedWeightTotal} lbs at product level for pack-for-you order (no package count)`)
       }
 
       if (line.isPreOrder) {
