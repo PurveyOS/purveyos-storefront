@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
     const productsFetchStart = Date.now()
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, name, pricePer, unit, variant_size, variant_unit, image_url, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, order_mode, pack_for_you_min_lbs, pack_for_you_step_lbs, pack_for_you_max_overage_pct, pack_for_you_max_underage_pct, pack_for_you_price_buffer_pct', { count: 'exact' })
+      .select('id, name, pricePer, unit, variant_size, variant_unit, image_url, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, order_mode, pack_for_you_min_lbs, pack_for_you_step_lbs, pack_for_you_max_overage_pct, pack_for_you_max_underage_pct, pack_for_you_price_buffer_pct, reserved_weight_lbs', { count: 'exact' })
       .eq('tenant_id', tenant.id)
       .eq('is_online', true)
       .limit(500)  // Prevent massive responses
@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
     if (includeBins) {
       const { data: binsData, error: binsError } = await supabase
         .from('package_bins')
-        .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty')
+        .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty, reserved_lbs, bin_kind, qty_lbs')
         .eq('tenant_id', tenant.id)
 
       if (!binsError && binsData) {
