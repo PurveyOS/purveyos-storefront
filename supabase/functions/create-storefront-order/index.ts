@@ -62,7 +62,7 @@ interface OrderRequest {
 }
 
 function buildPackageKey(productId: string, unit: string | null | undefined, line: OrderLine) {
-  const isLb = (unit || '').toLowerCase() === 'lb'
+  const isLb = (unit || '').toLowerCase().startsWith('lb')
   const rawWeight = isLb ? (line.binWeight ?? line.weightLbs ?? line.requestedWeightLbs ?? 0) : 0
   const weightBtn = Math.round(rawWeight * 100) / 100
   const weightStr = weightBtn.toString().replace(/\.0+$/, '').replace(/\.([1-9]*)0+$/, '.$1') || '0'
@@ -149,7 +149,7 @@ serve(async (req: Request) => {
 
     const { data: products, error: productsError } = await supabaseAdmin
       .from('products')
-      .select('id, unit, qty, is_deposit_product, deposit_prod_price_per_lb')
+      .select('id, unit, qty, is_deposit_product, deposit_prod_price_per_lb, reserved_weight_lbs')
       .eq('tenant_id', orderRequest.tenantId)
       .in('id', productIds)
 
@@ -175,7 +175,7 @@ serve(async (req: Request) => {
       })
     }
 
-    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null }
+    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null; reserved_weight_lbs?: number | null }
     type PackageBinRow = {
       package_key: string;
       qty?: number | null;
@@ -190,7 +190,13 @@ serve(async (req: Request) => {
     const productsById = new Map<string, ProductRow>((products ?? []).map((p: ProductRow) => [p.id, p]))
     const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
     const bulkBinsByProduct = new Map<string, PackageBinRow>()
+    const binsByProduct = new Map<string, PackageBinRow[]>()
     ;(bins ?? []).forEach((b: PackageBinRow) => {
+      if (b.product_id) {
+        const list = binsByProduct.get(b.product_id) ?? []
+        list.push(b)
+        binsByProduct.set(b.product_id, list)
+      }
       if (b.bin_kind === 'bulk_weight' && b.product_id) {
         bulkBinsByProduct.set(b.product_id, b)
       }
@@ -226,20 +232,39 @@ serve(async (req: Request) => {
         continue
       }
 
-      const packageKey = buildPackageKey(line.productId, productRow?.unit, line)
-      const bin = binsByKey.get(packageKey)
-      const reserved = bin?.reserved_qty ?? 0
-      const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null
-      const available = availableFromBin !== null ? availableFromBin : (productRow?.qty ?? 0)
+      const unitLower = (productRow?.unit || '').toLowerCase()
       const required = line.qty ?? 1
 
-      if (!bin && (productRow?.unit || '').toLowerCase() === 'lb') {
-        shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available: 0 })
-        continue
-      }
+      if (unitLower.startsWith('lb')) {
+        // Weight-based item: use dual-check (bin reserves + product reserves)
+        // available = SUM(weight_btn × qty) - SUM(weight_btn × reserved_qty) - products.reserved_weight_lbs
+        const productBins = binsByProduct.get(line.productId) ?? []
+        const totalWeight = productBins.reduce((sum, b) => {
+          if (b.bin_kind === 'bulk_weight') return sum // bulk handled separately above
+          return sum + ((b.weight_btn ?? 0) * (b.qty ?? 0))
+        }, 0)
+        const reservedBinWeight = productBins.reduce((sum, b) => {
+          if (b.bin_kind === 'bulk_weight') return sum
+          return sum + ((b.weight_btn ?? 0) * (b.reserved_qty ?? 0))
+        }, 0)
+        const reservedProductWeight = productRow?.reserved_weight_lbs ?? 0
+        const available = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight)
+        const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+        const requiredWeight = requestedWeight * required
 
-      if (required > available) {
-        shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+        if (requiredWeight > available) {
+          shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+        }
+      } else {
+        const productBins = (binsByProduct.get(line.productId) ?? []).filter((b) => b.bin_kind !== 'bulk_weight')
+        const availableFromBins = productBins.length > 0
+          ? productBins.reduce((sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reserved_qty ?? 0)), 0)
+          : null
+        const available = availableFromBins !== null ? availableFromBins : (productRow?.qty ?? 0)
+
+        if (required > available) {
+          shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+        }
       }
     }
 
