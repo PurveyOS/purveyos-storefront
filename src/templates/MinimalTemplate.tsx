@@ -218,6 +218,7 @@ export function MinimalTemplate({
                       const unit = (product.unit || '').toLowerCase();
                       const isWeight = product.pricingMode === 'weight' || unit === 'lb';
                       const effectiveOrderMode = getEffectiveOrderMode(product);
+                      const isWeight = product.unit?.toLowerCase()?.startsWith('lb');
                       // Account for bins already in the cart when showing availability
                       const binCountsInCart = cart.items
                         .filter((item) => item.productId === product.id && item.binWeight != null)
@@ -226,6 +227,21 @@ export function MinimalTemplate({
                           acc[key] = (acc[key] || 0) + item.quantity;
                           return acc;
                         }, {});
+
+                      // For weight-based products, calculate total available weight using dual-check
+                      let totalAvailableWeight = 0;
+                      if (isWeight && product.weightBins) {
+                        const totalWeight = product.weightBins.reduce((sum, b) => {
+                          if (b.binKind === 'bulk_weight') return sum;
+                          return sum + ((b.weightBtn ?? 0) * (b.qty ?? 0));
+                        }, 0);
+                        const reservedBinWeight = product.weightBins.reduce((sum, b) => {
+                          if (b.binKind === 'bulk_weight') return sum;
+                          return sum + ((b.weightBtn ?? 0) * (b.reservedQty ?? 0));
+                        }, 0);
+                        const reservedProductWeight = product.reservedWeightLbs ?? 0;
+                        totalAvailableWeight = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight);
+                      }
 
                       const adjustedBins = (product.weightBins || []).map((bin) => ({
                         ...bin,
@@ -241,8 +257,10 @@ export function MinimalTemplate({
                           ? Math.max(0, (bulkBinRaw.qtyLbs ?? 0) - (bulkBinRaw.reservedLbs ?? 0)) / bulkBinRaw.qty
                           : 0)
                         : null;
-                      const hasBins = isWeight && legacyBins.length > 0;
-                      const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
+                      const hasBins = legacyBins.length > 0;
+                      // For weight items, check dual availability; for non-weight, use product.inventory
+                      const effectiveInventory = (isWeight && product.weightBins) ? totalAvailableWeight : (product.inventory ?? 0);
+                      const isSoldOut = product.isSoldOut || !product.available || effectiveInventory <= 0;
                       const canPreOrder = (features?.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
 
                       const weightValue = weightInputs[product.id] ?? '1';

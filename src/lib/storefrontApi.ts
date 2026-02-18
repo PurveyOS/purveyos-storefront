@@ -34,6 +34,7 @@ export interface StorefrontProduct {
   pack_for_you_max_overage_pct?: number | null
   pack_for_you_max_underage_pct?: number | null
   pack_for_you_price_buffer_pct?: number | null
+  reserved_weight_lbs?: number
   // Subscription fields
   isSubscription?: boolean
   subscriptionData?: {

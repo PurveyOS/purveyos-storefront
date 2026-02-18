@@ -401,6 +401,7 @@ export function useStorefrontData(tenantId: string): {
             subscriptionData: subscription,
             is_deposit_product: p.is_deposit_product === true,
             deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,
+            reservedWeightLbs: (p as any).reserved_weight_lbs ?? undefined,
           };
         });
 
