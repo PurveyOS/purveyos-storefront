@@ -66,7 +66,19 @@ export interface StorefrontTemplateProps {
   categories: Category[];
   cart: Cart;
   tenantDefaultOrderMode?: 'exact_package' | 'pack_for_you';
-  onAddToCart: (productId: string, quantity?: number, options?: { binWeight?: number; unitPriceCents?: number; weight?: number; isPreOrder?: boolean; metadata?: any }) => void;
+  onAddToCart: (
+    productId: string, 
+    quantity?: number, 
+    options?: { 
+      binWeight?: number; 
+      unitPriceCents?: number; 
+      weight?: number; 
+      requestedWeightLbs?: number;
+      lineType?: 'exact_package' | 'pack_for_you';
+      isPreOrder?: boolean; 
+      metadata?: any;
+    }
+  ) => void;
   onRemoveFromCart: (productId: string, options?: { binWeight?: number }) => void;
   onAddBinToCart?: (productId: string, binWeight: number, unitPriceCents: number) => void;
   // Optional feature capability flags (based on subscription tier)

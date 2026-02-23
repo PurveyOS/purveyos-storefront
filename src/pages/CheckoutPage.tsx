@@ -6,6 +6,7 @@ import { useCart } from '../context/CartContext';
 import { useCheckout, type CheckoutData, type GroupChoice } from '../hooks/useCheckout';
 import { SubscriptionBoxSelector } from '../components/SubscriptionBoxSelector';
 import { StripeAuthorizationForm } from '../components/StripeAuthorizationForm';
+import { CartValidationModal } from '../components/CartValidationModal';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { supabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
@@ -153,6 +154,22 @@ export function CheckoutPage() {
   const [couponError, setCouponError] = useState('');
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number; percent: number } | null>(null);
   const [discountCents, setDiscountCents] = useState(0);
+  
+  // Cart validation modal state
+  const [showCartValidationModal, setShowCartValidationModal] = useState(false);
+  const [removedItemsData, setRemovedItemsData] = useState<Array<{
+    productId: string;
+    productName: string;
+    binWeight?: number;
+    weight?: number;
+    requestedWeightLbs?: number;
+    lineType?: 'exact_package' | 'pack_for_you';
+    variantUnit?: string;
+    isEach?: boolean;
+    canPreOrder?: boolean;
+    available?: number;
+    requested?: number;
+  }>>([]);
 
   // Load discounts from tenant
   useEffect(() => {
@@ -320,27 +337,56 @@ export function CheckoutPage() {
     });
 
     if (outOfStock.length > 0) {
+      // Build detailed information about removed items for modal
+      const removedItemsInfo = outOfStock.map((item) => {
+        const storefrontProduct = storefrontData?.products?.find((p: any) => p.id === item.productId);
+        const productName = storefrontProduct?.name || 'Item';
+        const isEach = ((storefrontProduct?.unit) || '').toLowerCase() === 'ea' || Boolean((storefrontProduct as any)?.variantSize || (storefrontProduct as any)?.variantUnit);
+        const variantUnit = (storefrontProduct as any)?.variantUnit;
+        const canPreOrder = Boolean(storefrontProduct?.allowPreOrder);
+        
+        // Calculate available and requested amounts
+        const cartItem = cart.items.find((i: any) => 
+          i.productId === item.productId &&
+          i.binWeight === item.binWeight &&
+          i.weight === item.weight &&
+          i.requestedWeightLbs === item.requestedWeightLbs &&
+          i.lineType === item.lineType
+        );
+        
+        const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
+        const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
+        const bin = binKey ? binsByKey.get(binKey) : undefined;
+        const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0)) : null;
+        const product = productsById.get(item.productId);
+        const availableFromProduct = typeof product?.qty === 'number'
+          ? product.qty
+          : (typeof storefrontProduct?.inventory === 'number' ? storefrontProduct.inventory : 0);
+        const available = availableFromBin !== null ? availableFromBin : availableFromProduct;
+        const requested = (cartItem as any)?.quantity ?? 1;
+
+        return {
+          productId: item.productId,
+          productName,
+          binWeight: item.binWeight,
+          weight: item.weight,
+          requestedWeightLbs: item.requestedWeightLbs,
+          lineType: item.lineType,
+          variantUnit,
+          isEach,
+          canPreOrder,
+          available,
+          requested,
+        };
+      });
+
+      // Remove all out of stock items from cart
       removeItems(outOfStock);
 
-      const productName = (id: string) => storefrontData?.products?.find((p: any) => p.id === id)?.name || 'Item';
-      const removedList = outOfStock
-        .map((item) => {
-          const name = productName(item.productId);
-          if (item.binWeight) {
-            const productForDisplay = storefrontData?.products?.find((p: any) => p.id === item.productId);
-            const isEach = ((productForDisplay?.unit) || '').toLowerCase() === 'ea' || Boolean((productForDisplay as any)?.variantSize || (productForDisplay as any)?.variantUnit);
-            const variantUnit = (productForDisplay as any)?.variantUnit;
-            return isEach
-              ? `${name} (${item.binWeight} ${variantUnit || 'ea'})`
-              : `${name} (${item.binWeight} lb package)`;
-          }
-          if (item.lineType === 'pack_for_you' && item.requestedWeightLbs) return `${name} (${item.requestedWeightLbs} lb requested)`;
-          if (item.weight) return `${name} (${item.weight} lb)`;
-          return name;
-        })
-        .join(', ');
-
-      toast.error(`Removed unavailable items: ${removedList}`);
+      // Show modal with removed items
+      setRemovedItemsData(removedItemsInfo);
+      setShowCartValidationModal(true);
+      
       return false;
     }
 
@@ -1729,6 +1775,68 @@ export function CheckoutPage() {
           </form>
         </div>
       </div>
+      
+      {/* Cart Validation Modal */}
+      {showCartValidationModal && (
+        <CartValidationModal
+          removedItems={removedItemsData}
+          primaryColor={primaryColor}
+          onConfirm={(itemsToPreOrder) => {
+            // Re-add selected items as pre-orders
+            itemsToPreOrder.forEach((productId) => {
+              const removedItem = removedItemsData.find(item => item.productId === productId);
+              if (removedItem) {
+                const storefrontProduct = storefrontData?.products?.find((p: any) => p.id === productId);
+                if (storefrontProduct) {
+                  // Find the original cart item to get the correct quantity
+                  const originalCartItem = cart.items.find((i: any) => 
+                    i.productId === productId &&
+                    i.binWeight === removedItem.binWeight &&
+                    i.weight === removedItem.weight &&
+                    i.requestedWeightLbs === removedItem.requestedWeightLbs &&
+                    i.lineType === removedItem.lineType
+                  );
+                  
+                  const quantity = (originalCartItem as any)?.quantity ?? 1;
+                  
+                  // Re-add to cart with pre-order flag
+                  if (removedItem.binWeight) {
+                    addToCart(productId, quantity, {
+                      binWeight: removedItem.binWeight,
+                      unitPriceCents: storefrontProduct.pricePer * 100, // Convert to cents
+                      isPreOrder: true,
+                    });
+                  } else if (removedItem.weight) {
+                    addToCart(productId, quantity, {
+                      weight: removedItem.weight,
+                      isPreOrder: true,
+                    });
+                  } else if (removedItem.lineType === 'pack_for_you' && removedItem.requestedWeightLbs) {
+                    addToCart(productId, quantity, {
+                      requestedWeightLbs: removedItem.requestedWeightLbs,
+                      lineType: 'pack_for_you',
+                      isPreOrder: true,
+                    });
+                  } else {
+                    addToCart(productId, quantity, { isPreOrder: true });
+                  }
+                }
+              }
+            });
+            
+            setShowCartValidationModal(false);
+            
+            if (itemsToPreOrder.length > 0) {
+              toast.success(`${itemsToPreOrder.length} item${itemsToPreOrder.length > 1 ? 's' : ''} added as pre-order${itemsToPreOrder.length > 1 ? 's' : ''}`);
+            }
+          }}
+          onCancel={() => {
+            setShowCartValidationModal(false);
+            // Navigate back to shopping
+            navigate('/');
+          }}
+        />
+      )}
     </div>
   );
 }

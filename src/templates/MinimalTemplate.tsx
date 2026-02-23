@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import type { StorefrontTemplateProps } from '../types/storefront';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
@@ -170,6 +171,50 @@ export function MinimalTemplate({
                       );
                     })()}
 
+                    {/* Inventory Badge - Top Right */}
+                    {(() => {
+                      const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
+                      const isWeight = product.unit?.toLowerCase()?.startsWith('lb');
+                      
+                      // For weight-based products with bins, calculate total available weight
+                      if (isWeight && product.weightBins && !isSoldOut) {
+                        const totalWeight = product.weightBins.reduce((sum, b) => {
+                          if (b.binKind === 'bulk_weight') return sum;
+                          return sum + ((b.weightBtn ?? 0) * (b.qty ?? 0));
+                        }, 0);
+                        const reservedWeight = product.weightBins.reduce((sum, b) => {
+                          if (b.binKind === 'bulk_weight') return sum;
+                          return sum + ((b.weightBtn ?? 0) * (b.reservedQty ?? 0));
+                        }, 0);
+                        const availableWeight = Math.max(0, totalWeight - reservedWeight - (product.reservedWeightLbs ?? 0));
+                        
+                        if (availableWeight > 0) {
+                          const isLow = product.reminderThreshold && availableWeight <= product.reminderThreshold;
+                          return (
+                            <div className="absolute top-2 right-2">
+                              <span className={`text-xs font-medium px-2 py-1 rounded-full ${isLow ? 'bg-orange-500 text-white' : 'bg-white/90 text-gray-800'} shadow-sm`}>
+                                {availableWeight.toFixed(1)} lbs
+                              </span>
+                            </div>
+                          );
+                        }
+                      }
+                      
+                      // For non-weight products, show inventory count
+                      if (!isWeight && !isSoldOut && product.inventory !== undefined && product.inventory > 0) {
+                        const isLow = product.reminderThreshold && product.inventory <= product.reminderThreshold;
+                        return (
+                          <div className="absolute top-2 right-2">
+                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${isLow ? 'bg-orange-500 text-white' : 'bg-white/90 text-gray-800'} shadow-sm`}>
+                              {product.inventory} left
+                            </span>
+                          </div>
+                        );
+                      }
+                      
+                      return null;
+                    })()}
+
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent px-4 py-3 flex items-center justify-between">
                       <div className="text-left text-white">
                         <h3 className="font-semibold text-sm sm:text-base line-clamp-1">{product.name}</h3>
@@ -275,6 +320,13 @@ export function MinimalTemplate({
                       const handleCustomWeight = () => {
                         const parsed = parseFloat(weightValue);
                         if (!parsed || parsed <= 0) return;
+                        
+                        // Check if exceeding available inventory for in-stock items
+                        if (!canPreOrder && effectiveInventory > 0 && parsed > effectiveInventory) {
+                          toast.error(`Only ${effectiveInventory.toFixed(1)} lbs available. ${product.allowPreOrder ? 'Try pre-ordering for more.' : ''}`);
+                          return;
+                        }
+                        
                         // Set isPreOrder only when in pre-order mode
                         onAddToCart(product.id, 1, { weight: parsed, isPreOrder: canPreOrder });
                         setWeightInputs((prev) => ({ ...prev, [product.id]: '1' }));
@@ -283,6 +335,16 @@ export function MinimalTemplate({
                       const handlePackForYou = () => {
                         const parsed = parseFloat(weightValue);
                         if (!parsed || parsed <= 0) return;
+                        
+                        // Check bulk bin availability for pack-for-you
+                        if (bulkBinRaw) {
+                          const availableBulk = Math.max(0, (bulkBinRaw.qtyLbs ?? 0) - (bulkBinRaw.reservedLbs ?? 0));
+                          if (parsed > availableBulk) {
+                            toast.error(`Only ${availableBulk.toFixed(1)} lbs available in bulk.`);
+                            return;
+                          }
+                        }
+                        
                         onAddToCart(product.id, 1, {
                           requestedWeightLbs: parsed,
                           lineType: 'pack_for_you',
@@ -293,14 +355,17 @@ export function MinimalTemplate({
                       const handleFixedAdd = () => {
                         const qty = qtyValue > 0 ? qtyValue : 1;
                         const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
+                        
                         if (isSoldOut && !canPreOrder) {
-                          alert('This product is sold out');
+                          toast.error('This product is sold out');
                           return;
                         }
+                        
                         if (product.inventory !== undefined && qty > product.inventory && !canPreOrder) {
-                          alert('Product is sold out');
+                          toast.error(`Only ${product.inventory} available. ${product.allowPreOrder ? 'Try pre-ordering for more.' : ''}`);
                           return;
                         }
+                        
                         // Set isPreOrder only when in pre-order mode
                         onAddToCart(product.id, qty, { isPreOrder: canPreOrder });
                         setQtyInputs((prev) => ({ ...prev, [product.id]: 1 }));
