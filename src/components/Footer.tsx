@@ -8,6 +8,7 @@ interface ClassicFooterProps {
 // New interface for ModernFarmTemplate
 interface ModernFooterProps {
   storeName?: string;
+  farmDescription?: string;
 }
 
 type FooterProps = ClassicFooterProps | ModernFooterProps;
@@ -99,11 +100,14 @@ export function Footer(props: FooterProps) {
     );
   } else {
     // Modern template footer
-    const { storeName } = props;
+    const { storeName, farmDescription } = props;
 
     return (
       <footer className="bg-white border-t border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 py-4">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          {farmDescription && (
+            <p className="text-sm text-slate-600 text-center mb-3">{farmDescription}</p>
+          )}
           <p className="text-xs text-slate-500 text-center">
             © {currentYear} {storeName || 'Farm Store'} · Powered by PurveyOS – Made by producers for producers.
           </p>

@@ -245,6 +245,24 @@ export function MinimalTemplate({
                       </div>
                     )}
 
+                    {/* Deposit product badge */}
+                    {product.is_deposit_product && (
+                      <div className="flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300">
+                          Deposit
+                        </span>
+                        <span className="relative group">
+                          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs font-bold cursor-default select-none">
+                            ?
+                          </span>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                            This is a deposit product. You pay a deposit now — the final price is calculated after your hanging weight is received.
+                            <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+                          </span>
+                        </span>
+                      </div>
+                    )}
+
                     {/* Subscription CTA */}
                     {product.isSubscription && product.subscriptionData && (
                       <button
@@ -333,7 +351,7 @@ export function MinimalTemplate({
                       };
 
                       const handlePackForYou = () => {
-                        const parsed = parseFloat(weightValue);
+                        const parsed = parseInt(weightValue, 10);
                         if (!parsed || parsed <= 0) return;
                         
                         // Check bulk bin availability for pack-for-you
@@ -439,10 +457,13 @@ export function MinimalTemplate({
                                 <div className="flex items-center gap-3">
                                   <input
                                     type="number"
-                                    step={product.pack_for_you_step_lbs ?? 1}
-                                    min={product.pack_for_you_min_lbs ?? 0}
+                                    step="1"
+                                    min={Math.max(1, product.pack_for_you_min_lbs ?? 1)}
                                     value={weightValue}
-                                    onChange={(e) => setWeightInputs((prev) => ({ ...prev, [product.id]: e.target.value }))}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/[^\d]/g, "");
+                                      setWeightInputs((prev) => ({ ...prev, [product.id]: val }));
+                                    }}
                                     className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                                     placeholder="lbs"
                                   />

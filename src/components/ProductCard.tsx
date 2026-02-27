@@ -243,7 +243,7 @@ export function ProductCard(props: ProductCardProps) {
   };
 
   const handleAddPackForYou = () => {
-    const weight = parseFloat(weightAmount);
+    const weight = parseInt(weightAmount, 10);
     if (!weight || weight <= 0) return;
     onAddToCart({ requestedWeightLbs: weight, lineType: 'pack_for_you' });
     setWeightAmount("1");
@@ -328,6 +328,23 @@ export function ProductCard(props: ProductCardProps) {
           <p className="text-sm text-slate-600 mb-2 line-clamp-2">
             {product.description}
           </p>
+        )}
+
+        {product.is_deposit_product && (
+          <div className="mb-2 flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300">
+              Deposit
+            </span>
+            <span className="relative group">
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs font-bold cursor-default select-none">
+                ?
+              </span>
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                This is a deposit product. You pay a deposit now — the final price is calculated after your hanging weight is received.
+                <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
+              </span>
+            </span>
+          </div>
         )}
 
         {product.specialNotes && (
@@ -437,23 +454,26 @@ export function ProductCard(props: ProductCardProps) {
             )}
             <div>
               <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
-                Enter estimated weight (lb)
+                Enter estimated weight (whole lbs)
               </label>
               <input
                 type="number"
-                min={product.pack_for_you_min_lbs ?? 0}
-                step={product.pack_for_you_step_lbs ?? 1}
+                min={Math.max(1, product.pack_for_you_min_lbs ?? 1)}
+                step="1"
                 value={weightAmount}
-                onChange={(e) => setWeightAmount(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^\d]/g, "");
+                  setWeightAmount(val);
+                }}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
                 placeholder="e.g., 5"
               />
               <p className="text-xs text-slate-500 mt-1">
-                ${price.toFixed(2)} × {weightAmount || 0} lb = $
-                {(price * parseFloat(weightAmount || "0")).toFixed(2)}
+                ${price.toFixed(2)} × {parseInt(weightAmount || "0", 10)} lb = $
+                {(price * parseInt(weightAmount || "0", 10)).toFixed(2)}
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                You’re ordering by estimated weight. Final total may vary based on actual package weights.
+                Final total may vary based on actual package weights.
               </p>
             </div>
             <button

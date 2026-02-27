@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { User, Package, Calendar, CreditCard, Settings, LogOut, ShoppingCart } from 'lucide-react';
-import { RecurringOrderModal, type RecurringOrderSettings } from '../components/RecurringOrderModal';
+import { User, Package, Calendar, Settings, LogOut, ShoppingCart } from 'lucide-react';
+
+interface BoxItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unit: string;
+  isOptional: boolean;
+}
 
 interface Subscription {
   id: string;
@@ -16,9 +23,11 @@ interface Subscription {
   pickup_location: string | null;
   delivery_notes: string | null;
   subscription_product: {
+    id: string;
     name: string;
     description: string;
   };
+  boxItems?: BoxItem[];
 }
 
 interface OrderLine {
@@ -28,6 +37,8 @@ interface OrderLine {
   quantity: number;
   unit_price_cents: number;
   line_total_cents: number;
+  weight_lbs?: number | null;
+  bin_weight?: number | null;
 }
 
 interface Order {
@@ -57,11 +68,6 @@ export function CustomerPortal() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
-  const [makingRecurring, setMakingRecurring] = useState<string | null>(null);
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [showManageRecurringModal, setShowManageRecurringModal] = useState(false);
-  const [managingOrder, setManagingOrder] = useState<Order | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -119,17 +125,69 @@ export function CustomerPortal() {
 
   const loadSubscriptions = async () => {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
       const { data, error } = await supabase
         .from('customer_subscriptions')
         .select(`
           *,
-          subscription_product:subscription_products(name, description)
+          subscription_product:subscription_products(id, name, description)
         `)
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+        .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSubscriptions(data || []);
+      const subData: Subscription[] = data || [];
+
+      // Fetch box items for each subscription product
+      const subProductIds = subData
+        .map((s) => s.subscription_product?.id)
+        .filter(Boolean) as string[];
+
+      if (subProductIds.length > 0) {
+        const { data: rawBoxItems } = await supabase
+          .from('subscription_box_items')
+          .select('subscription_product_id, product_id, default_quantity, is_optional')
+          .in('subscription_product_id', subProductIds)
+          .eq('is_substitution_option', false);
+
+        if (rawBoxItems && rawBoxItems.length > 0) {
+          const productIds = [...new Set(rawBoxItems.map((b: any) => b.product_id))];
+          const { data: products } = await supabase
+            .from('products')
+            .select('id, name, unit')
+            .in('id', productIds);
+
+          const productMap = new Map<string, { id: string; name: string; unit: string }>(
+            (products || []).map((p: any) => [p.id, p])
+          );
+
+          const boxBySubProduct = new Map<string, BoxItem[]>();
+          for (const item of rawBoxItems as any[]) {
+            const prod = productMap.get(item.product_id);
+            if (!prod) continue;
+            if (!boxBySubProduct.has(item.subscription_product_id)) {
+              boxBySubProduct.set(item.subscription_product_id, []);
+            }
+            boxBySubProduct.get(item.subscription_product_id)!.push({
+              productId: item.product_id,
+              productName: prod.name,
+              quantity: item.default_quantity || 1,
+              unit: prod.unit || 'ea',
+              isOptional: item.is_optional || false,
+            });
+          }
+
+          setSubscriptions(
+            subData.map((sub) => ({
+              ...sub,
+              boxItems: boxBySubProduct.get(sub.subscription_product?.id) || [],
+            }))
+          );
+          return;
+        }
+      }
+
+      setSubscriptions(subData);
     } catch (error) {
       console.error('Failed to load subscriptions:', error);
     }
@@ -168,7 +226,9 @@ export function CustomerPortal() {
             product_name,
             quantity,
             unit_price_cents,
-            line_total_cents
+            line_total_cents,
+            weight_lbs,
+            bin_weight
           )
         `)
         .eq('user_id', user.id)
@@ -185,50 +245,6 @@ export function CustomerPortal() {
       setOrders(data || []);
     } catch (error) {
       console.error('❌ Failed to load orders:', error);
-    }
-  };
-
-  const makeRecurringOrder = async (order: Order, settings: RecurringOrderSettings) => {
-    if (!user) return;
-    
-    setMakingRecurring(order.id);
-    setShowRecurringModal(false);
-    
-    try {
-      // Call the edge function to securely create the recurring order
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No session');
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-recurring-order`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            orderId: order.id,
-            frequency: settings.frequency,
-            interval: settings.interval,
-            duration: settings.duration,
-          }),
-        }
-      );
-
-      const result = await response.json();
-      
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to create recurring order');
-      }
-
-      alert('✅ Order converted to recurring subscription! A new order has been created and sent to POS.');
-      await Promise.all([loadSubscriptions(), loadOrders()]);
-    } catch (error: any) {
-      console.error('Failed to create recurring order:', error);
-      alert(error.message || 'Failed to create recurring order. Please try again.');
-    } finally {
-      setMakingRecurring(null);
     }
   };
 
@@ -528,27 +544,57 @@ export function CustomerPortal() {
                       </div>
                     </div>
 
+                    {sub.boxItems && sub.boxItems.length > 0 && (
+                      <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Box Contents</h4>
+                        <ul className="space-y-1">
+                          {sub.boxItems.map((item) => (
+                            <li key={item.productId} className="flex items-center justify-between text-sm">
+                              <span className="text-gray-800">
+                                {item.productName}
+                                {item.isOptional && (
+                                  <span className="ml-1 text-xs text-gray-500">(optional)</span>
+                                )}
+                              </span>
+                              <span className="text-gray-600">
+                                {item.quantity} {item.unit}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     {sub.paused_until && (
                       <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                         <p className="text-sm text-yellow-800">
-                          ⏸️ Paused until {new Date(sub.paused_until).toLocaleDateString()}
+                          Paused until {new Date(sub.paused_until).toLocaleDateString()}
                         </p>
+                      </div>
+                    )}
+                    {sub.status === 'paused' && !sub.paused_until && (
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <p className="text-sm text-yellow-800">Paused indefinitely. Resume when you're ready.</p>
                       </div>
                     )}
 
                     <div className="mt-4 flex gap-3 flex-wrap">
-                      <button
-                        onClick={() => navigate(`/subscription/${sub.id}`)}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
-                      >
-                        View Details
-                      </button>
                       {sub.status === 'active' && (
                         <>
                           <button
-                            onClick={() => {
-                              // TODO: Implement pause functionality
-                              alert('Pause subscription feature coming soon!');
+                            onClick={async () => {
+                              if (!confirm('Pause this subscription? Deliveries will be paused until you resume.')) return;
+                              try {
+                                const { error } = await supabase
+                                  .from('customer_subscriptions')
+                                  .update({ status: 'paused', paused_until: null })
+                                  .eq('id', sub.id);
+                                if (error) throw error;
+                                await loadSubscriptions();
+                              } catch (err) {
+                                console.error('Failed to pause subscription:', err);
+                                alert('Failed to pause subscription. Please try again.');
+                              }
                             }}
                             className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition font-medium text-sm"
                           >
@@ -696,93 +742,55 @@ export function CustomerPortal() {
                         <div className="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
                           <h4 className="text-sm font-semibold text-gray-700 mb-3">Items in this order:</h4>
                           <div className="space-y-3">
-                            {order.order_lines.map((line: any) => (
-                              <div key={line.id} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
-                                <div className="flex-1">
-                                  <p className="font-medium text-gray-900">{line.product_name || 'Product'}</p>
-                                  <p className="text-sm text-gray-600">
-                                    Qty: {line.quantity} × ${(line.unit_price_cents / 100).toFixed(2)}
-                                  </p>
+                            {order.order_lines.map((line: any) => {
+                              const weightLbs: number | null = line.weight_lbs ?? null;
+                              const binWeight: number | null = line.bin_weight ?? null;
+                              const isByWeight = weightLbs != null || binWeight != null;
+                              const displayWeight = weightLbs ?? binWeight ?? 0;
+                              return (
+                                <div key={line.id} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
+                                  <div className="flex-1">
+                                    <p className="font-medium text-gray-900">{line.product_name || 'Product'}</p>
+                                    <p className="text-sm text-gray-600">
+                                      {isByWeight
+                                        ? `${displayWeight} lb × $${(line.unit_price_cents / 100).toFixed(2)}/lb`
+                                        : `Qty: ${line.quantity} × $${(line.unit_price_cents / 100).toFixed(2)}`
+                                      }
+                                    </p>
+                                  </div>
+                                  <p className="font-medium text-gray-900 ml-4">${(line.line_total_cents / 100).toFixed(2)}</p>
                                 </div>
-                                <p className="font-medium text-gray-900 ml-4">${(line.line_total_cents / 100).toFixed(2)}</p>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
 
                       {/* Action Buttons */}
-                      <div className="flex gap-3 pt-4 border-t border-gray-100 flex-wrap">
-                        {order.status === 'pending' && !order.is_recurring && (
-                          <>
-                            <button
-                              onClick={async () => {
-                                if (confirm('Are you sure you want to cancel this order?')) {
-                                  try {
-                                    const { error } = await supabase
-                                      .from('orders')
-                                      .update({ status: 'cancelled' })
-                                      .eq('id', order.id);
-                                    
-                                    if (error) throw error;
-                                    
-                                    alert('Order cancelled successfully');
-                                    await loadOrders();
-                                  } catch (err) {
-                                    console.error('Failed to cancel order:', err);
-                                    alert('Failed to cancel order. Please try again.');
-                                  }
+                      {order.status === 'pending' && (
+                        <div className="pt-4 border-t border-gray-100">
+                          <button
+                            onClick={async () => {
+                              if (confirm('Are you sure you want to cancel this order?')) {
+                                try {
+                                  const { error } = await supabase
+                                    .from('orders')
+                                    .update({ status: 'cancelled' })
+                                    .eq('id', order.id);
+                                  if (error) throw error;
+                                  await loadOrders();
+                                } catch (err) {
+                                  console.error('Failed to cancel order:', err);
+                                  alert('Failed to cancel order. Please try again.');
                                 }
-                              }}
-                              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium text-sm"
-                            >
-                              Cancel Order
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedOrder(order);
-                                setShowRecurringModal(true);
-                              }}
-                              disabled={makingRecurring === order.id}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              {makingRecurring === order.id ? '⏳ Processing...' : '🔄 Make Recurring'}
-                            </button>
-                          </>
-                        )}
-                        {order.is_recurring && (
-                          <button
-                            onClick={() => {
-                              setManagingOrder(order);
-                              setShowManageRecurringModal(true);
+                              }
                             }}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm"
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium text-sm"
                           >
-                            🔁 Manage Recurring
+                            Cancel Order
                           </button>
-                        )}
-                        {order.status === 'completed' && !order.is_recurring && (
-                          <button
-                            onClick={() => {
-                              setSelectedOrder(order);
-                              setShowRecurringModal(true);
-                            }}
-                            disabled={makingRecurring === order.id}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {makingRecurring === order.id ? '⏳ Processing...' : '🔄 Make Recurring'}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            // TODO: Implement reorder functionality
-                            alert('Reorder feature coming soon! This will add all items from this order to your cart.');
-                          }}
-                          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium text-sm"
-                        >
-                          🛒 Reorder Now
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -819,141 +827,10 @@ export function CustomerPortal() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                Payment Methods
-              </h3>
-              <p className="text-gray-600 text-sm mb-4">
-                Manage your payment methods for subscriptions
-              </p>
-              <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium">
-                Manage Payment Methods
-              </button>
-            </div>
           </div>
         )}
       </main>
-
-      {/* Recurring Order Modal */}
-      {selectedOrder && (
-        <RecurringOrderModal
-          isOpen={showRecurringModal}
-          onClose={() => {
-            setShowRecurringModal(false);
-            setSelectedOrder(null);
-          }}
-          onConfirm={(settings) => makeRecurringOrder(selectedOrder, settings)}
-          orderTotal={selectedOrder.total_cents}
-          orderId={selectedOrder.id}
-        />
-      )}
-
-      {/* Manage Recurring Modal */}
-      {managingOrder && (
-        <ManageRecurringModal
-          isOpen={showManageRecurringModal}
-          onClose={() => {
-            setShowManageRecurringModal(false);
-            setManagingOrder(null);
-          }}
-          order={managingOrder}
-          onUpdate={async () => {
-            await loadOrders();
-            setShowManageRecurringModal(false);
-            setManagingOrder(null);
-          }}
-        />
-      )}
     </div>
   );
 }
 
-// Manage Recurring Modal Component
-interface ManageRecurringModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  order: Order;
-  onUpdate: () => void;
-}
-
-function ManageRecurringModal({ isOpen, onClose, order, onUpdate }: ManageRecurringModalProps) {
-  const [loading, setLoading] = useState(false);
-
-  if (!isOpen) return null;
-
-  const handleCancel = async () => {
-    if (!confirm('Are you sure you want to cancel this recurring order? No future orders will be created.')) {
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ 
-          is_recurring: false,
-          recurrence_frequency: null,
-          recurrence_interval: null,
-          recurrence_duration: null,
-        })
-        .eq('id', order.id);
-
-      if (error) throw error;
-
-      alert('✅ Recurring order cancelled. This order will not repeat.');
-      onUpdate();
-    } catch (error) {
-      console.error('Failed to cancel recurring order:', error);
-      alert('Failed to cancel recurring order. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">🔁 Manage Recurring Order</h2>
-        
-        <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-          <h3 className="font-semibold text-gray-900 mb-2">Current Schedule:</h3>
-          <p className="text-gray-700">
-            📅 Every {order.recurrence_frequency} {order.recurrence_interval}
-            {(order.recurrence_frequency || 0) > 1 ? 's' : ''}
-            {order.recurrence_duration && (
-              <span className="block text-sm text-gray-600 mt-1">
-                For {order.recurrence_duration} deliveries total
-              </span>
-            )}
-          </p>
-          <p className="text-sm text-gray-600 mt-2">
-            💰 ${(order.total_cents / 100).toFixed(2)} per delivery
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <button
-            onClick={handleCancel}
-            disabled={loading}
-            className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? '⏳ Cancelling...' : '🚫 Cancel Recurring Order'}
-          </button>
-          
-          <button
-            onClick={onClose}
-            disabled={loading}
-            className="w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
-          >
-            Close
-          </button>
-        </div>
-
-        <p className="text-xs text-gray-500 mt-4">
-          💡 Cancelling will stop future automatic orders. This order will remain in your history.
-        </p>
-      </div>
-    </div>
-  );
-}

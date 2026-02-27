@@ -316,7 +316,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
 </section>
 
 
-      <Footer storeName={settings.farmName} />
+      <Footer storeName={settings.farmName} farmDescription={settings.farmDescription} />
       
       {/* Subscription Modal */}
       {showSubscriptionModal && selectedSubscriptionProduct?.subscriptionData && (
