@@ -38,6 +38,12 @@ export interface CheckoutData {
   subscriptions?: SubscriptionRequest[]; // New: multiple subscriptions
   discountCents?: number;
   shippingChargeCents?: number; // Shipping charge if applicable
+  shippingEstimateHighCents?: number; // Max shipping estimate shown to customer
+  deliveryChargeCents?: number; // Delivery charge if applicable
+  customerZip?: string;
+  customerStreet?: string;
+  customerCity?: string;
+  customerState?: string;
 }
 
 export interface CheckoutResult {
@@ -262,6 +268,7 @@ export function useCheckout() {
       // 2) Compute subtotal / tax / total in cents using tenant-aware tax settings
       const discountCents = checkoutData.discountCents || 0;
       const shippingChargeCents = checkoutData.shippingChargeCents || 0;
+      const deliveryChargeCents = checkoutData.deliveryChargeCents || 0;
       
       console.log('💰 [createOrder] Calculating totals:', { discountCents, shippingChargeCents, taxConfig });
       
@@ -273,8 +280,8 @@ export function useCheckout() {
 
       const subtotalCents = totals.subtotalCents;
       const taxCents = totals.taxCents;
-      // Add shipping charge to the final total
-      const totalCents = totals.totalCents + shippingChargeCents;
+      // Add shipping/delivery charge to the final total
+      const totalCents = totals.totalCents + shippingChargeCents + deliveryChargeCents;
 
       console.log('💰 [createOrder] Calculated totals:', { subtotalCents, taxCents, totalCents, shippingChargeCents });
 
@@ -317,6 +324,8 @@ export function useCheckout() {
         totalCents,
         discountCents,
         shippingChargeCents,
+        shippingEstimateHighCents: checkoutData.shippingEstimateHighCents ?? null,
+        deliveryChargeCents,
 
         // Optional subscription payload (for storefront_subscriptions)
         subscription: subscriptionPayload,

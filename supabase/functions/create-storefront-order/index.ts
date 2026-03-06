@@ -35,6 +35,10 @@ interface OrderRequest {
   deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other'
   deliveryAddress?: string
   deliveryNotes?: string
+  customerZip?: string
+  customerStreet?: string
+  customerCity?: string
+  customerState?: string
   fulfillmentLocation?: string
   paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash'
   paymentNowChoice?: 'pay_now' | 'pay_at_pickup'
@@ -44,6 +48,7 @@ interface OrderRequest {
   totalCents: number
   discountCents?: number
   shippingChargeCents?: number
+  deliveryChargeCents?: number
   isWeightEstimate?: boolean
   estimatedTotalCents?: number
   stripePaymentIntentId?: string  // Stripe payment intent ID for idempotency
@@ -294,6 +299,9 @@ serve(async (req: Request) => {
     if (orderRequest.shippingChargeCents && orderRequest.shippingChargeCents > 0) {
       noteParts.push(`shipping charge: $${(orderRequest.shippingChargeCents / 100).toFixed(2)}`)
     }
+    if (orderRequest.deliveryChargeCents && orderRequest.deliveryChargeCents > 0) {
+      noteParts.push(`delivery charge: $${(orderRequest.deliveryChargeCents / 100).toFixed(2)}`)
+    }
     if (orderRequest.paymentMethod) {
       noteParts.push(`payment: ${orderRequest.paymentMethod}`)
     }
@@ -311,10 +319,16 @@ serve(async (req: Request) => {
         customer_name: orderRequest.customerName,
         customer_email: orderRequest.customerEmail,
         customer_phone: orderRequest.customerPhone,
+        customer_zip: orderRequest.customerZip ?? null,
+        customer_street: orderRequest.customerStreet ?? null,
+        customer_city: orderRequest.customerCity ?? null,
+        customer_state: orderRequest.customerState ?? null,
         note: note || null,
         subtotal_cents: orderRequest.subtotalCents,
         tax_cents: orderRequest.taxCents,
         shipping_cents: orderRequest.shippingChargeCents ?? 0,
+        shipping_estimate_high_cents: orderRequest.shippingEstimateHighCents ?? orderRequest.shippingChargeCents ?? 0,
+        delivery_cents: orderRequest.deliveryChargeCents ?? 0,
         total_cents: orderRequest.totalCents,
         total: (orderRequest.totalCents / 100).toFixed(2),
         discount_cents: orderRequest.discountCents ?? 0,
@@ -413,9 +427,37 @@ serve(async (req: Request) => {
       const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
       const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
       const isBulkReservation = Boolean(isPackForYou && bulkBin)
-      const packageKey = isBulkReservation
-        ? String(bulkBin?.package_key ?? bulkBinKey)
-        : buildPackageKey(line.productId, product?.unit, line)
+
+      // Resolve package_key: buildPackageKey works for lb products (key = productId|weight)
+      // but fails for EA variant products where the key uses variant_size (e.g. productId|4).
+      // When the computed key doesn't exist in pre-fetched bins, fall back to looking up
+      // the product's actual non-bulk bin from binsByProduct.
+      let packageKey: string
+      if (isBulkReservation) {
+        packageKey = String(bulkBin?.package_key ?? bulkBinKey)
+      } else {
+        const computedKey = buildPackageKey(line.productId, product?.unit, line)
+        if (binsByKey.has(computedKey)) {
+          packageKey = computedKey
+        } else {
+          // Fallback: find the product's non-bulk bin (handles EA variants where key uses variant_size)
+          const productBins = (binsByProduct.get(line.productId) ?? []).filter((b: PackageBinRow) => b.bin_kind !== 'bulk_weight')
+          if (productBins.length === 1) {
+            packageKey = productBins[0].package_key
+            console.log(`📦 Resolved EA variant bin key: ${computedKey} → ${packageKey}`)
+          } else if (productBins.length > 1) {
+            // Multiple bins for product: try matching by weight_btn if available
+            const matchByWeight = productBins.find((b: PackageBinRow) => {
+              const bw = line.binWeight ?? line.weightLbs ?? 0
+              return (b.weight_btn ?? 0) === bw
+            })
+            packageKey = matchByWeight ? matchByWeight.package_key : computedKey
+            console.log(`📦 Resolved multi-bin key: ${computedKey} → ${packageKey}`)
+          } else {
+            packageKey = computedKey
+          }
+        }
+      }
 
       // Storefront reservation logic:
       // - Pre-orders: No reservation (tenant fulfills later)

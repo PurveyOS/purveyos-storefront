@@ -49,9 +49,10 @@ export interface Product {
     duration_intervals?: number;
     season_start_date?: string;
     season_end_date?: string;
-    min_interval?: number;
+    min_interval?: 'weekly' | 'biweekly' | 'monthly';
     substitutionGroups?: Array<{
       groupName: string;
+      allowedUnits?: number;
       options: Array<{
         productId: string;
         productName: string;
@@ -59,6 +60,10 @@ export interface Product {
         unit: string;
         isOptional?: boolean;
       }>;
+    }>;
+    boxContents?: Array<{
+      productId: string;
+      quantity: number;
     }>;
   };
   

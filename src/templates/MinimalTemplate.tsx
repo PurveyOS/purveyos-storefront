@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type { StorefrontTemplateProps } from '../types/storefront';
@@ -16,7 +16,6 @@ export function MinimalTemplate({
   cart,
   tenantDefaultOrderMode,
   onAddToCart,
-  onRemoveFromCart,
   onAddBinToCart,
   features,
 }: StorefrontTemplateProps) {
@@ -157,7 +156,6 @@ export function MinimalTemplate({
                     {/* Sold Out Overlay */}
                     {(() => {
                       const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
-                      const canPreOrder = (features?.preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
                       if (!isSoldOut) return null;
                       return (
                         <div className="absolute inset-0 flex items-center justify-center bg-white/80">
@@ -310,7 +308,6 @@ export function MinimalTemplate({
                       }));
 
                       const legacyBins = adjustedBins.filter((bin) => bin.binKind !== 'bulk_weight');
-                      const bulkBin = adjustedBins.find((bin) => bin.binKind === 'bulk_weight');
                       const bulkBinRaw = (product.weightBins || []).find((bin) => bin.binKind === 'bulk_weight');
                       const bulkPackageCount = bulkBinRaw ? (bulkBinRaw.qty ?? 0) : null;
                       const bulkAvgWeight = bulkBinRaw
@@ -326,14 +323,6 @@ export function MinimalTemplate({
 
                       const weightValue = weightInputs[product.id] ?? '1';
                       const qtyValue = qtyInputs[product.id] ?? 1;
-
-                      const handleBinSelect = (bin: { weightBtn: number; unitPriceCents: number }) => {
-                        if (onAddBinToCart) {
-                          onAddBinToCart(product.id, bin.weightBtn, bin.unitPriceCents);
-                        } else {
-                          onAddToCart(product.id, 1, { binWeight: bin.weightBtn, unitPriceCents: bin.unitPriceCents });
-                        }
-                      };
 
                       const handleCustomWeight = () => {
                         const parsed = parseFloat(weightValue);

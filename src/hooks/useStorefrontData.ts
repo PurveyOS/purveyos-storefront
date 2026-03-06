@@ -19,11 +19,9 @@ const MOCK_SETTINGS = {
   contactPhone: "(555) 123-4567",
   allow_pickup: true,
   allow_shipping: true,
-  allow_dropoff: false,
   allow_other: false,
   shipping_charge_cents: 0,
   pickup_locations: [],
-  dropoff_locations: [],
 };
 
 const MOCK_CATEGORIES: Category[] = [
@@ -269,8 +267,13 @@ export function useStorefrontData(tenantId: string): {
           darkMode: settingsData.enable_dark_mode || false,
           allow_pickup: settingsData.allow_pickup ?? false,
           allow_shipping: settingsData.allow_shipping ?? true,
-          allow_dropoff: settingsData.allow_dropoff ?? false,
           allow_other: settingsData.allow_other ?? false,
+          allow_delivery: settingsData.allow_delivery ?? false,
+          delivery_origin_address: settingsData.delivery_origin_address ?? '',
+          delivery_origin_lat: settingsData.delivery_origin_lat ?? null,
+          delivery_origin_lng: settingsData.delivery_origin_lng ?? null,
+          delivery_zones: Array.isArray(settingsData.delivery_zones) ? settingsData.delivery_zones : [],
+          delivery_schedule_note: settingsData.delivery_schedule_note ?? '',
           enable_card: settingsData.enable_card ?? settingsData.allow_card ?? false,
           allow_card: settingsData.allow_card ?? settingsData.enable_card ?? false,
           enable_cash: settingsData.enable_cash ?? false,
@@ -279,14 +282,6 @@ export function useStorefrontData(tenantId: string): {
           enable_cashapp: (settingsData as any).enable_cashapp ?? false,
           shipping_charge_cents: settingsData.shipping_charge_cents ?? 0,
           pickup_locations: Array.isArray(settingsData.pickup_locations) ? settingsData.pickup_locations : [],
-          dropoff_locations: Array.isArray(settingsData.dropoff_locations)
-            ? settingsData.dropoff_locations.map((loc: any) => ({
-                name: loc?.name || '',
-                address: loc?.address || '',
-                day: loc?.day || '',
-                time: loc?.time || '',
-              }))
-            : [],
           storefront_payment_policy: (tenantPolicyData as any)?.storefront_payment_policy ?? 'pay_now',
           featureSections: Array.isArray(settingsData.feature_sections)
             ? settingsData.feature_sections.map((s: any) => ({

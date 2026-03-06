@@ -24,11 +24,15 @@ export interface StorefrontSettings {
   // Fulfillment controls
   allow_pickup?: boolean;
   allow_shipping?: boolean;
-  allow_dropoff?: boolean;
   allow_other?: boolean;
+  allow_delivery?: boolean;
+  delivery_origin_address?: string;
+  delivery_origin_lat?: number | null;
+  delivery_origin_lng?: number | null;
+  delivery_zones?: any[];
+  delivery_schedule_note?: string;
   shipping_charge_cents?: number;
   pickup_locations?: Array<{ name: string; address: string }>;
-  dropoff_locations?: Array<{ name: string; address: string; day?: string; time?: string }>;
   storefront_payment_policy?: 'pay_now' | 'pay_at_pickup' | 'both';
 }
 
