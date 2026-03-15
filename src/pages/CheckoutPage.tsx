@@ -26,7 +26,8 @@ interface Discount {
 }
 
 export function CheckoutPage() {
-  
+  const isDev = import.meta.env.DEV;
+
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
@@ -294,6 +295,10 @@ export function CheckoutPage() {
     return [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
   };
 
+  const hasCompleteShippingAddress = (address: ShippingAddress) => {
+    return Boolean(address.street.trim() && address.city.trim() && address.state.trim() && /^\d{5}$/.test(address.zip));
+  };
+
   const buildBinKey = (productId: string, binWeight?: number) => {
     const weightBtn = Math.round((binWeight ?? 0) * 100) / 100;
     const safeWeight = Number.isFinite(weightBtn) ? weightBtn : 0;
@@ -471,14 +476,11 @@ export function CheckoutPage() {
       if (formData.deliveryMethod === 'shipping') {
         setFormData(current => ({ ...current, deliveryAddress: formatShippingAddress(updated) }));
       }
-      // Fetch estimate when ZIP reaches 5 digits
-      if (field === 'zip') {
-        if (value.length === 5 && /^\d{5}$/.test(value)) {
-          fetchShippingEstimate(value);
-        } else {
-          setShippingEstimate(null);
-          setEstimateError(null);
-        }
+      if (hasCompleteShippingAddress(updated)) {
+        fetchShippingEstimate(updated);
+      } else {
+        setShippingEstimate(null);
+        setEstimateError(null);
       }
       return updated;
     });
@@ -537,8 +539,8 @@ export function CheckoutPage() {
     ? deliveryGeoResult.matched_zone.charge_cents
     : 0;
 
-  const fetchShippingEstimate = async (zip: string) => {
-    if (!tenant?.id || zip.length !== 5 || !/^\d{5}$/.test(zip)) {
+  const fetchShippingEstimate = async (address: ShippingAddress) => {
+    if (!tenant?.id || !hasCompleteShippingAddress(address)) {
       setShippingEstimate(null);
       return;
     }
@@ -554,30 +556,27 @@ export function CheckoutPage() {
         return sum + (weight * qty);
       }, 0) || 10; // fallback 10 lbs if no weight data
 
-      // Collect unique product IDs for temperature-aware estimates
-      const productIds = [...new Set(cartItems.map((item: any) => item.productId).filter(Boolean))];
-
       const { data, error } = await supabase.functions.invoke('estimate-shipping', {
         body: {
           tenant_id: tenant.id,
-          dest_zip: zip,
+          dest_street: address.street,
+          dest_city: address.city,
+          dest_state: address.state,
+          dest_zip: address.zip,
           cart_weight_lbs: cartWeightLbs,
-          product_ids: productIds,
+          product_weights: cartItems.map((item: any) => ({
+            product_id: item.productId,
+            weight_lbs: Number(item.weight ?? item.binWeight ?? item.requestedWeightLbs ?? 0),
+            qty: item.quantity ?? 1,
+          })),
         },
       });
 
       if (error) throw error;
 
-      if (data.reason === 'no_origin_zip') {
-        // Producer hasn't set their origin ZIP yet — show message, don't block
-        setShippingEstimate({
-          estimate_cents: null,
-          range_low_cents: 0,
-          range_high_cents: 0,
-          service_label: '',
-          transit_days: data.transit_days ?? 2,
-          reason: 'no_origin_zip',
-        });
+      if (data?.available === false) {
+        setShippingEstimate(null);
+        setEstimateError(data.message || 'Shipping will be confirmed after order.');
         return;
       }
 
@@ -687,7 +686,8 @@ export function CheckoutPage() {
         };
       });
 
-      // Add shipping charge if applicable — use the high estimate (single price shown to customer)
+      // Add shipping charge if applicable — use the ceiling estimate (includes markup + materials + buffer)
+      // to protect margin against rate fluctuation between estimate and label purchase
       const shippingChargeCents = formData.deliveryMethod === 'shipping'
         ? (shippingEstimate?.range_high_cents ?? shippingEstimate?.estimate_cents ?? (storefrontData?.settings as any)?.shipping_charge_cents ?? 0)
         : 0;
@@ -1269,6 +1269,28 @@ export function CheckoutPage() {
     return sum + itemTotal;
   }, 0);
 
+  const shippingEstimateDebug = formData.deliveryMethod === 'shipping' ? {
+    request: {
+      tenant_id: tenant?.id ?? null,
+      dest_street: shippingAddress.street || null,
+      dest_city: shippingAddress.city || null,
+      dest_state: shippingAddress.state || null,
+      dest_zip: shippingAddress.zip || null,
+      cart_weight_lbs: cartItems.reduce((sum, item: any) => {
+        const weight = item.weight ?? item.binWeight ?? item.requestedWeightLbs ?? 0;
+        const qty = item.quantity ?? 1;
+        return sum + (weight * qty);
+      }, 0) || 10,
+      product_weights: cartItems.map((item: any) => ({
+        product_id: item.productId,
+        weight_lbs: Number(item.weight ?? item.binWeight ?? item.requestedWeightLbs ?? 0),
+        qty: item.quantity ?? 1,
+      })),
+    },
+    response: shippingEstimate,
+    error: estimateError,
+  } : null;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
@@ -1621,6 +1643,24 @@ export function CheckoutPage() {
                           </div>
                         </div>
                       </div>
+                    )}
+
+                    {isDev && formData.deliveryMethod === 'shipping' && shippingEstimateDebug && (
+                      <details className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+                        <summary className="cursor-pointer font-semibold text-slate-800">
+                          Dev: estimate-shipping debug
+                        </summary>
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <div className="font-semibold mb-1">Request</div>
+                            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-white p-2 border border-slate-200">{JSON.stringify(shippingEstimateDebug.request, null, 2)}</pre>
+                          </div>
+                          <div>
+                            <div className="font-semibold mb-1">Response</div>
+                            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-white p-2 border border-slate-200">{JSON.stringify(shippingEstimateDebug.response, null, 2)}</pre>
+                          </div>
+                        </div>
+                      </details>
                     )}
 
                     {!estimateLoading && shippingEstimate?.reason === 'no_origin_zip' && (
@@ -2098,7 +2138,7 @@ export function CheckoutPage() {
     {(() => {
       const subtotal = cartTotal - (discountCents / 100);
       const shippingCharge = formData.deliveryMethod === 'shipping'
-        ? ((shippingEstimate?.estimate_cents ?? (storefrontData?.settings as any)?.shipping_charge_cents ?? 0) / 100)
+        ? (((shippingEstimate?.range_high_cents ?? shippingEstimate?.estimate_cents ?? (storefrontData?.settings as any)?.shipping_charge_cents ?? 0)) / 100)
         : 0;
       const deliveryCharge = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
         ? (deliveryGeoResult.matched_zone.charge_cents / 100)
