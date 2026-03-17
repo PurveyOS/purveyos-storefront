@@ -8,6 +8,7 @@ import { SubscriptionBoxSelector } from '../components/SubscriptionBoxSelector';
 import { StripeAuthorizationForm } from '../components/StripeAuthorizationForm';
 import { CartValidationModal } from '../components/CartValidationModal';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
+import { friendlyOrderError, isInventoryOrderError } from '../utils/orderErrors';
 import { supabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
 import { Elements } from '@stripe/react-stripe-js';
@@ -819,7 +820,7 @@ export function CheckoutPage() {
       // Check for error in function response
       if (data?.error) {
         console.error('❌ Function returned error:', data.error);
-        setOrderError(`Checkout failed: ${data.error}`);
+        setOrderError(friendlyOrderError(`Checkout failed: ${data.error}`));
         return;
       }
       
@@ -1026,7 +1027,13 @@ export function CheckoutPage() {
         rawError: result.error,
         fullResult: result
       });
-      setOrderError(errorMessage);
+      setOrderError(friendlyOrderError(errorMessage));
+
+      if (isInventoryOrderError(errorMessage)) {
+        toast.error('Some items in your cart are sold out. Please update your cart and try again.', {
+          duration: 6000,
+        });
+      }
     }
   };
 
@@ -1312,7 +1319,7 @@ export function CheckoutPage() {
           {checkoutFailureMessage && (
             <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
               <div className="font-semibold">Order not completed</div>
-              <div className="text-sm">{checkoutFailureMessage}</div>
+              <div className="text-sm">{friendlyOrderError(checkoutFailureMessage)}</div>
               <button
                 type="button"
                 onClick={() => {
