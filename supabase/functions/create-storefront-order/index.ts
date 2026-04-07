@@ -273,12 +273,97 @@ serve(async (req: Request) => {
       }
     }
 
+    // If shortages were found, re-verify against actual product_reservations
+    // (the products.reserved_weight_lbs cache can drift from reality)
     if (shortages.length > 0) {
-      console.warn('Blocking order: insufficient stock for lines', shortages)
-      return new Response(JSON.stringify({ error: 'out_of_stock', shortages }), {
-        status: 409,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      const shortageProductIds = Array.from(new Set(shortages.map((s) => s.productId)))
+
+      // Fetch ACTUAL active product-level reservations for the affected products
+      const { data: activeReservations, error: resError } = await supabaseAdmin
+        .from('product_reservations')
+        .select('product_id, reserved_weight_lbs')
+        .eq('tenant_id', orderRequest.tenantId)
+        .in('product_id', shortageProductIds)
+        .eq('status', 'active')
+
+      if (resError) {
+        console.error('Error fetching product_reservations for recheck:', resError)
+        // Fall through to original shortages check for safety
+      }
+
+      // Sum actual reserved weight per product
+      const actualReservedByProduct = new Map<string, number>()
+      if (activeReservations) {
+        for (const r of activeReservations) {
+          const cur = actualReservedByProduct.get(r.product_id) ?? 0
+          actualReservedByProduct.set(r.product_id, cur + (Number(r.reserved_weight_lbs) || 0))
+        }
+      }
+
+      // Recompute shortages using actual reservations instead of cached value
+      const verifiedShortages: typeof shortages = []
+      for (const line of orderRequest.lines) {
+        if (line.isPreOrder) continue
+        // Only recheck products that were in the initial shortage list
+        if (!shortageProductIds.includes(line.productId)) continue
+
+        const productRow = productsById.get(line.productId)
+        const unitLower = (productRow?.unit || '').toLowerCase()
+        const required = line.qty ?? 1
+
+        if (unitLower.startsWith('lb')) {
+          const productBins = binsByProduct.get(line.productId) ?? []
+          const totalWeight = productBins.reduce((sum, b) => {
+            if (b.bin_kind === 'bulk_weight') return sum
+            return sum + ((b.weight_btn ?? 0) * (b.qty ?? 0))
+          }, 0)
+          const reservedBinWeight = productBins.reduce((sum, b) => {
+            if (b.bin_kind === 'bulk_weight') return sum
+            return sum + ((b.weight_btn ?? 0) * (b.reserved_qty ?? 0))
+          }, 0)
+          const cachedReservedWeight = productRow?.reserved_weight_lbs ?? 0
+          const actualReservedWeight = actualReservedByProduct.get(line.productId) ?? 0
+          const available = Math.max(0, totalWeight - reservedBinWeight - actualReservedWeight)
+          const reqWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+          const requiredWeight = reqWeight * required
+
+          console.warn(`📊 Stock recheck for ${line.productId}: totalWeight=${totalWeight}, reservedBinWeight=${reservedBinWeight}, cachedReservedWeight=${cachedReservedWeight}, actualReservedWeight=${actualReservedWeight}, available=${available}, required=${requiredWeight}`)
+
+          // If cache was stale, fix it in the background (fire-and-forget)
+          if (cachedReservedWeight !== actualReservedWeight) {
+            console.warn(`⚠️ Cache drift detected for product ${line.productId}: cached=${cachedReservedWeight}, actual=${actualReservedWeight}. Repairing.`)
+            supabaseAdmin
+              .from('products')
+              .update({ reserved_weight_lbs: actualReservedWeight })
+              .eq('id', line.productId)
+              .eq('tenant_id', orderRequest.tenantId)
+              .then(({ error }) => {
+                if (error) console.error('Failed to repair reserved_weight_lbs cache:', error)
+                else console.log(`✅ Repaired reserved_weight_lbs for ${line.productId}: ${cachedReservedWeight} → ${actualReservedWeight}`)
+              })
+          }
+
+          if (requiredWeight > available) {
+            verifiedShortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+          }
+        } else {
+          // Non-lb items: recheck uses bin data directly (no cache dependency), so keep original shortage
+          const originalShortage = shortages.find((s) => s.productId === line.productId)
+          if (originalShortage) {
+            verifiedShortages.push(originalShortage)
+          }
+        }
+      }
+
+      if (verifiedShortages.length > 0) {
+        console.warn('Blocking order: insufficient stock for lines (verified)', verifiedShortages)
+        return new Response(JSON.stringify({ error: 'out_of_stock', shortages: verifiedShortages }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      console.log('✅ Initial shortages resolved after cache recheck — proceeding with order')
     }
 
     // Start a transaction by using multiple operations
