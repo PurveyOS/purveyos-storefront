@@ -44,6 +44,7 @@ export interface CheckoutData {
   customerStreet?: string;
   customerCity?: string;
   customerState?: string;
+  confirmationToken?: string; // Stripe ConfirmationToken ID (card pre-tokenized inline)
 }
 
 export interface CheckoutResult {
@@ -329,6 +330,8 @@ export function useCheckout() {
 
         // Optional subscription payload (for storefront_subscriptions)
         subscription: subscriptionPayload,
+        // Pre-tokenized card (inline Stripe form)
+        confirmationToken: checkoutData.confirmationToken,
       };
 
       console.log('🚀 [createOrder] Calling Edge Function with payload:', edgeFunctionPayload);

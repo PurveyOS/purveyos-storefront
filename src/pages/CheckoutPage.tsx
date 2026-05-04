@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
@@ -6,6 +6,7 @@ import { useCart } from '../context/CartContext';
 import { useCheckout, type CheckoutData, type GroupChoice } from '../hooks/useCheckout';
 import { SubscriptionBoxSelector } from '../components/SubscriptionBoxSelector';
 import { StripeAuthorizationForm } from '../components/StripeAuthorizationForm';
+import { StripeInlineCardForm, type StripeCardFormHandle } from '../components/StripeInlineCardForm';
 import { CartValidationModal } from '../components/CartValidationModal';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { friendlyOrderError, isInventoryOrderError } from '../utils/orderErrors';
@@ -194,6 +195,7 @@ export function CheckoutPage() {
   const [needsStripeConfirmation, setNeedsStripeConfirmation] = useState(false);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [dismissedCheckoutError, setDismissedCheckoutError] = useState(false);
+  const stripeCardRef = useRef<StripeCardFormHandle>(null);
   
   // Discount state
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -886,6 +888,24 @@ export function CheckoutPage() {
       return;
     }
 
+    // Tokenize card details before creating the order (if paying by card now)
+    let confirmationToken: string | undefined;
+    const isPayingByCardNow = formData.paymentMethod === 'card' &&
+      (storefrontPaymentPolicy === 'pay_now' || formData.paymentNowChoice === 'pay_now');
+
+    if (isPayingByCardNow) {
+      if (!stripeCardRef.current) {
+        setOrderError('Card form not ready. Please wait a moment and try again.');
+        return;
+      }
+      try {
+        confirmationToken = await stripeCardRef.current.getConfirmationToken();
+      } catch (tokenErr: any) {
+        setOrderError(tokenErr.message || 'Failed to process card details. Please try again.');
+        return;
+      }
+    }
+
     // Save customer profile with email preference
     await saveCustomerProfile();
 
@@ -984,6 +1004,7 @@ export function CheckoutPage() {
     shippingChargeCents: formData.deliveryMethod === 'shipping' ? shippingChargeCents : 0,
     shippingEstimateHighCents: formData.deliveryMethod === 'shipping' ? (shippingEstimate?.range_high_cents ?? shippingChargeCents) : 0,
     deliveryChargeCents: formData.deliveryMethod === 'delivery' ? deliveryChargeCents : 0,
+    confirmationToken,
   },
   {
     taxRate: tenant?.tax_rate ?? 0,
@@ -1879,6 +1900,26 @@ export function CheckoutPage() {
                     <p className="text-sm" style={{ color: primaryColor }}>
                       {`You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
                     </p>
+                  </div>
+                )}
+
+                {/* Inline Stripe card form — shown when card is selected and payment is due now */}
+                {formData.paymentMethod === 'card' && stripePromise &&
+                  (storefrontPaymentPolicy === 'pay_now' || formData.paymentNowChoice === 'pay_now') && (
+                  <div className="mt-4 p-4 border-2 rounded-lg" style={{ borderColor: `${primaryColor}40` }}>
+                    <p className="text-sm font-medium text-gray-700 mb-3">Card Details</p>
+                    <Elements
+                      stripe={stripePromise}
+                      options={{ mode: 'payment', amount: Math.max(50, Math.round(cart.total * 100)), currency: 'usd' }}
+                    >
+                      <StripeInlineCardForm ref={stripeCardRef} />
+                    </Elements>
+                  </div>
+                )}
+
+                {formData.paymentMethod === 'card' && !stripePromise && (
+                  <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">Card payments are not configured for this store. Please choose another payment method.</p>
                   </div>
                 )}
 
