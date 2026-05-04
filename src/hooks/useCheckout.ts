@@ -359,8 +359,8 @@ export function useCheckout() {
       return {
         success: true,
         orderId,
-        clientSecret: (data as any)?.client_secret ?? null,
-        needsStripeConfirmation: (data as any)?.needs_stripe_confirmation ?? false,
+        clientSecret: (data as any)?.client_secret ?? (data as any)?.clientSecret ?? null,
+        needsStripeConfirmation: (data as any)?.needs_stripe_confirmation ?? (data as any)?.needsStripeConfirmation ?? false,
         paymentPolicy: (data as any)?.payment_policy,
         paymentStatus: (data as any)?.payment_status,
         authAmountCents: (data as any)?.auth_amount_cents ?? null,

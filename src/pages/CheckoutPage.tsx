@@ -1858,12 +1858,10 @@ export function CheckoutPage() {
                   </div>
                 )}
 
-                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && formData.paymentNowChoice && (
+                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && formData.paymentNowChoice === 'pay_at_pickup' && (
                   <div className="rounded-md p-4 mb-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor }}>
-                      {formData.paymentNowChoice === 'pay_now'
-                        ? "Your card will be charged now for the full order total."
-                        : `You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
+                      {`You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
                     </p>
                   </div>
                 )}
@@ -1876,12 +1874,10 @@ export function CheckoutPage() {
                   </div>
                 )}
 
-                {formData.paymentMethod === 'card' && storefrontPaymentPolicy !== 'both' && (
+                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'pay_at_pickup' && (
                   <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor }}>
-                      {storefrontPaymentPolicy === 'pay_now'
-                        ? "Your card will be charged now for the full order total."
-                        : `You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
+                      {`You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
                     </p>
                   </div>
                 )}
