@@ -102,7 +102,7 @@ export function StripeAuthorizationForm({
         className="w-full px-4 py-3 rounded-lg text-white font-medium transition-all duration-200 disabled:opacity-60"
         style={{ backgroundColor: '#0f6fff' }}
       >
-        {submitting ? 'Authorizing...' : 'Authorize Payment'}
+        {submitting ? 'Processing...' : 'Pay Now'}
       </button>
     </form>
   );

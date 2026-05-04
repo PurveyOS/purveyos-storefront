@@ -1157,9 +1157,9 @@ export function CheckoutPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Authorize Payment</h1>
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Complete Payment</h1>
           <p className="text-gray-600 mb-6">
-            Please authorize your card to complete the order.
+            Enter your card details to complete your order.
           </p>
           {stripePromise ? (
             <Elements stripe={stripePromise} options={{ clientSecret: stripeClientSecret }}>
@@ -1862,7 +1862,7 @@ export function CheckoutPage() {
                   <div className="rounded-md p-4 mb-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor }}>
                       {formData.paymentNowChoice === 'pay_now'
-                        ? "You'll authorize your card now. Final charge will be adjusted after packing."
+                        ? "Your card will be charged now for the full order total."
                         : `You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
                     </p>
                   </div>
@@ -1880,7 +1880,7 @@ export function CheckoutPage() {
                   <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor }}>
                       {storefrontPaymentPolicy === 'pay_now'
-                        ? "You'll authorize your card now. Final charge will be adjusted after packing."
+                        ? "Your card will be charged now for the full order total."
                         : `You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
                     </p>
                   </div>
