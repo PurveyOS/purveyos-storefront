@@ -889,7 +889,7 @@ export function CheckoutPage() {
     }
 
     // Tokenize card details before creating the order (if paying by card now)
-    let confirmationToken: string | undefined;
+    let paymentMethodId: string | undefined;
     const isPayingByCardNow = formData.paymentMethod === 'card' &&
       (storefrontPaymentPolicy === 'pay_now' || formData.paymentNowChoice === 'pay_now');
 
@@ -899,7 +899,7 @@ export function CheckoutPage() {
         return;
       }
       try {
-        confirmationToken = await stripeCardRef.current.getConfirmationToken();
+        paymentMethodId = await stripeCardRef.current.getPaymentMethodId();
       } catch (tokenErr: any) {
         setOrderError(tokenErr.message || 'Failed to process card details. Please try again.');
         return;
@@ -1004,7 +1004,7 @@ export function CheckoutPage() {
     shippingChargeCents: formData.deliveryMethod === 'shipping' ? shippingChargeCents : 0,
     shippingEstimateHighCents: formData.deliveryMethod === 'shipping' ? (shippingEstimate?.range_high_cents ?? shippingChargeCents) : 0,
     deliveryChargeCents: formData.deliveryMethod === 'delivery' ? deliveryChargeCents : 0,
-    confirmationToken,
+    paymentMethodId,
   },
   {
     taxRate: tenant?.tax_rate ?? 0,
@@ -1908,10 +1908,7 @@ export function CheckoutPage() {
                   (storefrontPaymentPolicy === 'pay_now' || formData.paymentNowChoice === 'pay_now') && (
                   <div className="mt-4 p-4 border-2 rounded-lg" style={{ borderColor: `${primaryColor}40` }}>
                     <p className="text-sm font-medium text-gray-700 mb-3">Card Details</p>
-                    <Elements
-                      stripe={stripePromise}
-                      options={{ mode: 'payment', amount: Math.max(50, Math.round(cart.total * 100)), currency: 'usd' }}
-                    >
+                    <Elements stripe={stripePromise}>
                       <StripeInlineCardForm ref={stripeCardRef} />
                     </Elements>
                   </div>
