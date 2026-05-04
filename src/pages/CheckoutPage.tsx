@@ -15,8 +15,7 @@ import toast from 'react-hot-toast';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 
-const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
-const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
+const platformStripeKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
 
 interface Discount {
   id: string;
@@ -35,6 +34,14 @@ export function CheckoutPage() {
   const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
   const { cart, clearCart, updateCartTotal, removeItems } = useCart();
   const { createOrder, loading: checkoutLoading, error: checkoutError } = useCheckout();
+
+  // Load Stripe with the platform key scoped to the tenant's connected account
+  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
+  useEffect(() => {
+    if (platformStripeKey && tenant?.stripe_account_id) {
+      setStripePromise(loadStripe(platformStripeKey, { stripeAccount: tenant.stripe_account_id }));
+    }
+  }, [tenant?.stripe_account_id]);
 
   type ShippingAddress = {
     street: string;
