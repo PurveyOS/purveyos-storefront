@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type { StorefrontTemplateProps } from '../types/storefront';
 import { Navbar } from '../components/Navbar';
@@ -19,7 +19,8 @@ export function MinimalTemplate({
   onAddBinToCart,
   features,
 }: StorefrontTemplateProps) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get('category'));
   const [subscriptionProduct, setSubscriptionProduct] = useState<Product | null>(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showSubstitutionModal, setShowSubstitutionModal] = useState(false);
@@ -38,6 +39,23 @@ export function MinimalTemplate({
   const filteredProducts = selectedCategory 
     ? products.filter(product => product.categoryId === selectedCategory)
     : products;
+
+  useEffect(() => {
+    setSelectedCategory(searchParams.get('category'));
+  }, [searchParams]);
+
+  const updateSelectedCategory = (categoryId: string | null) => {
+    setSelectedCategory(categoryId);
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (categoryId) {
+      nextParams.set('category', categoryId);
+    } else {
+      nextParams.delete('category');
+    }
+
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const cartItemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -95,7 +113,7 @@ export function MinimalTemplate({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-center flex-wrap gap-2 sm:gap-3">
             <button 
-              onClick={() => setSelectedCategory(null)}
+              onClick={() => updateSelectedCategory(null)}
               className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
                 selectedCategory === null
                   ? 'text-gray-900 border-gray-900'
@@ -107,7 +125,7 @@ export function MinimalTemplate({
             {categories.map((category) => (
               <button
                 key={category.id}
-                onClick={() => setSelectedCategory(category.id)}
+                onClick={() => updateSelectedCategory(category.id)}
                 className={`px-3 sm:px-5 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
                   selectedCategory === category.id
                     ? 'text-gray-900 border-gray-900'

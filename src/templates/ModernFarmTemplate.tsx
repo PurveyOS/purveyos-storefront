@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { StorefrontTemplateProps } from '../types/storefront';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
@@ -18,7 +19,8 @@ export function ModernFarmTemplate({
   onAddBinToCart,
   features,
 }: StorefrontTemplateProps) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get('category'));
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [selectedSubscriptionProduct, setSelectedSubscriptionProduct] = useState<Product | null>(null);
   const [showSubstitutionModal, setShowSubstitutionModal] = useState(false);
@@ -39,6 +41,23 @@ const categoryFiltered =
   selectedCategory && selectedCategory !== "all"
     ? products.filter((product) => product.categoryId === selectedCategory)
     : products;
+
+useEffect(() => {
+  setSelectedCategory(searchParams.get('category'));
+}, [searchParams]);
+
+const updateSelectedCategory = (categoryId: string | null) => {
+  setSelectedCategory(categoryId);
+  const nextParams = new URLSearchParams(searchParams);
+
+  if (categoryId) {
+    nextParams.set('category', categoryId);
+  } else {
+    nextParams.delete('category');
+  }
+
+  setSearchParams(nextParams, { replace: true });
+};
 
 // Sort products: in-stock first, then pre-order, then sold out
 const filteredProducts = categoryFiltered.sort((a, b) => {
@@ -219,7 +238,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
         {/* All Products pill */}
         <button
           type="button"
-          onClick={() => setSelectedCategory(null)}
+          onClick={() => updateSelectedCategory(null)}
           className={[
             "px-4 py-2 rounded-full text-sm md:text-base font-medium border transition-all",
             selectedCategory === null
@@ -235,7 +254,7 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
           <button
             key={label}
             type="button"
-            onClick={() => setSelectedCategory(label)}
+            onClick={() => updateSelectedCategory(label)}
             className={[
               "px-4 py-2 rounded-full text-sm md:text-base font-medium border transition-all",
               selectedCategory === label

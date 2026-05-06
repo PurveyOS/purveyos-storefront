@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useCart } from '../context/CartContext';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { trackProductView } from '../utils/analytics';
@@ -9,6 +10,9 @@ export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading, error } = useStorefrontData(tenant?.id || '');
+  const { addToCart } = useCart();
+  const [fixedQuantity, setFixedQuantity] = useState<number>(1);
+  const [weightAmount, setWeightAmount] = useState<string>('1');
 
   useEffect(() => {
     if (!productId) return;
@@ -89,6 +93,46 @@ export function ProductPage() {
   const relatedProducts = storefrontData.products
     .filter((item) => item.id !== product.id && item.categoryId === product.categoryId)
     .slice(0, 3);
+  const unit = (product.unit || '').toLowerCase();
+  const pricingMode = product.pricingMode ?? (unit === 'lb' ? 'weight' : 'fixed');
+  const hasBulkBin = (product.weightBins || []).some((bin) => bin.binKind === 'bulk_weight');
+  const effectiveOrderMode = hasBulkBin
+    ? 'pack_for_you'
+    : (product.order_mode ?? storefrontData.tenantDefaultOrderMode ?? 'exact_package');
+  const isWeightBased = pricingMode === 'weight';
+
+  const handleAddToCart = () => {
+    if (isWeightBased) {
+      const parsedAmount = Number(weightAmount);
+
+      if (!parsedAmount || parsedAmount <= 0) {
+        return;
+      }
+
+      if (effectiveOrderMode === 'pack_for_you') {
+        addToCart(product.id, 1, {
+          requestedWeightLbs: parsedAmount,
+          lineType: 'pack_for_you',
+          isPreOrder: canPreOrder,
+        });
+        return;
+      }
+
+      addToCart(product.id, 1, {
+        weight: parsedAmount,
+        isPreOrder: canPreOrder,
+      });
+      return;
+    }
+
+    if (!fixedQuantity || fixedQuantity <= 0) {
+      return;
+    }
+
+    addToCart(product.id, fixedQuantity, {
+      isPreOrder: canPreOrder,
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 md:py-12">
@@ -203,6 +247,72 @@ export function ProductPage() {
                 <p className="text-gray-600 leading-7 whitespace-pre-line">
                   {product.description || 'No description has been added for this product yet.'}
                 </p>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Add to cart</h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {isWeightBased
+                      ? effectiveOrderMode === 'pack_for_you'
+                        ? 'Choose how many pounds you want and we will pack the closest available weight.'
+                        : 'Choose how many pounds you want to add to your cart.'
+                      : 'Choose a quantity and add this product to your cart.'}
+                  </p>
+                </div>
+
+                {isWeightBased ? (
+                  <div className="space-y-2">
+                    <label htmlFor="productWeightAmount" className="text-sm font-medium text-gray-700">
+                      {effectiveOrderMode === 'pack_for_you' ? 'Requested pounds' : 'Weight'}
+                    </label>
+                    <div className="flex gap-3">
+                      <input
+                        id="productWeightAmount"
+                        type="number"
+                        min={effectiveOrderMode === 'pack_for_you' ? '1' : '0.25'}
+                        step={effectiveOrderMode === 'pack_for_you' ? '1' : '0.25'}
+                        value={weightAmount}
+                        onChange={(event) => setWeightAmount(event.target.value)}
+                        className="w-32 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                      />
+                      <span className="self-center text-sm text-gray-500">lb</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label htmlFor="productQuantity" className="text-sm font-medium text-gray-700">
+                      Quantity
+                    </label>
+                    <input
+                      id="productQuantity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={fixedQuantity}
+                      onChange={(event) => setFixedQuantity(Math.max(1, Number(event.target.value) || 1))}
+                      className="w-28 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    />
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleAddToCart}
+                    disabled={isSoldOut && !canPreOrder}
+                    className="inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-gray-300"
+                    style={{ backgroundColor: isSoldOut && !canPreOrder ? undefined : primaryColor }}
+                  >
+                    {canPreOrder ? 'Pre-Order Item' : 'Add to Cart'}
+                  </button>
+                  <Link
+                    to="/cart"
+                    className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                  >
+                    Go to Cart
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
