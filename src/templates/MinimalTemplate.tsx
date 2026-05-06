@@ -146,7 +146,7 @@ export function MinimalTemplate({
                   key={product.id}
                   className="group border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="relative aspect-w-4 aspect-h-3 overflow-hidden">
+                  <Link to={`/product/${encodeURIComponent(product.id)}`} className="block relative aspect-w-4 aspect-h-3 overflow-hidden">
                     <img
                       src={product.imageUrl}
                       alt={product.name}
@@ -227,7 +227,7 @@ export function MinimalTemplate({
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                   <div className="px-4 pb-5 pt-3 space-y-3">
                     {product.description && (
                       <div className="flex items-start gap-2">

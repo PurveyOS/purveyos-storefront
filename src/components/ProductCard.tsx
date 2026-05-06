@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { Link } from 'react-router-dom';
 import type { Product } from "../types/product";
 import { WeightBinSelector } from "./WeightBinSelector";
 import { isLowStock, formatRestockDate } from "../utils/inventory";
@@ -40,6 +41,7 @@ function isModernProps(props: ProductCardProps): props is ModernProductCardProps
 
 export function ProductCard(props: ProductCardProps) {
   const { product } = props;
+  const productPath = `/product/${encodeURIComponent(product.id)}`;
   const sizeLabel = product.variantSize
     ? `${product.variantSize}${product.variantUnit ? ` ${product.variantUnit}` : ''}`
     : '';
@@ -52,7 +54,7 @@ export function ProductCard(props: ProductCardProps) {
 
     return (
       <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-        <div className="relative overflow-hidden">
+        <Link to={productPath} className="relative overflow-hidden block">
           {product.imageUrl && (
             <img
               src={product.imageUrl}
@@ -68,15 +70,17 @@ export function ProductCard(props: ProductCardProps) {
               </span>
             </div>
           )}
-        </div>
+        </Link>
 
         <div className="p-6">
-          <h3
-            className="text-base font-semibold mb-1 line-clamp-2"
-            style={{ color: String(product.available ? "#0f6fff" : "#999") }}
-          >
-            {product.name}
-          </h3>
+          <Link to={productPath} className="block">
+            <h3
+              className="text-base font-semibold mb-1 line-clamp-2"
+              style={{ color: String(product.available ? "#0f6fff" : "#999") }}
+            >
+              {product.name}
+            </h3>
+          </Link>
           {sizeLabel && (
             <p className="text-xs text-gray-500 mb-2">{sizeLabel}</p>
           )}
@@ -255,7 +259,7 @@ export function ProductCard(props: ProductCardProps) {
       style={{ borderColor: primaryColor + "22" }}
     >
       {/* IMAGE + BADGES */}
-      <div className="relative">
+      <Link to={productPath} className="relative block">
         {product.imageUrl && (
           <img
             src={product.imageUrl}
@@ -296,17 +300,19 @@ export function ProductCard(props: ProductCardProps) {
           </div>
         )}
 
-      </div>
+      </Link>
 
       {/* CONTENT */}
       <div className="flex-1 p-3 sm:p-4 flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-1">
-          <h3
-            className="text-base font-semibold line-clamp-2 flex-1"
-            style={{ color: primaryColor }}
-          >
-            {product.name}
-          </h3>
+          <Link to={productPath} className="flex-1 min-w-0">
+            <h3
+              className="text-base font-semibold line-clamp-2"
+              style={{ color: primaryColor }}
+            >
+              {product.name}
+            </h3>
+          </Link>
           {product.description && (
             <button
               type="button"
