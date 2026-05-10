@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { WeightBinSelector } from '../components/WeightBinSelector';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { trackProductView } from '../utils/analytics';
@@ -10,9 +11,10 @@ export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading, error } = useStorefrontData(tenant?.id || '');
-  const { addToCart } = useCart();
+  const { addToCart, cart } = useCart();
   const [fixedQuantity, setFixedQuantity] = useState<number>(1);
   const [weightAmount, setWeightAmount] = useState<string>('1');
+  const [showBinModal, setShowBinModal] = useState(false);
 
   useEffect(() => {
     if (!productId) return;
@@ -96,9 +98,11 @@ export function ProductPage() {
   const unit = (product.unit || '').toLowerCase();
   const pricingMode = product.pricingMode ?? (unit === 'lb' ? 'weight' : 'fixed');
   const hasBulkBin = (product.weightBins || []).some((bin) => bin.binKind === 'bulk_weight');
+  const hasBins = unit === 'lb' && (product.weightBins || []).some((bin) => bin.binKind !== 'bulk_weight');
+  const legacyBins = (product.weightBins || []).filter((bin) => bin.binKind !== 'bulk_weight');
   const effectiveOrderMode = hasBulkBin
     ? 'pack_for_you'
-    : (product.order_mode ?? storefrontData.tenantDefaultOrderMode ?? 'exact_package');
+    : (storefrontData.tenantDefaultOrderMode ?? 'exact_package');
   const isWeightBased = pricingMode === 'weight';
 
   const handleAddToCart = () => {
@@ -224,7 +228,13 @@ export function ProductPage() {
                 <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-gray-500">Ordering</p>
                   <p className="mt-2 text-sm font-medium text-gray-900">
-                    {product.unit?.toLowerCase() === 'lb' ? 'Sold by weight' : 'Sold by unit'}
+                    {isWeightBased
+                      ? effectiveOrderMode === 'pack_for_you'
+                        ? 'Packed to requested weight'
+                        : hasBins && !isSoldOut
+                          ? 'Exact package selection'
+                          : 'Sold by weight'
+                      : 'Sold by unit'}
                   </p>
                 </div>
               </div>
@@ -256,12 +266,59 @@ export function ProductPage() {
                     {isWeightBased
                       ? effectiveOrderMode === 'pack_for_you'
                         ? 'Choose how many pounds you want and we will pack the closest available weight.'
-                        : 'Choose how many pounds you want to add to your cart.'
+                        : hasBins && !isSoldOut
+                          ? 'Choose an exact package from the available inventory.'
+                          : 'Choose how many pounds you want to add to your cart.'
                       : 'Choose a quantity and add this product to your cart.'}
                   </p>
                 </div>
 
-                {isWeightBased ? (
+                {isWeightBased && effectiveOrderMode !== 'pack_for_you' && !isSoldOut && hasBins ? (
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowBinModal(true)}
+                      className="inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium text-white transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: primaryColor }}
+                    >
+                      Choose Package Size
+                    </button>
+
+                    {showBinModal && (
+                      <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+                        onClick={() => setShowBinModal(false)}
+                      >
+                        <div
+                          className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-gray-900">Choose package size</h3>
+                            <button
+                              type="button"
+                              onClick={() => setShowBinModal(false)}
+                              className="text-sm text-gray-500 hover:text-gray-700"
+                            >
+                              X
+                            </button>
+                          </div>
+                          <WeightBinSelector
+                            bins={legacyBins}
+                            unit={product.unit}
+                            primaryColor={primaryColor}
+                            productId={product.id}
+                            cart={cart}
+                            onSelect={({ weightBtn, unitPriceCents }) => {
+                              addToCart(product.id, 1, { binWeight: weightBtn, unitPriceCents });
+                              setShowBinModal(false);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : isWeightBased ? (
                   <div className="space-y-2">
                     <label htmlFor="productWeightAmount" className="text-sm font-medium text-gray-700">
                       {effectiveOrderMode === 'pack_for_you' ? 'Requested pounds' : 'Weight'}
