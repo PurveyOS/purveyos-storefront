@@ -208,6 +208,15 @@ serve(async (req: Request) => {
     })
     const depositProducts = (products ?? []).filter((p: ProductRow) => p.is_deposit_product === true)
     const hasDepositProduct = depositProducts.length > 0
+    const depositPaymentWillBeCollectedNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
+
+    if (hasDepositProduct && !depositPaymentWillBeCollectedNow) {
+      return new Response(JSON.stringify({ error: 'deposit_requires_pay_now' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const depositAmount = hasDepositProduct ? (orderRequest.totalCents / 100) : null
     const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
     const depositPricePerLb = depositProducts.find((p) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb

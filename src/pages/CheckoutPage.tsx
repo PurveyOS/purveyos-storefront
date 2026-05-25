@@ -127,6 +127,10 @@ export function CheckoutPage() {
     (storefrontData?.settings as any)?.enable_zelle ? 'Zelle' : null,
     (storefrontData?.settings as any)?.enable_cashapp ? 'CashApp' : null,
   ].filter(Boolean) as string[];
+  const hasDepositProductInCart = cart.items.some((item: any) => {
+    const storefrontProduct = storefrontData?.products?.find((product: any) => product.id === item.productId);
+    return Boolean(item?.is_deposit_product || item?.metadata?.isDepositProduct || storefrontProduct?.is_deposit_product);
+  });
 
   // Load customer info if logged in
   useEffect(() => {
@@ -922,6 +926,17 @@ export function CheckoutPage() {
       setOrderError('Card payments are not available for this store. Please choose another method.');
       return;
     }
+
+    if (hasDepositProductInCart) {
+      const isPayingDepositNow = formData.paymentMethod === 'card' &&
+        (storefrontPaymentPolicy !== 'both' || formData.paymentNowChoice === 'pay_now');
+
+      if (!isPayingDepositNow) {
+        setOrderError('Deposit products must be paid by card at checkout. Pay later is not available for these items.');
+        return;
+      }
+    }
+
     // Build subscription payload
     console.log('🔍 Checking cart for subscription items:', cart.items);
     const subscriptionItem = cart.items.find((item: any) => item.metadata?.isSubscription);
@@ -1134,6 +1149,8 @@ export function CheckoutPage() {
     (((storefrontData?.settings as any)?.enable_card ?? (storefrontData?.settings as any)?.allow_card ?? false))
   );
   const storefrontPaymentPolicy = (storefrontData?.settings as any)?.storefront_payment_policy ?? 'pay_now';
+  const payLaterAllowed = payLaterOptions.length > 0 && !hasDepositProductInCart;
+  const payAtPickupAllowed = storefrontPaymentPolicy === 'both' && !hasDepositProductInCart;
 
   useEffect(() => {
     if (!cardPaymentAvailable && formData.paymentMethod === 'card') {
@@ -1142,8 +1159,19 @@ export function CheckoutPage() {
   }, [cardPaymentAvailable, formData.paymentMethod]);
 
   useEffect(() => {
+    if (hasDepositProductInCart && formData.paymentMethod === 'pay_later') {
+      setFormData(prev => ({ ...prev, paymentMethod: cardPaymentAvailable ? 'card' : '' as any }));
+    }
+  }, [cardPaymentAvailable, formData.paymentMethod, hasDepositProductInCart]);
+
+  useEffect(() => {
     if (formData.paymentMethod === 'card') {
-      if (storefrontPaymentPolicy === 'both') {
+      if (hasDepositProductInCart) {
+        setFormData(prev => ({
+          ...prev,
+          paymentNowChoice: 'pay_now',
+        }));
+      } else if (storefrontPaymentPolicy === 'both') {
         setFormData(prev => ({
           ...prev,
           paymentNowChoice: prev.paymentNowChoice ?? 'pay_now',
@@ -1157,7 +1185,7 @@ export function CheckoutPage() {
     } else {
       setFormData(prev => ({ ...prev, paymentNowChoice: undefined }));
     }
-  }, [formData.paymentMethod, storefrontPaymentPolicy]);
+  }, [formData.paymentMethod, hasDepositProductInCart, storefrontPaymentPolicy]);
 
   useEffect(() => {
     if (orderError || checkoutError) {
@@ -1806,7 +1834,7 @@ export function CheckoutPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Payment Method</h2>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  {payLaterOptions.length > 0 && (
+                  {payLaterAllowed && (
                     <button
                       type="button"
                       onClick={() => handleInputChange('paymentMethod', 'pay_later')}
@@ -1854,7 +1882,23 @@ export function CheckoutPage() {
 
                 </div>
 
-                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && (
+                {hasDepositProductInCart && (
+                  <div className="rounded-md p-4 mb-4 border border-amber-300 bg-amber-50">
+                    <p className="text-sm text-amber-800">
+                      Deposit products require payment by card at checkout. Pay later options are disabled for this order.
+                    </p>
+                  </div>
+                )}
+
+                {hasDepositProductInCart && !cardPaymentAvailable && (
+                  <div className="rounded-md p-4 mb-4 border border-red-300 bg-red-50">
+                    <p className="text-sm text-red-700">
+                      This store does not currently have card payments enabled, so deposit products cannot be checked out online until card payments are turned on.
+                    </p>
+                  </div>
+                )}
+
+                {formData.paymentMethod === 'card' && payAtPickupAllowed && (
                   <div className="rounded-md p-4 mb-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm font-medium text-gray-700 mb-3">When would you like to pay?</p>
                     <div className="space-y-2">
@@ -1886,7 +1930,7 @@ export function CheckoutPage() {
                   </div>
                 )}
 
-                {formData.paymentMethod === 'card' && storefrontPaymentPolicy === 'both' && formData.paymentNowChoice === 'pay_at_pickup' && (
+                {formData.paymentMethod === 'card' && payAtPickupAllowed && formData.paymentNowChoice === 'pay_at_pickup' && (
                   <div className="rounded-md p-4 mb-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor }}>
                       {`You'll pay when you ${formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.`}
