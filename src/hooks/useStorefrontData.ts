@@ -217,6 +217,13 @@ export function useStorefrontData(tenantId: string): {
           console.warn('Tenant policy fetch warning (non-critical):', tenantPolicyError);
         }
 
+        const { data: onlinePaymentFeeData, error: onlinePaymentFeeError } = await supabase
+          .rpc('get_storefront_online_payment_fee_settings', { p_tenant_id: tenantId });
+
+        if (onlinePaymentFeeError) {
+          console.warn('Online payment fee settings fetch warning (non-critical):', onlinePaymentFeeError);
+        }
+
         // ============================================================================
         // Fetch package bins (for inventory/pricing info)
         // ============================================================================
@@ -283,6 +290,10 @@ export function useStorefrontData(tenantId: string): {
           shipping_charge_cents: settingsData.shipping_charge_cents ?? 0,
           pickup_locations: Array.isArray(settingsData.pickup_locations) ? settingsData.pickup_locations : [],
           storefront_payment_policy: (tenantPolicyData as any)?.storefront_payment_policy ?? 'pay_now',
+          onlinePaymentFeeSettings: {
+            enabled: Boolean((onlinePaymentFeeData as any)?.enabled),
+            feePercent: Math.max(0, Number((onlinePaymentFeeData as any)?.fee_percent ?? 0)),
+          },
           featureSections: Array.isArray(settingsData.feature_sections)
             ? settingsData.feature_sections.map((s: any) => ({
                 imageUrl: s.image_url,
