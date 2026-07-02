@@ -1,5 +1,6 @@
 import type { Product } from './product';
 import type { Category } from './category';
+import type { OnlinePaymentFeeSettings } from '../lib/onlinePaymentFee';
 
 export interface StorefrontSettings {
   templateId: string;
@@ -34,6 +35,7 @@ export interface StorefrontSettings {
   shipping_charge_cents?: number;
   pickup_locations?: Array<{ name: string; address: string }>;
   storefront_payment_policy?: 'pay_now' | 'pay_at_pickup' | 'both';
+  onlinePaymentFeeSettings?: OnlinePaymentFeeSettings;
 }
 
 export interface CartItem {

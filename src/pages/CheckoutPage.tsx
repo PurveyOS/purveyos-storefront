@@ -8,6 +8,7 @@ import { SubscriptionBoxSelector } from '../components/SubscriptionBoxSelector';
 import { StripeAuthorizationForm } from '../components/StripeAuthorizationForm';
 import { StripeInlineCardForm, type StripeCardFormHandle } from '../components/StripeInlineCardForm';
 import { CartValidationModal } from '../components/CartValidationModal';
+import { ONLINE_PAYMENT_FEE_LABEL, addOnlinePaymentFee, getOnlinePaymentFeeCents } from '../lib/onlinePaymentFee';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { friendlyOrderError, isInventoryOrderError } from '../utils/orderErrors';
 import { supabase } from '../lib/supabaseClient';
@@ -920,7 +921,7 @@ export function CheckoutPage() {
     // Save customer profile with email preference
     await saveCustomerProfile();
 
-    const orderValue = cart.total - (discountCents / 100);
+    const orderValue = checkoutDisplayTotalCents / 100;
 
     if (formData.paymentMethod === 'card' && !cardPaymentAvailable) {
       setOrderError('Card payments are not available for this store. Please choose another method.');
@@ -981,12 +982,7 @@ export function CheckoutPage() {
       console.log('⚠️ No subscription item found in cart');
     }
 
-    const shippingChargeCents = formData.deliveryMethod === 'shipping'
-      ? (shippingEstimate?.range_high_cents
-          ?? shippingEstimate?.estimate_cents
-          ?? (storefrontData?.settings as any)?.shipping_charge_cents
-          ?? 0)
-      : 0;
+    const shippingChargeCents = checkoutShippingChargeCents;
 
     const deliveryAddr = formData.deliveryMethod === 'delivery'
       ? formatDeliveryAddress(deliveryAddress)
@@ -1331,6 +1327,29 @@ export function CheckoutPage() {
     
     return sum + itemTotal;
   }, 0);
+
+  const onlinePaymentFeeSettings = storefrontData?.settings.onlinePaymentFeeSettings;
+  const checkoutShippingChargeCents = formData.deliveryMethod === 'shipping'
+    ? (shippingEstimate?.range_high_cents
+        ?? shippingEstimate?.estimate_cents
+        ?? (storefrontData?.settings as any)?.shipping_charge_cents
+        ?? 0)
+    : 0;
+  const checkoutDeliveryChargeCents = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
+    ? deliveryGeoResult.matched_zone.charge_cents
+    : 0;
+  const checkoutSubtotalAfterDiscountCents = Math.max(0, Math.round(cartTotal * 100) - discountCents);
+  const checkoutTaxCents = tenant?.charge_tax_on_online === false || tenant?.tax_included
+    ? 0
+    : Math.round(checkoutSubtotalAfterDiscountCents * (tenant?.tax_rate ?? 0));
+  const checkoutBaseTotalCents = checkoutSubtotalAfterDiscountCents + checkoutTaxCents + checkoutShippingChargeCents + checkoutDeliveryChargeCents;
+  const checkoutOnlinePaymentFeeCents = getOnlinePaymentFeeCents({
+    paymentMethod: formData.paymentMethod,
+    paymentNowChoice: formData.paymentNowChoice,
+    baseTotalCents: checkoutBaseTotalCents,
+    settings: onlinePaymentFeeSettings,
+  });
+  const checkoutDisplayTotalCents = addOnlinePaymentFee(checkoutBaseTotalCents, checkoutOnlinePaymentFeeCents);
 
   const shippingEstimateDebug = formData.deliveryMethod === 'shipping' ? {
     request: {
@@ -2214,42 +2233,27 @@ export function CheckoutPage() {
                       </div>
                     )}
                     <div className="flex justify-between text-gray-600">
-  <span>Tax:</span>
-  <span>
-    {tenant?.charge_tax_on_online === false
-      ? '$0.00'
-      : tenant?.tax_included
-      ? 'Included in price'
-      : `$${(cartTotal * (tenant?.tax_rate ?? 0)).toFixed(2)}`}
-  </span>
-</div>
+                      <span>Tax:</span>
+                      <span>
+                        {tenant?.charge_tax_on_online === false
+                          ? '$0.00'
+                          : tenant?.tax_included
+                          ? 'Included in price'
+                          : `$${(checkoutTaxCents / 100).toFixed(2)}`}
+                      </span>
+                    </div>
 
-<div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
-  <span>Total:</span>
-  <span>
-    {(() => {
-      const subtotal = cartTotal - (discountCents / 100);
-      const shippingCharge = formData.deliveryMethod === 'shipping'
-        ? (((shippingEstimate?.range_high_cents ?? shippingEstimate?.estimate_cents ?? (storefrontData?.settings as any)?.shipping_charge_cents ?? 0)) / 100)
-        : 0;
-      const deliveryCharge = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
-        ? (deliveryGeoResult.matched_zone.charge_cents / 100)
-        : 0;
-      const fulfillmentCharge = shippingCharge + deliveryCharge;
-      const tax = tenant?.charge_tax_on_online === false
-        ? 0
-        : tenant?.tax_included
-        ? 0
-        : subtotal * (tenant?.tax_rate ?? 0);
-      const total = tenant?.charge_tax_on_online === false
-        ? subtotal + fulfillmentCharge
-        : tenant?.tax_included
-        ? subtotal + fulfillmentCharge
-        : subtotal + tax + fulfillmentCharge;
-      return `$${total.toFixed(2)}`;
-    })()}
-  </span>
-</div>
+                    {checkoutOnlinePaymentFeeCents > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>{ONLINE_PAYMENT_FEE_LABEL}:</span>
+                        <span>${(checkoutOnlinePaymentFeeCents / 100).toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
+                      <span>Total:</span>
+                      <span>${(checkoutDisplayTotalCents / 100).toFixed(2)}</span>
+                    </div>
 
                   </div>
                 </div>
@@ -2283,6 +2287,12 @@ export function CheckoutPage() {
               >
                 {checkoutLoading ? 'Processing...' : formData.paymentMethod === 'card' ? 'Continue to Payment' : 'Place Order'}
               </button>
+
+              {checkoutOnlinePaymentFeeCents > 0 && (
+                <p className="text-xs text-gray-500 mt-3 text-center">
+                  {ONLINE_PAYMENT_FEE_LABEL} applies to orders paid online by card.
+                </p>
+              )}
 
               {formData.paymentMethod !== 'card' && cartItems.length > 0 && (
                 <p className="text-xs text-gray-500 mt-3 text-center">

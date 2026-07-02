@@ -29,6 +29,7 @@ interface OrderData {
   total_cents: number;
   tax_cents?: number;
   subtotal_cents?: number;
+  online_payment_fee_cents?: number;
   deposit_amount?: number;
   deposit_paid_at?: string;
   balance_due?: number;
@@ -263,7 +264,8 @@ ${specialInstructions ? `\n${specialInstructions}\n` : ''}
 Totals:
 Subtotal: ${money(order.subtotal_cents)}
 Tax: ${money(order.tax_cents)}
-Total: ${money(order.total_cents)}
+${(order.online_payment_fee_cents || 0) > 0 ? `Online convenience fee: ${money(order.online_payment_fee_cents)}
+` : ''}Total: ${money(order.total_cents)}
 
 ${storefrontUrl ? `Manage your order: ${storefrontUrl}\n` : ''}
 
