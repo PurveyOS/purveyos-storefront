@@ -511,7 +511,28 @@ export function CheckoutPage() {
     return [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
   };
 
+  const getGeocodeErrorMessage = async (error: any): Promise<string> => {
+    try {
+      const context = error?.context;
+      if (context?.json) {
+        const payload = await context.json();
+        if (payload?.error && typeof payload.error === 'string') {
+          return payload.error;
+        }
+      }
+    } catch {
+      // Fall back to generic message below
+    }
+
+    return 'Could not verify address. Please check and try again.';
+  };
+
   const calculateDeliveryFee = async () => {
+    if (!hasCompleteShippingAddress(deliveryAddress)) {
+      setDeliveryError('Please enter a complete delivery address (street, city, state, and 5-digit ZIP).');
+      return;
+    }
+
     const fullAddress = formatDeliveryAddress(deliveryAddress);
     if (!fullAddress || !tenant?.id) return;
     
@@ -529,7 +550,14 @@ export function CheckoutPage() {
       });
       
       if (error || !data) {
-        setDeliveryError('Could not verify address. Please check and try again.');
+        const details = error ? await getGeocodeErrorMessage(error) : 'Could not verify address. Please check and try again.';
+        if (details.includes('Tenant has not configured a delivery origin address')) {
+          setDeliveryError('Delivery is not configured by this store yet. Please contact the farm to enable delivery.');
+        } else if (details.includes('Tenant delivery settings not found')) {
+          setDeliveryError('Delivery is not available for this store yet. Please choose pickup or contact the farm.');
+        } else {
+          setDeliveryError(details);
+        }
         return;
       }
       
