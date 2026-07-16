@@ -98,6 +98,10 @@ export function CheckoutPage() {
   } | null>(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [shippingSuggestions, setShippingSuggestions] = useState<string[]>([]);
+  const [showShippingSuggestions, setShowShippingSuggestions] = useState(false);
+  const [loadingShippingSuggestions, setLoadingShippingSuggestions] = useState(false);
+  const shippingAutocompleteTimeoutRef = useRef<number | null>(null);
 
   // Delivery zone state
   const [deliveryAddress, setDeliveryAddress] = useState<ShippingAddress>({
@@ -112,6 +116,10 @@ export function CheckoutPage() {
     formatted_address: string;
   } | null>(null);
   const [geocodingDelivery, setGeocodingDelivery] = useState(false);
+  const [deliverySuggestions, setDeliverySuggestions] = useState<string[]>([]);
+  const [showDeliverySuggestions, setShowDeliverySuggestions] = useState(false);
+  const [loadingDeliverySuggestions, setLoadingDeliverySuggestions] = useState(false);
+  const deliveryAutocompleteTimeoutRef = useRef<number | null>(null);
   const [deliveryError, setDeliveryError] = useState('');
 
   const [subscribeToEmails, setSubscribeToEmails] = useState(false);
@@ -310,9 +318,81 @@ export function CheckoutPage() {
     return [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
   };
 
-  const hasCompleteShippingAddress = (address: ShippingAddress) => {
-    return Boolean(address.street.trim() && address.city.trim() && address.state.trim() && /^\d{5}$/.test(address.zip));
+  const normalizeZip = (value: string) => value.replace(/\D/g, '').slice(0, 5);
+
+  const normalizeState = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    return trimmed.length <= 2 ? trimmed.toUpperCase() : trimmed;
   };
+
+  const normalizeAddress = (address: ShippingAddress): ShippingAddress => ({
+    street: address.street.trim(),
+    city: address.city.trim(),
+    state: normalizeState(address.state),
+    zip: normalizeZip(address.zip),
+  });
+
+  const parseSavedAddress = (value: string): ShippingAddress | null => {
+    if (!value?.trim()) return null;
+
+    const parts = value
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    let street = '';
+    let city = '';
+    let state = '';
+    let zip = '';
+
+    if (parts.length >= 4) {
+      street = parts[0];
+      city = parts[1];
+      state = parts[2];
+      zip = parts.slice(3).join(' ');
+    } else if (parts.length === 3) {
+      street = parts[0];
+      city = parts[1];
+      const stateZip = parts[2];
+      const match = stateZip.match(/^(.+?)\s+(\d{5}(?:-\d{4})?)$/);
+      if (match) {
+        state = match[1];
+        zip = match[2];
+      } else {
+        state = stateZip;
+      }
+    } else {
+      return null;
+    }
+
+    const parsed = normalizeAddress({ street, city, state, zip });
+    return parsed.street && parsed.city && parsed.state && parsed.zip ? parsed : null;
+  };
+
+  const isAddressBlank = (address: ShippingAddress) => {
+    return !address.street.trim() && !address.city.trim() && !address.state.trim() && !address.zip.trim();
+  };
+
+  const hasCompleteShippingAddress = (address: ShippingAddress) => {
+    const normalized = normalizeAddress(address);
+    return Boolean(
+      normalized.street &&
+      normalized.city &&
+      normalized.state &&
+      /^\d{5}$/.test(normalized.zip)
+    );
+  };
+
+  useEffect(() => {
+    if (!isAddressBlank(deliveryAddress)) return;
+    if (!formData.deliveryAddress) return;
+
+    const parsed = parseSavedAddress(formData.deliveryAddress);
+    if (parsed) {
+      setDeliveryAddress(parsed);
+    }
+  }, [formData.deliveryAddress, deliveryAddress]);
 
   const buildBinKey = (productId: string, binWeight?: number) => {
     const weightBtn = Math.round((binWeight ?? 0) * 100) / 100;
@@ -486,8 +566,14 @@ export function CheckoutPage() {
   };
 
   const handleShippingAddressChange = (field: keyof ShippingAddress, value: string) => {
+    const normalizedValue = field === 'zip'
+      ? normalizeZip(value)
+      : field === 'state'
+      ? normalizeState(value)
+      : value;
+
     setShippingAddress(prev => {
-      const updated = { ...prev, [field]: value };
+      const updated = { ...prev, [field]: normalizedValue };
       if (formData.deliveryMethod === 'shipping') {
         setFormData(current => ({ ...current, deliveryAddress: formatShippingAddress(updated) }));
       }
@@ -499,10 +585,39 @@ export function CheckoutPage() {
       }
       return updated;
     });
+
+    if (field === 'street' || showShippingSuggestions) {
+      scheduleAddressSuggestions('shipping', {
+        ...shippingAddress,
+        [field]: normalizedValue,
+      });
+    }
   };
 
   const handleDeliveryAddressChange = (field: keyof ShippingAddress, value: string) => {
-    setDeliveryAddress(prev => ({ ...prev, [field]: value }));
+    const normalizedValue = field === 'zip'
+      ? normalizeZip(value)
+      : field === 'state'
+      ? normalizeState(value)
+      : value;
+
+    setDeliveryAddress(prev => {
+      const updated = { ...prev, [field]: normalizedValue };
+      setFormData(current => (
+        current.deliveryMethod === 'delivery'
+          ? { ...current, deliveryAddress: formatDeliveryAddress(updated) }
+          : current
+      ));
+      return updated;
+    });
+
+    if (field === 'street' || showDeliverySuggestions) {
+      scheduleAddressSuggestions('delivery', {
+        ...deliveryAddress,
+        [field]: normalizedValue,
+      });
+    }
+
     setDeliveryGeoResult(null);
     setDeliveryError('');
   };
@@ -527,13 +642,137 @@ export function CheckoutPage() {
     return 'Could not verify address. Please check and try again.';
   };
 
+  const fetchAddressSuggestions = async (query: string): Promise<string[]> => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 4) return [];
+
+    try {
+      const { data, error } = await supabase!.functions.invoke('address-autocomplete', {
+        body: {
+          query: trimmed,
+          country: 'us',
+        },
+      });
+
+      if (error || !Array.isArray(data?.suggestions)) {
+        return [];
+      }
+
+      return data.suggestions
+        .map((item: any) => (typeof item?.description === 'string' ? item.description : ''))
+        .filter(Boolean)
+        .slice(0, 6);
+    } catch (err) {
+      console.warn('Address autocomplete failed:', err);
+      return [];
+    }
+  };
+
+  const buildAutocompleteQuery = (address: ShippingAddress) => {
+    return [address.street, address.city, address.state, address.zip]
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .join(', ');
+  };
+
+  const scheduleAddressSuggestions = (mode: 'shipping' | 'delivery', address: ShippingAddress) => {
+    const query = buildAutocompleteQuery(address);
+    const timeoutRef = mode === 'shipping' ? shippingAutocompleteTimeoutRef : deliveryAutocompleteTimeoutRef;
+    const setLoading = mode === 'shipping' ? setLoadingShippingSuggestions : setLoadingDeliverySuggestions;
+    const setSuggestions = mode === 'shipping' ? setShippingSuggestions : setDeliverySuggestions;
+    const setVisible = mode === 'shipping' ? setShowShippingSuggestions : setShowDeliverySuggestions;
+
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+    }
+
+    if (query.length < 4) {
+      setSuggestions([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    timeoutRef.current = window.setTimeout(async () => {
+      const suggestions = await fetchAddressSuggestions(query);
+      setSuggestions(suggestions);
+      setVisible(suggestions.length > 0);
+      setLoading(false);
+    }, 220);
+  };
+
+  const applySuggestedAddress = async (mode: 'shipping' | 'delivery', suggestion: string) => {
+    const normalizedFallback = normalizeAddress(parseSavedAddress(suggestion) || {
+      street: mode === 'shipping' ? shippingAddress.street : deliveryAddress.street,
+      city: mode === 'shipping' ? shippingAddress.city : deliveryAddress.city,
+      state: mode === 'shipping' ? shippingAddress.state : deliveryAddress.state,
+      zip: mode === 'shipping' ? shippingAddress.zip : deliveryAddress.zip,
+    });
+
+    let resolvedAddress = normalizedFallback;
+    let formattedAddress = suggestion;
+
+    try {
+      const { data, error } = await supabase!.functions.invoke('geocode-address', {
+        body: { address: suggestion },
+      });
+
+      if (!error && data?.formatted_address) {
+        formattedAddress = data.formatted_address;
+        const parsed = parseSavedAddress(data.formatted_address);
+        if (parsed) {
+          resolvedAddress = normalizeAddress(parsed);
+        }
+      }
+    } catch (err) {
+      console.warn('Address resolve failed, using suggestion fallback:', err);
+    }
+
+    if (mode === 'shipping') {
+      setShippingAddress(resolvedAddress);
+      setShowShippingSuggestions(false);
+      setShippingSuggestions([]);
+      setEstimateError(null);
+
+      if (formData.deliveryMethod === 'shipping') {
+        handleInputChange('deliveryAddress', formattedAddress);
+      }
+
+      if (hasCompleteShippingAddress(resolvedAddress)) {
+        fetchShippingEstimate(resolvedAddress);
+      }
+      return;
+    }
+
+    setDeliveryAddress(resolvedAddress);
+    setShowDeliverySuggestions(false);
+    setDeliverySuggestions([]);
+    setDeliveryError('');
+    setDeliveryGeoResult(null);
+    handleInputChange('deliveryAddress', formattedAddress);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (shippingAutocompleteTimeoutRef.current) {
+        window.clearTimeout(shippingAutocompleteTimeoutRef.current);
+      }
+      if (deliveryAutocompleteTimeoutRef.current) {
+        window.clearTimeout(deliveryAutocompleteTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const calculateDeliveryFee = async () => {
-    if (!hasCompleteShippingAddress(deliveryAddress)) {
+    const normalizedAddress = normalizeAddress(deliveryAddress);
+    setDeliveryAddress(normalizedAddress);
+
+    if (!hasCompleteShippingAddress(normalizedAddress)) {
       setDeliveryError('Please enter a complete delivery address (street, city, state, and 5-digit ZIP).');
       return;
     }
 
-    const fullAddress = formatDeliveryAddress(deliveryAddress);
+    const fullAddress = formatDeliveryAddress(normalizedAddress);
     if (!fullAddress || !tenant?.id) return;
     
     setGeocodingDelivery(true);
@@ -1529,6 +1768,14 @@ export function CheckoutPage() {
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'shipping');
                         handleInputChange('fulfillmentLocation', '');
+                        if (isAddressBlank(shippingAddress)) {
+                          const parsedShipping = parseSavedAddress(formData.deliveryAddress || '');
+                          if (parsedShipping) {
+                            setShippingAddress(parsedShipping);
+                          } else if (hasCompleteShippingAddress(deliveryAddress)) {
+                            setShippingAddress(normalizeAddress(deliveryAddress));
+                          }
+                        }
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
                         formData.deliveryMethod === 'shipping'
@@ -1587,6 +1834,14 @@ export function CheckoutPage() {
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'delivery');
                         handleInputChange('fulfillmentLocation', '');
+                        if (isAddressBlank(deliveryAddress)) {
+                          const parsedDelivery = parseSavedAddress(formData.deliveryAddress || '');
+                          if (parsedDelivery) {
+                            setDeliveryAddress(parsedDelivery);
+                          } else if (hasCompleteShippingAddress(shippingAddress)) {
+                            setDeliveryAddress(normalizeAddress(shippingAddress));
+                          }
+                        }
                         setDeliveryGeoResult(null);
                         setDeliveryError('');
                       }}
@@ -1648,19 +1903,57 @@ export function CheckoutPage() {
                     <label className="block text-sm font-medium text-gray-700">
                       Shipping Address *
                     </label>
+                    <p className="text-xs text-gray-500 -mt-2">
+                      Start typing your address to choose from known matches.
+                    </p>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          name="shippingStreet"
+                          autoComplete="shipping street-address"
+                          required
+                          value={shippingAddress.street}
+                          onChange={(e) => handleShippingAddressChange('street', e.target.value)}
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = primaryColor;
+                            setShowShippingSuggestions(true);
+                            scheduleAddressSuggestions('shipping', shippingAddress);
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = '';
+                            window.setTimeout(() => setShowShippingSuggestions(false), 120);
+                          }}
+                          placeholder="Street address"
+                        />
+                        {showShippingSuggestions && (loadingShippingSuggestions || shippingSuggestions.length > 0) && (
+                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-64 overflow-auto">
+                            {loadingShippingSuggestions ? (
+                              <div className="px-3 py-2 text-sm text-gray-500">Searching addresses...</div>
+                            ) : (
+                              shippingSuggestions.map((suggestion) => (
+                                <button
+                                  key={suggestion}
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    applySuggestedAddress('shipping', suggestion);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                  {suggestion}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <input
                         type="text"
-                        required
-                        value={shippingAddress.street}
-                        onChange={(e) => handleShippingAddressChange('street', e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                        placeholder="Street address"
-                      />
-                      <input
-                        type="text"
+                        name="shippingCity"
+                        autoComplete="shipping address-level2"
                         required
                         value={shippingAddress.city}
                         onChange={(e) => handleShippingAddressChange('city', e.target.value)}
@@ -1671,6 +1964,8 @@ export function CheckoutPage() {
                       />
                       <input
                         type="text"
+                        name="shippingState"
+                        autoComplete="shipping address-level1"
                         required
                         value={shippingAddress.state}
                         onChange={(e) => handleShippingAddressChange('state', e.target.value)}
@@ -1685,8 +1980,12 @@ export function CheckoutPage() {
                           type="text"
                           required
                           maxLength={5}
+                          name="shippingZip"
+                          autoComplete="shipping postal-code"
+                          inputMode="numeric"
+                          pattern="[0-9]{5}"
                           value={shippingAddress.zip}
-                          onChange={(e) => handleShippingAddressChange('zip', e.target.value.replace(/\D/g, ''))}
+                          onChange={(e) => handleShippingAddressChange('zip', e.target.value)}
                           className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
                           onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
                           onBlur={(e) => e.currentTarget.style.borderColor = ''}
@@ -1802,19 +2101,56 @@ export function CheckoutPage() {
                   <label className="block text-sm font-medium text-gray-700">
                     Delivery Address *
                   </label>
+                  <p className="text-xs text-gray-500 -mt-2">
+                    Start typing your address to choose from known matches.
+                  </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        name="deliveryStreet"
+                        autoComplete="shipping street-address"
+                        required
+                        value={deliveryAddress.street}
+                        onChange={(e) => handleDeliveryAddressChange('street', e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = primaryColor;
+                          setShowDeliverySuggestions(true);
+                          scheduleAddressSuggestions('delivery', deliveryAddress);
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = '';
+                          window.setTimeout(() => setShowDeliverySuggestions(false), 120);
+                        }}
+                        placeholder="Street address"
+                      />
+                      {showDeliverySuggestions && (loadingDeliverySuggestions || deliverySuggestions.length > 0) && (
+                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-64 overflow-auto">
+                          {loadingDeliverySuggestions ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">Searching addresses...</div>
+                          ) : (
+                            deliverySuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  applySuggestedAddress('delivery', suggestion);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                {suggestion}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <input
                       type="text"
-                      required
-                      value={deliveryAddress.street}
-                      onChange={(e) => handleDeliveryAddressChange('street', e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      placeholder="Street address"
-                    />
-                    <input
-                      type="text"
+                      name="deliveryCity"
+                      autoComplete="shipping address-level2"
                       required
                       value={deliveryAddress.city}
                       onChange={(e) => handleDeliveryAddressChange('city', e.target.value)}
@@ -1825,6 +2161,8 @@ export function CheckoutPage() {
                     />
                     <input
                       type="text"
+                      name="deliveryState"
+                      autoComplete="shipping address-level1"
                       required
                       value={deliveryAddress.state}
                       onChange={(e) => handleDeliveryAddressChange('state', e.target.value)}
@@ -1835,6 +2173,11 @@ export function CheckoutPage() {
                     />
                     <input
                       type="text"
+                      name="deliveryZip"
+                      autoComplete="shipping postal-code"
+                      inputMode="numeric"
+                      pattern="[0-9]{5}"
+                      maxLength={5}
                       required
                       value={deliveryAddress.zip}
                       onChange={(e) => handleDeliveryAddressChange('zip', e.target.value)}
@@ -1845,15 +2188,17 @@ export function CheckoutPage() {
                     />
                   </div>
                   
-                  <button
-                    type="button"
-                    onClick={calculateDeliveryFee}
-                    disabled={geocodingDelivery || !deliveryAddress.street || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.zip}
-                    className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{ borderColor: primaryColor, color: primaryColor }}
-                  >
-                    {geocodingDelivery ? 'Calculating...' : 'Calculate Delivery Fee'}
-                  </button>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={calculateDeliveryFee}
+                      disabled={geocodingDelivery || !deliveryAddress.street || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.zip}
+                      className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ borderColor: primaryColor, color: primaryColor }}
+                    >
+                      {geocodingDelivery ? 'Calculating...' : 'Calculate Delivery Fee'}
+                    </button>
+                  </div>
                   
                   {deliveryGeoResult?.matched_zone && (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
