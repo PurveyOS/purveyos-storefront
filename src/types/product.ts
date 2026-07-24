@@ -70,6 +70,7 @@ export interface Product {
   // Deposit fields
   is_deposit_product?: boolean;
   deposit_prod_price_per_lb?: number; // Price per lb for hanging weight on deposit products
+  deposit_fixed_total?: number; // Fixed final total for fixed-price deposit products
   
   // Reservation fields
   reservedWeightLbs?: number; // Product-level reserved weight (lbs)

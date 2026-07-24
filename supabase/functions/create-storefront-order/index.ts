@@ -49,6 +49,7 @@ interface OrderRequest {
   discountCents?: number
   shippingChargeCents?: number
   deliveryChargeCents?: number
+  depositChargeCents?: number
   isWeightEstimate?: boolean
   estimatedTotalCents?: number
   stripePaymentIntentId?: string  // Stripe payment intent ID for idempotency
@@ -154,7 +155,7 @@ serve(async (req: Request) => {
 
     const { data: products, error: productsError } = await supabaseAdmin
       .from('products')
-      .select('id, unit, qty, is_deposit_product, deposit_prod_price_per_lb, reserved_weight_lbs')
+      .select('id, unit, qty, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total, reserved_weight_lbs')
       .eq('tenant_id', orderRequest.tenantId)
       .in('id', productIds)
 
@@ -180,7 +181,7 @@ serve(async (req: Request) => {
       })
     }
 
-    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null; reserved_weight_lbs?: number | null }
+    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null; deposit_fixed_total?: number | string | null; reserved_weight_lbs?: number | null }
     type PackageBinRow = {
       package_key: string;
       qty?: number | null;
@@ -207,6 +208,16 @@ serve(async (req: Request) => {
       }
     })
     const depositProducts = (products ?? []).filter((p: ProductRow) => p.is_deposit_product === true)
+    for (const p of depositProducts) {
+      const hasWeightFinal = p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined && Number(p.deposit_prod_price_per_lb) > 0
+      const hasFixedFinal = p.deposit_fixed_total !== null && p.deposit_fixed_total !== undefined && Number(p.deposit_fixed_total) > 0
+      if (hasWeightFinal === hasFixedFinal) {
+        return new Response(JSON.stringify({ error: 'deposit_pricing_mode_invalid' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
     const hasDepositProduct = depositProducts.length > 0
     const depositPaymentWillBeCollectedNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
 
@@ -217,9 +228,14 @@ serve(async (req: Request) => {
       })
     }
 
-    const depositAmount = hasDepositProduct ? (orderRequest.totalCents / 100) : null
+    const depositAmount = hasDepositProduct
+      ? ((orderRequest.depositChargeCents ?? orderRequest.totalCents) / 100)
+      : null
     const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
     const depositPricePerLb = depositProducts.find((p) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
+    const balanceDue = hasDepositProduct && depositAmount !== null
+      ? Math.max(0, (orderRequest.totalCents / 100) - depositAmount)
+      : null
 
     const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
 
@@ -434,7 +450,7 @@ serve(async (req: Request) => {
           ? {
               deposit_amount: depositAmount,
               deposit_paid_at: depositPaidAt,
-              balance_due: null,
+              balance_due: balanceDue,
               hanging_weight_lbs: null,
               price_per_lb: depositPricePerLb !== undefined && depositPricePerLb !== null ? Number(depositPricePerLb) : null,
             }
@@ -718,7 +734,7 @@ serve(async (req: Request) => {
               : null,
             deliveries_fulfilled: 0,  // Changed from 1 to 0 (not fulfilled yet, just ordered)
             payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
-            total_paid_cents: orderRequest.stripePaymentIntentId ? orderRequest.totalCents : 0,
+            total_paid_cents: orderRequest.stripePaymentIntentId ? (hasDepositProduct ? (orderRequest.depositChargeCents ?? orderRequest.totalCents) : orderRequest.totalCents) : 0,
             stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,  // Link for idempotency + tracking
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),

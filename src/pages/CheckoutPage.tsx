@@ -1188,7 +1188,7 @@ export function CheckoutPage() {
     // Save customer profile with email preference
     await saveCustomerProfile();
 
-    const orderValue = checkoutDisplayTotalCents / 100;
+    const orderValue = (hasDepositProductInCart ? checkoutDueTodayCents : checkoutDisplayTotalCents) / 100;
 
     if (formData.paymentMethod === 'card' && !cardPaymentAvailable) {
       setOrderError('Card payments are not available for this store. Please choose another method.');
@@ -1289,6 +1289,7 @@ export function CheckoutPage() {
     shippingChargeCents: formData.deliveryMethod === 'shipping' ? shippingChargeCents : 0,
     shippingEstimateHighCents: formData.deliveryMethod === 'shipping' ? (shippingEstimate?.range_high_cents ?? shippingChargeCents) : 0,
     deliveryChargeCents: formData.deliveryMethod === 'delivery' ? deliveryChargeCents : 0,
+    depositChargeCents: hasDepositProductInCart ? checkoutDepositChargeCents : 0,
     paymentMethodId,
   },
   {
@@ -1586,6 +1587,8 @@ export function CheckoutPage() {
       itemTotal = item.product.pricePer * requestedWeightLbs * quantity;
     } else if (weight && weight > 0) {
       itemTotal = item.product.pricePer * weight * quantity;
+    } else if ((item.product as any).is_deposit_product && Number((item.product as any).deposit_fixed_total) > 0) {
+      itemTotal = Number((item.product as any).deposit_fixed_total) * quantity;
     } else if (metaPrice && metaPrice > 0) {
       itemTotal = metaPrice * quantity;
     } else {
@@ -1617,6 +1620,23 @@ export function CheckoutPage() {
     settings: onlinePaymentFeeSettings,
   });
   const checkoutDisplayTotalCents = addOnlinePaymentFee(checkoutBaseTotalCents, checkoutOnlinePaymentFeeCents);
+  const checkoutDepositChargeCents = cartItems.reduce((sum, item: any) => {
+    if (!item?.product || !(item.product as any).is_deposit_product) return sum;
+    const qty = item.quantity ?? 1;
+    return sum + Math.round((Number(item.product.pricePer) || 0) * 100) * qty;
+  }, 0);
+  const checkoutFixedDepositDeferralCents = cartItems.reduce((sum, item: any) => {
+    if (!item?.product || !(item.product as any).is_deposit_product) return sum;
+    const fixedTotal = Number((item.product as any).deposit_fixed_total || 0);
+    if (fixedTotal <= 0) return sum;
+    const qty = item.quantity ?? 1;
+    const depositNow = Number(item.product.pricePer || 0);
+    const deferredPerUnit = Math.max(0, fixedTotal - depositNow);
+    return sum + Math.round(deferredPerUnit * 100) * qty;
+  }, 0);
+  const checkoutDueTodayCents = hasDepositProductInCart
+    ? Math.max(0, checkoutDisplayTotalCents - checkoutFixedDepositDeferralCents)
+    : checkoutDisplayTotalCents;
 
   const shippingEstimateDebug = formData.deliveryMethod === 'shipping' ? {
     request: {
@@ -2277,7 +2297,7 @@ export function CheckoutPage() {
                 {hasDepositProductInCart && (
                   <div className="rounded-md p-4 mb-4 border border-amber-300 bg-amber-50">
                     <p className="text-sm text-amber-800">
-                      Deposit products require payment by card at checkout. Pay later options are disabled for this order.
+                      Deposit products require payment by card at checkout. The amount charged today is the upfront deposit; remaining balance (if any) is collected later.
                     </p>
                   </div>
                 )}
@@ -2495,6 +2515,9 @@ export function CheckoutPage() {
                       // Weight-based
                       displayText = `${weight} ${item.product.unit} @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;
                       itemTotal = item.product.pricePer * weight * item.quantity;
+                    } else if ((item.product as any).is_deposit_product && Number((item.product as any).deposit_fixed_total) > 0) {
+                      displayText = `Deposit $${item.product.pricePer.toFixed(2)} now · Final total $${Number((item.product as any).deposit_fixed_total).toFixed(2)}`;
+                      itemTotal = Number((item.product as any).deposit_fixed_total) * item.quantity;
                     } else if (metaPrice && metaPrice > 0) {
                       displayText = `${item.product.name} (${(item.product as any).subscriptionInterval || 'subscription'})`;
                       itemTotal = metaPrice * item.quantity;
@@ -2624,9 +2647,16 @@ export function CheckoutPage() {
                     )}
 
                     <div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
-                      <span>Total:</span>
+                      <span>{hasDepositProductInCart ? 'Order Total:' : 'Total:'}</span>
                       <span>${(checkoutDisplayTotalCents / 100).toFixed(2)}</span>
                     </div>
+
+                    {hasDepositProductInCart && (
+                      <div className="flex justify-between text-sm font-semibold text-amber-800">
+                        <span>Due Today:</span>
+                        <span>${(checkoutDueTodayCents / 100).toFixed(2)}</span>
+                      </div>
+                    )}
 
                   </div>
                 </div>
