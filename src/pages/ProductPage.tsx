@@ -104,6 +104,12 @@ export function ProductPage() {
     ? 'pack_for_you'
     : (storefrontData.tenantDefaultOrderMode ?? 'exact_package');
   const isWeightBased = pricingMode === 'weight';
+  const isDepositProduct = product.is_deposit_product === true;
+  const depositFinalTotal = Number(product.deposit_fixed_total ?? 0);
+  const depositPricePerLb = Number(product.deposit_prod_price_per_lb ?? 0);
+  const depositBalance = depositFinalTotal > 0
+    ? Math.max(0, depositFinalTotal - product.pricePer)
+    : 0;
 
   const handleAddToCart = () => {
     if (isWeightBased) {
@@ -209,8 +215,50 @@ export function ProductPage() {
                       </span>
                     )}
                   </div>
+                  {isDepositProduct && (
+                    <p className="mt-2 text-sm font-medium text-amber-700">
+                      Upfront deposit due today
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {isDepositProduct && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-amber-700">Deposit Pricing</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs text-amber-700">Deposit due today</p>
+                      <p className="mt-1 text-lg font-semibold text-gray-900">${product.pricePer.toFixed(2)}</p>
+                    </div>
+                    {depositFinalTotal > 0 ? (
+                      <div>
+                        <p className="text-xs text-amber-700">Final total</p>
+                        <p className="mt-1 text-lg font-semibold text-gray-900">${depositFinalTotal.toFixed(2)}</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-amber-700">Final pricing</p>
+                        <p className="mt-1 text-sm font-medium text-gray-900">Calculated after hanging weight is received</p>
+                      </div>
+                    )}
+                    {depositPricePerLb > 0 && (
+                      <div>
+                        <p className="text-xs text-amber-700">Price per lb</p>
+                        <p className="mt-1 text-lg font-semibold text-gray-900">${depositPricePerLb.toFixed(2)}/lb</p>
+                      </div>
+                    )}
+                    {depositFinalTotal > 0 && (
+                      <div>
+                        <p className="text-xs text-amber-700">Remaining balance later</p>
+                        <p className="mt-1 text-lg font-semibold text-gray-900">${depositBalance.toFixed(2)}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
