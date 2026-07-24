@@ -363,6 +363,8 @@ export function useStorefrontData(tenantId: string): {
           // - Bulk bins (bin_kind='bulk_weight'): qty_lbs - reserved_lbs (continuous lbs)
           const isLbProduct = (p.unit || '').toLowerCase().startsWith('lb');
           const reservedWeightLbs = Number((p as any).reserved_weight_lbs) || 0;
+          const activeOrderReservedQty = Math.max(0, Number((p as any).active_order_reserved_qty ?? 0));
+          const activeOrderReservedLbs = Math.max(0, Number((p as any).active_order_reserved_lbs ?? 0));
 
           const totalInventory = allBins
             ? allBins.reduce((sum, bin) => {
@@ -381,7 +383,7 @@ export function useStorefrontData(tenantId: string): {
           // This must match the edge function's stock check formula:
           //   available = totalBinWeight - reservedBinWeight - products.reserved_weight_lbs
           let effectiveInventory: number;
-          if (isLbProduct && allBins && allBins.length > 0 && reservedWeightLbs > 0) {
+          if (isLbProduct && allBins && allBins.length > 0 && (reservedWeightLbs > 0 || activeOrderReservedLbs > 0)) {
             const nonBulkBins = allBins.filter(bin => bin.binKind !== 'bulk_weight');
             const totalBinWeight = nonBulkBins.reduce((sum, bin) => {
               return sum + ((bin.weightBtn ?? 0) * (bin.qty ?? 0));
@@ -389,7 +391,7 @@ export function useStorefrontData(tenantId: string): {
             const reservedBinWeight = nonBulkBins.reduce((sum, bin) => {
               return sum + ((bin.weightBtn ?? 0) * (bin.reservedQty ?? 0));
             }, 0);
-            const availableWeight = Math.max(0, totalBinWeight - reservedBinWeight - reservedWeightLbs);
+            const availableWeight = Math.max(0, totalBinWeight - reservedBinWeight - reservedWeightLbs - activeOrderReservedLbs);
 
             // Convert available weight back to an approximate package count
             // so the inventory number is meaningful for the UI (0 = sold out)
@@ -412,7 +414,8 @@ export function useStorefrontData(tenantId: string): {
             }
           } else {
             const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
-            effectiveInventory = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
+            const physicalInventory = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
+            effectiveInventory = Math.max(0, physicalInventory - (isLbProduct ? activeOrderReservedLbs : activeOrderReservedQty));
           }
 
           // Only include bins with available inventory
@@ -454,6 +457,8 @@ export function useStorefrontData(tenantId: string): {
             deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,
             deposit_fixed_total: (p as any).deposit_fixed_total ?? undefined,
             reservedWeightLbs: (p as any).reserved_weight_lbs ?? undefined,
+            activeOrderReservedQty,
+            activeOrderReservedLbs,
           };
         });
 

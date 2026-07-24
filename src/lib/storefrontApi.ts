@@ -22,6 +22,7 @@ export interface StorefrontProduct {
   variant_size?: number
   variant_unit?: string
   image?: string
+  image_url?: string
   category?: string
   qty?: number
   description?: string
@@ -36,6 +37,8 @@ export interface StorefrontProduct {
   pack_for_you_max_underage_pct?: number | null
   pack_for_you_price_buffer_pct?: number | null
   reserved_weight_lbs?: number
+  active_order_reserved_qty?: number
+  active_order_reserved_lbs?: number
   // Subscription fields
   isSubscription?: boolean
   subscriptionData?: {
@@ -229,7 +232,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
             quantity: item.default_quantity || 1,
             unit: itemProduct?.unit || 'ea'
           }
-        }).filter(item => item.productId) // Only include items with valid product
+        }).filter((item: { productId: string }) => item.productId) // Only include items with valid product
 
         subscriptionMap.set(sp.product_id, {
           id: sp.id,

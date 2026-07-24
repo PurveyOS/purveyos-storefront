@@ -202,7 +202,7 @@ export function MinimalTemplate({
                           if (b.binKind === 'bulk_weight') return sum;
                           return sum + ((b.weightBtn ?? 0) * (b.reservedQty ?? 0));
                         }, 0);
-                        const availableWeight = Math.max(0, totalWeight - reservedWeight - (product.reservedWeightLbs ?? 0));
+                        const availableWeight = Math.max(0, totalWeight - reservedWeight - (product.reservedWeightLbs ?? 0) - (product.activeOrderReservedLbs ?? 0));
                         
                         if (availableWeight > 0) {
                           const isLow = product.reminderThreshold && availableWeight <= product.reminderThreshold;
@@ -319,7 +319,7 @@ export function MinimalTemplate({
                           return sum + ((b.weightBtn ?? 0) * (b.reservedQty ?? 0));
                         }, 0);
                         const reservedProductWeight = product.reservedWeightLbs ?? 0;
-                        totalAvailableWeight = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight);
+                        totalAvailableWeight = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight - (product.activeOrderReservedLbs ?? 0));
                       }
 
                       const adjustedBins = (product.weightBins || []).map((bin) => ({
