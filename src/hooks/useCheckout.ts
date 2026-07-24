@@ -40,6 +40,7 @@ export interface CheckoutData {
   shippingChargeCents?: number; // Shipping charge if applicable
   shippingEstimateHighCents?: number; // Max shipping estimate shown to customer
   deliveryChargeCents?: number; // Delivery charge if applicable
+  depositChargeCents?: number; // Amount to collect now for deposit orders
   customerZip?: string;
   customerStreet?: string;
   customerCity?: string;
@@ -217,6 +218,8 @@ export function useCheckout() {
         const isPreOrder: boolean = !!item.isPreOrder;
 
         const pricingMode: 'weight' | 'fixed' | undefined = (product as any).pricingMode;
+        const isDepositProduct = Boolean((product as any).is_deposit_product);
+        const depositFixedTotal = Number((product as any).deposit_fixed_total ?? 0);
 
         let unitPrice: number; // dollars per lb or per item
         let lineTotal: number; // dollars
@@ -242,6 +245,12 @@ export function useCheckout() {
           // Fixed price item (sold by unit count, not weight)
           unitPrice = (product as any).pricePer;
           lineTotal = unitPrice * quantity;
+        }
+
+        // Fixed-price deposit products use the configured final total for order value.
+        if (isDepositProduct && depositFixedTotal > 0) {
+          unitPrice = depositFixedTotal;
+          lineTotal = depositFixedTotal * quantity;
         }
 
         const unitPriceCents = Math.round(unitPrice * 100);
@@ -284,6 +293,14 @@ export function useCheckout() {
       const taxCents = totals.taxCents;
       // Add shipping/delivery charge to the final total
       const totalCents = totals.totalCents + shippingChargeCents + deliveryChargeCents;
+
+      const depositChargeCents = checkoutData.depositChargeCents ?? cart.items.reduce((sum, item: any) => {
+        const product = products.find((p) => p.id === item.productId) as any;
+        if (!product || !product.is_deposit_product) return sum;
+        const qty = item.quantity ?? 1;
+        const depositNow = Math.round((Number(product.pricePer) || 0) * 100) * qty;
+        return sum + depositNow;
+      }, 0);
 
       console.log('💰 [createOrder] Calculated totals:', { subtotalCents, taxCents, totalCents, shippingChargeCents });
 
@@ -328,6 +345,7 @@ export function useCheckout() {
         shippingChargeCents,
         shippingEstimateHighCents: checkoutData.shippingEstimateHighCents ?? null,
         deliveryChargeCents,
+        depositChargeCents,
 
         // Optional subscription payload (for storefront_subscriptions)
         subscription: subscriptionPayload,

@@ -346,7 +346,9 @@ export function ProductCard(props: ProductCardProps) {
                 ?
               </span>
               <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                This is a deposit product. You pay a deposit now — the final price is calculated after your hanging weight is received.
+                {(product as any).deposit_fixed_total && Number((product as any).deposit_fixed_total) > 0
+                  ? `This is a deposit product. You pay $${(product.pricePer ?? 0).toFixed(2)} now. Final total is $${Number((product as any).deposit_fixed_total).toFixed(2)} and the remaining balance is collected later.`
+                  : 'This is a deposit product. You pay a deposit now and the final price is calculated after hanging weight is received.'}
                 <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-800" />
               </span>
             </span>

@@ -28,6 +28,7 @@ export interface StorefrontProduct {
   allow_pre_order?: boolean
   is_deposit_product?: boolean
   deposit_prod_price_per_lb?: number
+  deposit_fixed_total?: number
   order_mode?: 'exact_package' | 'pack_for_you' | null
   pack_for_you_min_lbs?: number | null
   pack_for_you_step_lbs?: number | null
@@ -160,7 +161,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
     // Fetch products
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, name, pricePer, unit, image, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb')
+      .select('id, name, pricePer, unit, image, category, qty, description, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total')
       .eq('tenant_id', tenantId)
       .eq('is_online', true)
       .order('name')
