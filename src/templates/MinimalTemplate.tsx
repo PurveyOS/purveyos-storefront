@@ -239,10 +239,17 @@ export function MinimalTemplate({
                             {product.variantSize}{product.variantUnit ? ` ${product.variantUnit}` : ''}
                           </div>
                         )}
-                        <div className="flex items-center gap-2 text-xs sm:text-sm text-white/90">
-                          <span className="font-medium">${product.pricePer.toFixed(2)}</span>
-                          {product.unit && <span>/ {product.unit}</span>}
-                        </div>
+                        {product.is_deposit_product && Number(product.deposit_fixed_total ?? 0) > 0 ? (
+                          <div className="text-xs sm:text-sm text-white/90">
+                            <div className="font-medium">Final total ${Number(product.deposit_fixed_total).toFixed(2)}</div>
+                            <div className="text-white/80">Deposit ${product.pricePer.toFixed(2)} today</div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-xs sm:text-sm text-white/90">
+                            <span className="font-medium">${product.pricePer.toFixed(2)}</span>
+                            {product.unit && product.unit.toLowerCase() !== 'ea' && <span>/ {product.unit}</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </Link>
@@ -263,15 +270,15 @@ export function MinimalTemplate({
 
                     {/* Deposit product badge */}
                     {product.is_deposit_product && (
-                      <div className="flex items-center gap-1">
+                      <div className="relative group flex items-center gap-1">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300">
                           Deposit
                         </span>
-                        <span className="relative group">
+                        <span>
                           <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs font-bold cursor-default select-none">
                             ?
                           </span>
-                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                          <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-[min(18rem,calc(100vw-2rem))] rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
                             {(product as any).deposit_fixed_total && Number((product as any).deposit_fixed_total) > 0
                               ? `This is a deposit product. You pay $${(product.pricePer ?? 0).toFixed(2)} now. Final total is $${Number((product as any).deposit_fixed_total).toFixed(2)} and the remaining balance is collected later.`
                               : 'This is a deposit product. You pay a deposit now and the final price is calculated after hanging weight is received.'}

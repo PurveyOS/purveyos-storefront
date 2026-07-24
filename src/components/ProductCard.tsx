@@ -42,6 +42,8 @@ function isModernProps(props: ProductCardProps): props is ModernProductCardProps
 export function ProductCard(props: ProductCardProps) {
   const { product } = props;
   const productPath = `/product/${encodeURIComponent(product.id)}`;
+  const fixedDepositTotal = Number(product.deposit_fixed_total ?? 0);
+  const isFixedDepositProduct = product.is_deposit_product === true && fixedDepositTotal > 0;
   const sizeLabel = product.variantSize
     ? `${product.variantSize}${product.variantUnit ? ` ${product.variantUnit}` : ''}`
     : '';
@@ -93,11 +95,25 @@ export function ProductCard(props: ProductCardProps) {
 
           <div className="flex items-center justify-between mb-4">
             <div className="text-left">
-              <span className="text-2xl font-bold text-gray-900">
-                ${product.pricePer.toFixed(2)}
-              </span>
-              {product.unit && (
-                <span className="text-sm text-gray-500 ml-1">/{product.unit}</span>
+              {isFixedDepositProduct ? (
+                <>
+                  <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Final total</div>
+                  <span className="text-2xl font-bold text-gray-900">
+                    ${fixedDepositTotal.toFixed(2)}
+                  </span>
+                  <div className="text-sm font-medium text-amber-700">
+                    Deposit today ${product.pricePer.toFixed(2)}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl font-bold text-gray-900">
+                    ${product.pricePer.toFixed(2)}
+                  </span>
+                  {product.unit && product.unit.toLowerCase() !== 'ea' && (
+                    <span className="text-sm text-gray-500 ml-1">/{product.unit}</span>
+                  )}
+                </>
               )}
             </div>
             {product.inventory !== undefined && product.inventory > 0 && (
@@ -337,15 +353,15 @@ export function ProductCard(props: ProductCardProps) {
         )}
 
         {product.is_deposit_product && (
-          <div className="mb-2 flex items-center gap-1">
+          <div className="relative group mb-2 flex items-center gap-1">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border border-slate-300">
               Deposit
             </span>
-            <span className="relative group">
+            <span>
               <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs font-bold cursor-default select-none">
                 ?
               </span>
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-56 rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-[min(18rem,calc(100vw-2rem))] rounded-lg bg-gray-800 px-3 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
                 {(product as any).deposit_fixed_total && Number((product as any).deposit_fixed_total) > 0
                   ? `This is a deposit product. You pay $${(product.pricePer ?? 0).toFixed(2)} now. Final total is $${Number((product as any).deposit_fixed_total).toFixed(2)} and the remaining balance is collected later.`
                   : 'This is a deposit product. You pay a deposit now and the final price is calculated after hanging weight is received.'}
@@ -389,6 +405,22 @@ export function ProductCard(props: ProductCardProps) {
               : [];
             const minPrice = hasVariantBins ? Math.min(...variantPrices) : price;
             const maxPrice = hasVariantBins ? Math.max(...variantPrices) : price;
+            if (isFixedDepositProduct) {
+              return (
+                <div className="space-y-0.5">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Final total</span>
+                    <span className="text-lg font-bold" style={{ color: primaryColor }}>
+                      ${fixedDepositTotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="text-xs font-medium text-amber-700">
+                    Deposit today ${price.toFixed(2)}
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div className="flex items-baseline gap-1">
                 <span className="text-lg font-bold" style={{ color: primaryColor }}>
@@ -396,7 +428,7 @@ export function ProductCard(props: ProductCardProps) {
                     ? `$${minPrice.toFixed(2)}-$${maxPrice.toFixed(2)}`
                     : `$${price.toFixed(2)}`}
                 </span>
-                {product.unit && (
+                {product.unit && product.unit.toLowerCase() !== 'ea' && (
                   <span className="text-sm text-slate-500">/{product.unit}</span>
                 )}
               </div>

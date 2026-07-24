@@ -106,6 +106,7 @@ export function ProductPage() {
   const isWeightBased = pricingMode === 'weight';
   const isDepositProduct = product.is_deposit_product === true;
   const depositFinalTotal = Number(product.deposit_fixed_total ?? 0);
+  const isFixedDepositProduct = isDepositProduct && depositFinalTotal > 0;
   const depositPricePerLb = Number(product.deposit_prod_price_per_lb ?? 0);
   const depositBalance = depositFinalTotal > 0
     ? Math.max(0, depositFinalTotal - product.pricePer)
@@ -204,9 +205,9 @@ export function ProductPage() {
                   </h1>
                   <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-2">
                     <span className="text-3xl font-bold" style={{ color: primaryColor }}>
-                      ${product.pricePer.toFixed(2)}
+                      ${(isFixedDepositProduct ? depositFinalTotal : product.pricePer).toFixed(2)}
                     </span>
-                    {product.unit && (
+                    {product.unit && product.unit.toLowerCase() !== 'ea' && !isFixedDepositProduct && (
                       <span className="text-base text-gray-500">/{product.unit}</span>
                     )}
                     {product.variantSize && (
@@ -217,7 +218,7 @@ export function ProductPage() {
                   </div>
                   {isDepositProduct && (
                     <p className="mt-2 text-sm font-medium text-amber-700">
-                      Upfront deposit due today
+                      Deposit due today: ${product.pricePer.toFixed(2)}
                     </p>
                   )}
                 </div>
@@ -244,7 +245,7 @@ export function ProductPage() {
                         <p className="mt-1 text-sm font-medium text-gray-900">Calculated after hanging weight is received</p>
                       </div>
                     )}
-                    {depositPricePerLb > 0 && (
+                    {depositPricePerLb > 0 && !isFixedDepositProduct && (
                       <div>
                         <p className="text-xs text-amber-700">Price per lb</p>
                         <p className="mt-1 text-lg font-semibold text-gray-900">${depositPricePerLb.toFixed(2)}/lb</p>
@@ -452,7 +453,9 @@ export function ProductPage() {
                         {item.description || 'View product details'}
                       </p>
                       <p className="mt-3 text-sm font-medium" style={{ color: primaryColor }}>
-                        ${item.pricePer.toFixed(2)}{item.unit ? ` / ${item.unit}` : ''}
+                        {item.is_deposit_product && Number(item.deposit_fixed_total ?? 0) > 0
+                          ? `Final total $${Number(item.deposit_fixed_total).toFixed(2)} · Deposit $${item.pricePer.toFixed(2)}`
+                          : `$${item.pricePer.toFixed(2)}${item.unit && item.unit.toLowerCase() !== 'ea' ? ` / ${item.unit}` : ''}`}
                       </p>
                     </div>
                   </Link>
