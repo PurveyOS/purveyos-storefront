@@ -132,10 +132,30 @@ export function CheckoutPage() {
   const [loadingSubscriptionProducts, setLoadingSubscriptionProducts] = useState(false);
   const payLaterOptions = [
     (storefrontData?.settings as any)?.enable_cash ? 'Cash' : null,
-    (storefrontData?.settings as any)?.enable_venmo ? 'Venmo' : null,
-    (storefrontData?.settings as any)?.enable_zelle ? 'Zelle' : null,
     (storefrontData?.settings as any)?.enable_cashapp ? 'CashApp' : null,
   ].filter(Boolean) as string[];
+  const externalPaymentOptions = [
+    (storefrontData?.settings as any)?.enable_venmo ? {
+      method: 'venmo' as const,
+      label: 'Venmo',
+      qrUrl: (storefrontData?.settings as any)?.venmo_qr_url as string | null | undefined,
+      detailLabel: 'Venmo handle',
+      detail: (storefrontData?.settings as any)?.venmo_handle as string | undefined,
+    } : null,
+    (storefrontData?.settings as any)?.enable_zelle ? {
+      method: 'zelle' as const,
+      label: 'Zelle',
+      qrUrl: (storefrontData?.settings as any)?.zelle_qr_url as string | null | undefined,
+      detailLabel: 'Zelle details',
+      detail: (storefrontData?.settings as any)?.zelle_instructions as string | undefined,
+    } : null,
+  ].filter(Boolean) as Array<{
+    method: 'venmo' | 'zelle';
+    label: string;
+    qrUrl?: string | null;
+    detailLabel: string;
+    detail?: string;
+  }>;
   const hasDepositProductInCart = cart.items.some((item: any) => {
     const storefrontProduct = storefrontData?.products?.find((product: any) => product.id === item.productId);
     return Boolean(item?.is_deposit_product || item?.metadata?.isDepositProduct || storefrontProduct?.is_deposit_product);
@@ -1196,11 +1216,13 @@ export function CheckoutPage() {
     }
 
     if (hasDepositProductInCart) {
-      const isPayingDepositNow = formData.paymentMethod === 'card' &&
-        (storefrontPaymentPolicy !== 'both' || formData.paymentNowChoice === 'pay_now');
+      const isPayingDepositNow = (formData.paymentMethod === 'card' &&
+        (storefrontPaymentPolicy !== 'both' || formData.paymentNowChoice === 'pay_now')) ||
+        formData.paymentMethod === 'venmo' ||
+        formData.paymentMethod === 'zelle';
 
       if (!isPayingDepositNow) {
-        setOrderError('Deposit products must be paid by card at checkout. Pay later is not available for these items.');
+        setOrderError('Deposit products must be paid at checkout by card, Venmo, or Zelle. Pay later is not available for these items.');
         return;
       }
     }
@@ -1415,18 +1437,20 @@ export function CheckoutPage() {
   const storefrontPaymentPolicy = (storefrontData?.settings as any)?.storefront_payment_policy ?? 'pay_now';
   const payLaterAllowed = payLaterOptions.length > 0 && !hasDepositProductInCart;
   const payAtPickupAllowed = storefrontPaymentPolicy === 'both' && !hasDepositProductInCart;
+  const firstExternalPaymentMethod = externalPaymentOptions[0]?.method;
+  const selectedExternalPayment = externalPaymentOptions.find(option => option.method === formData.paymentMethod);
 
   useEffect(() => {
     if (!cardPaymentAvailable && formData.paymentMethod === 'card') {
-      setFormData(prev => ({ ...prev, paymentMethod: 'cash' }));
+      setFormData(prev => ({ ...prev, paymentMethod: (firstExternalPaymentMethod ?? (payLaterAllowed ? 'pay_later' : '')) as any }));
     }
-  }, [cardPaymentAvailable, formData.paymentMethod]);
+  }, [cardPaymentAvailable, firstExternalPaymentMethod, formData.paymentMethod, payLaterAllowed]);
 
   useEffect(() => {
-    if (hasDepositProductInCart && formData.paymentMethod === 'pay_later') {
-      setFormData(prev => ({ ...prev, paymentMethod: cardPaymentAvailable ? 'card' : '' as any }));
+    if (hasDepositProductInCart && ['pay_later', 'cash', 'cashapp'].includes(formData.paymentMethod as any)) {
+      setFormData(prev => ({ ...prev, paymentMethod: (cardPaymentAvailable ? 'card' : firstExternalPaymentMethod ?? '') as any }));
     }
-  }, [cardPaymentAvailable, formData.paymentMethod, hasDepositProductInCart]);
+  }, [cardPaymentAvailable, firstExternalPaymentMethod, formData.paymentMethod, hasDepositProductInCart]);
 
   useEffect(() => {
     if (formData.paymentMethod === 'card') {
@@ -2292,20 +2316,42 @@ export function CheckoutPage() {
                     </button>
                   )}
 
+                  {externalPaymentOptions.map((option) => (
+                    <button
+                      key={option.method}
+                      type="button"
+                      onClick={() => handleInputChange('paymentMethod', option.method)}
+                      className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                        formData.paymentMethod === option.method
+                          ? 'border-current shadow-lg'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={formData.paymentMethod === option.method ? {
+                        borderColor: primaryColor,
+                        boxShadow: `0 0 20px ${primaryColor}40`
+                      } : {}}
+                    >
+                      <div className="text-center">
+                        <div className="font-medium text-gray-800">{option.label}</div>
+                        <div className="text-xs text-gray-500 mt-1">Pay now</div>
+                      </div>
+                    </button>
+                  ))}
+
                 </div>
 
                 {hasDepositProductInCart && (
                   <div className="rounded-md p-4 mb-4 border border-amber-300 bg-amber-50">
                     <p className="text-sm text-amber-800">
-                      Deposit products require payment by card at checkout. The amount charged today is the upfront deposit; remaining balance (if any) is collected later.
+                      Deposit products require payment at checkout. The amount due today is the upfront deposit; remaining balance (if any) is collected later.
                     </p>
                   </div>
                 )}
 
-                {hasDepositProductInCart && !cardPaymentAvailable && (
+                {hasDepositProductInCart && !cardPaymentAvailable && externalPaymentOptions.length === 0 && (
                   <div className="rounded-md p-4 mb-4 border border-red-300 bg-red-50">
                     <p className="text-sm text-red-700">
-                      This store does not currently have card payments enabled, so deposit products cannot be checked out online until card payments are turned on.
+                      This store does not currently have card, Venmo, or Zelle payments enabled, so deposit products cannot be checked out online until one of those payment methods is turned on.
                     </p>
                   </div>
                 )}
@@ -2350,7 +2396,36 @@ export function CheckoutPage() {
                   </div>
                 )}
 
-                {formData.paymentMethod && formData.paymentMethod !== 'card' && (
+                {selectedExternalPayment && (
+                  <div className="rounded-md p-4 mb-4 border border-amber-300 bg-amber-50">
+                    <p className="text-sm font-semibold text-amber-900 mb-2">
+                      Pay with {selectedExternalPayment.label}
+                    </p>
+                    <p className="text-sm text-amber-800 mb-3">
+                      Send payment now, then place your order. The store will verify the payment before marking the order paid.
+                    </p>
+                    {selectedExternalPayment.qrUrl && (
+                      <img
+                        src={selectedExternalPayment.qrUrl}
+                        alt={`${selectedExternalPayment.label} QR code`}
+                        className="mb-3 h-40 w-40 rounded-lg border border-amber-200 bg-white object-contain p-2"
+                      />
+                    )}
+                    {selectedExternalPayment.detail && (
+                      <div className="rounded-lg bg-white/80 border border-amber-200 p-3 text-sm text-gray-800 whitespace-pre-line">
+                        <span className="font-semibold">{selectedExternalPayment.detailLabel}: </span>
+                        {selectedExternalPayment.detail}
+                      </div>
+                    )}
+                    {!selectedExternalPayment.qrUrl && !selectedExternalPayment.detail && (
+                      <p className="text-sm text-amber-800">
+                        This store accepts {selectedExternalPayment.label}, but has not added QR or account details. Please contact the store for payment instructions.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {formData.paymentMethod && formData.paymentMethod !== 'card' && !selectedExternalPayment && (
                   <div className="rounded-md p-4" style={{ backgroundColor: `${primaryColor}10`, borderColor: `${primaryColor}40`, borderWidth: '1px' }}>
                     <p className="text-sm" style={{ color: primaryColor}}>
                       You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.
@@ -2652,10 +2727,18 @@ export function CheckoutPage() {
                     </div>
 
                     {hasDepositProductInCart && (
-                      <div className="flex justify-between text-sm font-semibold text-amber-800">
-                        <span>Due Today:</span>
-                        <span>${(checkoutDueTodayCents / 100).toFixed(2)}</span>
-                      </div>
+                      <>
+                        <div className="flex justify-between text-sm font-semibold text-amber-800">
+                          <span>Due Today:</span>
+                          <span>${(checkoutDueTodayCents / 100).toFixed(2)}</span>
+                        </div>
+                        {checkoutFixedDepositDeferralCents > 0 && (
+                          <div className="flex justify-between text-sm font-semibold text-gray-600">
+                            <span>Due Later:</span>
+                            <span>${(checkoutFixedDepositDeferralCents / 100).toFixed(2)}</span>
+                          </div>
+                        )}
+                      </>
                     )}
 
                   </div>
