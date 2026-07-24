@@ -74,4 +74,6 @@ export interface Product {
   
   // Reservation fields
   reservedWeightLbs?: number; // Product-level reserved weight (lbs)
+  activeOrderReservedQty?: number; // Units allocated to pending/ready orders
+  activeOrderReservedLbs?: number; // Lbs allocated to pending/ready exact-weight orders
 }

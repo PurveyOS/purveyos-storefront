@@ -181,6 +181,20 @@ serve(async (req: Request) => {
       })
     }
 
+    const { data: activeOrders, error: activeOrdersError } = await supabaseAdmin
+      .from('orders')
+      .select('order_lines(product_id, quantity, weight_lbs, bin_weight, requested_weight_lbs, is_pre_order, line_type)')
+      .eq('tenant_id', orderRequest.tenantId)
+      .in('status', ['pending', 'ready'])
+
+    if (activeOrdersError) {
+      console.error('Error fetching active orders for stock check:', activeOrdersError)
+      return new Response(JSON.stringify({ error: 'Inventory check failed' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null; deposit_fixed_total?: number | string | null; reserved_weight_lbs?: number | null }
     type PackageBinRow = {
       package_key: string;
@@ -197,6 +211,7 @@ serve(async (req: Request) => {
     const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
     const bulkBinsByProduct = new Map<string, PackageBinRow>()
     const binsByProduct = new Map<string, PackageBinRow[]>()
+    const activeDemandByProduct = new Map<string, { qty: number; lbs: number }>()
     ;(bins ?? []).forEach((b: PackageBinRow) => {
       if (b.product_id) {
         const list = binsByProduct.get(b.product_id) ?? []
@@ -207,6 +222,30 @@ serve(async (req: Request) => {
         bulkBinsByProduct.set(b.product_id, b)
       }
     })
+
+    for (const order of activeOrders ?? []) {
+      for (const activeLine of order.order_lines ?? []) {
+        const productId = String(activeLine.product_id ?? '').trim()
+        if (!productId || activeLine.is_pre_order === true || activeLine.line_type === 'pack_for_you') continue
+
+        const quantity = Math.max(0, Number(activeLine.quantity ?? 0))
+        const requestedWeightLbs = Number(activeLine.requested_weight_lbs ?? 0)
+        const weightLbs = Number(activeLine.weight_lbs ?? 0)
+        const binWeight = Number(activeLine.bin_weight ?? 0)
+        const lbs = requestedWeightLbs > 0
+          ? requestedWeightLbs * quantity
+          : weightLbs > 0
+            ? weightLbs
+            : binWeight > 0
+              ? binWeight * quantity
+              : 0
+        const current = activeDemandByProduct.get(productId) ?? { qty: 0, lbs: 0 }
+        activeDemandByProduct.set(productId, {
+          qty: current.qty + quantity,
+          lbs: current.lbs + lbs,
+        })
+      }
+    }
     const depositProducts = (products ?? []).filter((p: ProductRow) => p.is_deposit_product === true)
     for (const p of depositProducts) {
       const hasWeightFinal = p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined && Number(p.deposit_prod_price_per_lb) > 0
@@ -247,6 +286,7 @@ serve(async (req: Request) => {
       }
 
       const productRow = productsById.get(line.productId)
+      const activeDemand = activeDemandByProduct.get(line.productId) ?? { qty: 0, lbs: 0 }
       const isPackForYou = line.lineType === 'pack_for_you'
       const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
       const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
@@ -278,7 +318,7 @@ serve(async (req: Request) => {
           return sum + ((b.weight_btn ?? 0) * (b.reserved_qty ?? 0))
         }, 0)
         const reservedProductWeight = productRow?.reserved_weight_lbs ?? 0
-        const available = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight)
+        const available = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight - activeDemand.lbs)
         const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
         const requiredWeight = requestedWeight * required
 
@@ -290,7 +330,7 @@ serve(async (req: Request) => {
         const availableFromBins = productBins.length > 0
           ? productBins.reduce((sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reserved_qty ?? 0)), 0)
           : null
-        const available = availableFromBins !== null ? availableFromBins : (productRow?.qty ?? 0)
+        const available = Math.max(0, (availableFromBins !== null ? availableFromBins : (productRow?.qty ?? 0)) - activeDemand.qty)
 
         if (required > available) {
           shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })

@@ -102,6 +102,48 @@ Deno.serve(async (req) => {
       )
     }
 
+    const productIds = (products ?? []).map((product) => product.id).filter(Boolean)
+    const activeDemandByProduct = new Map<string, { qty: number; lbs: number }>()
+
+    if (productIds.length > 0) {
+      const { data: activeOrders, error: activeOrdersError } = await supabase
+        .from('orders')
+        .select('order_lines(product_id, quantity, weight_lbs, bin_weight, requested_weight_lbs, is_pre_order, line_type)')
+        .eq('tenant_id', tenant.id)
+        .in('status', ['pending', 'ready'])
+
+      if (activeOrdersError) {
+        console.warn('[storefront-products] Active order demand fetch warning:', activeOrdersError.message)
+      } else {
+        for (const order of activeOrders ?? []) {
+          for (const line of order.order_lines ?? []) {
+            const productId = String(line.product_id ?? '').trim()
+            if (!productId || line.is_pre_order === true) continue
+
+            const quantity = Math.max(0, Number(line.quantity ?? 0))
+            const requestedWeightLbs = Number(line.requested_weight_lbs ?? 0)
+            const weightLbs = Number(line.weight_lbs ?? 0)
+            const binWeight = Number(line.bin_weight ?? 0)
+            const lbs = line.line_type === 'pack_for_you'
+              ? 0
+              : requestedWeightLbs > 0
+                ? requestedWeightLbs * quantity
+                : weightLbs > 0
+                  ? weightLbs
+                  : binWeight > 0
+                    ? binWeight * quantity
+                    : 0
+
+            const current = activeDemandByProduct.get(productId) ?? { qty: 0, lbs: 0 }
+            activeDemandByProduct.set(productId, {
+              qty: current.qty + quantity,
+              lbs: current.lbs + lbs,
+            })
+          }
+        }
+      }
+    }
+
     // ============================================================================
     // STEP 2.5: Fetch subscription data for products
     // ============================================================================
@@ -176,8 +218,11 @@ Deno.serve(async (req) => {
     // Enrich products with subscription data
     const enrichedProducts = products?.map(p => {
       const subscriptionData = subscriptionMap.get(p.id)
+      const activeDemand = activeDemandByProduct.get(p.id) ?? { qty: 0, lbs: 0 }
       return {
         ...p,
+        active_order_reserved_qty: activeDemand.qty,
+        active_order_reserved_lbs: activeDemand.lbs,
         isSubscription: !!subscriptionData,
         subscriptionData: subscriptionData || undefined
       }
