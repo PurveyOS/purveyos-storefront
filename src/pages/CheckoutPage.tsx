@@ -74,7 +74,7 @@ export function CheckoutPage() {
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
   const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
-  const { cart, clearCart, updateCartTotal, removeItems } = useCart();
+  const { cart, clearCart, updateCartTotal, removeItems, addToCart } = useCart();
   const { createOrder, loading: checkoutLoading, error: checkoutError } = useCheckout();
 
   // Load Stripe with the platform key scoped to the tenant's connected account
@@ -171,12 +171,20 @@ export function CheckoutPage() {
   const [selectedSubscriptionProductId, setSelectedSubscriptionProductId] = useState('');
   const [subscriptionSelections, setSubscriptionSelections] = useState<Record<string, GroupChoice[]>>({});
   const [loadingSubscriptionProducts, setLoadingSubscriptionProducts] = useState(false);
-  const payLaterOptions = [
-    (storefrontData?.settings as any)?.enable_cash ? 'Cash' : null,
-    (storefrontData?.settings as any)?.enable_venmo ? 'Venmo' : null,
-    (storefrontData?.settings as any)?.enable_zelle ? 'Zelle' : null,
-    (storefrontData?.settings as any)?.enable_cashapp ? 'CashApp' : null,
-  ].filter(Boolean) as string[];
+  const externalPaymentOptions = [
+    (storefrontData?.settings as any)?.enable_cash
+      ? { method: 'cash', label: 'Cash', description: 'Pay at pickup/delivery' }
+      : null,
+    (storefrontData?.settings as any)?.enable_venmo
+      ? { method: 'venmo', label: 'Venmo', description: 'Pay with Venmo' }
+      : null,
+    (storefrontData?.settings as any)?.enable_zelle
+      ? { method: 'zelle', label: 'Zelle', description: 'Pay with Zelle' }
+      : null,
+    (storefrontData?.settings as any)?.enable_cashapp
+      ? { method: 'cashapp', label: 'Cash App', description: 'Pay with Cash App' }
+      : null,
+  ].filter(Boolean) as Array<{ method: CheckoutData['paymentMethod']; label: string; description: string }>;
   const hasDepositProductInCart = cart.items.some((item: any) => {
     const storefrontProduct = storefrontData?.products?.find((product: any) => product.id === item.productId);
     return Boolean(item?.is_deposit_product || item?.metadata?.isDepositProduct || storefrontProduct?.is_deposit_product);
@@ -1469,20 +1477,37 @@ export function CheckoutPage() {
     (((storefrontData?.settings as any)?.enable_card ?? (storefrontData?.settings as any)?.allow_card ?? false))
   );
   const storefrontPaymentPolicy = (storefrontData?.settings as any)?.storefront_payment_policy ?? 'pay_now';
-  const payLaterAllowed = payLaterOptions.length > 0 && !hasDepositProductInCart;
+  const payLaterAllowed = externalPaymentOptions.length > 0 && !hasDepositProductInCart;
   const payAtPickupAllowed = storefrontPaymentPolicy === 'both' && !hasDepositProductInCart;
+  const fallbackExternalPaymentMethod = externalPaymentOptions[0]?.method;
 
   useEffect(() => {
     if (!cardPaymentAvailable && formData.paymentMethod === 'card') {
-      setFormData(prev => ({ ...prev, paymentMethod: 'cash' }));
+      setFormData(prev => ({
+        ...prev,
+        paymentMethod: fallbackExternalPaymentMethod ?? '' as any,
+      }));
     }
-  }, [cardPaymentAvailable, formData.paymentMethod]);
+  }, [cardPaymentAvailable, formData.paymentMethod, fallbackExternalPaymentMethod]);
 
   useEffect(() => {
-    if (hasDepositProductInCart && formData.paymentMethod === 'pay_later') {
+    if (
+      hasDepositProductInCart &&
+      formData.paymentMethod !== 'card' &&
+      !!formData.paymentMethod
+    ) {
       setFormData(prev => ({ ...prev, paymentMethod: cardPaymentAvailable ? 'card' : '' as any }));
     }
   }, [cardPaymentAvailable, formData.paymentMethod, hasDepositProductInCart]);
+
+  useEffect(() => {
+    if (formData.paymentMethod === 'card') return;
+    if (!formData.paymentMethod) return;
+    const supported = externalPaymentOptions.some((option) => option.method === formData.paymentMethod);
+    if (!supported) {
+      setFormData(prev => ({ ...prev, paymentMethod: fallbackExternalPaymentMethod ?? '' as any }));
+    }
+  }, [externalPaymentOptions, fallbackExternalPaymentMethod, formData.paymentMethod]);
 
   useEffect(() => {
     if (formData.paymentMethod === 'card') {
@@ -2277,29 +2302,27 @@ export function CheckoutPage() {
               <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-6">Payment Method</h2>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  {payLaterAllowed && (
+                  {payLaterAllowed && externalPaymentOptions.map((option) => (
                     <button
+                      key={option.method}
                       type="button"
-                      onClick={() => handleInputChange('paymentMethod', 'pay_later')}
+                      onClick={() => handleInputChange('paymentMethod', option.method)}
                       className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                        formData.paymentMethod === 'pay_later'
+                        formData.paymentMethod === option.method
                           ? 'border-current shadow-lg'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
-                      style={formData.paymentMethod === 'pay_later' ? {
+                      style={formData.paymentMethod === option.method ? {
                         borderColor: primaryColor,
                         boxShadow: `0 0 20px ${primaryColor}40`
                       } : {}}
                     >
                       <div className="text-center">
-                        <div className="text-2xl mb-2">🕒</div>
-                        <div className="font-medium text-gray-800">Pay Later</div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          {payLaterOptions.join(' • ')}
-                        </div>
+                        <div className="font-medium text-gray-800">{option.label}</div>
+                        <div className="text-xs text-gray-500 mt-1">{option.description}</div>
                       </div>
                     </button>
-                  )}
+                  ))}
 
                   {cardPaymentAvailable && (
                     <button
@@ -2386,6 +2409,16 @@ export function CheckoutPage() {
                     <p className="text-sm" style={{ color: primaryColor}}>
                       You'll pay when you {formData.deliveryMethod === 'pickup' ? 'pick up' : 'receive'} your order.
                     </p>
+                    {formData.paymentMethod === 'venmo' && (storefrontData?.settings as any)?.venmo_handle && (
+                      <p className="text-xs mt-2 text-gray-600">
+                        Venmo handle: {(storefrontData?.settings as any)?.venmo_handle}
+                      </p>
+                    )}
+                    {formData.paymentMethod === 'zelle' && (storefrontData?.settings as any)?.zelle_instructions && (
+                      <p className="text-xs mt-2 text-gray-600">
+                        Zelle instructions: {(storefrontData?.settings as any)?.zelle_instructions}
+                      </p>
+                    )}
                   </div>
                 )}
 

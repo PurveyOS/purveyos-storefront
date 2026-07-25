@@ -40,7 +40,7 @@ interface OrderRequest {
   customerCity?: string
   customerState?: string
   fulfillmentLocation?: string
-  paymentMethod: 'venmo' | 'zelle' | 'card' | 'cash'
+  paymentMethod: 'venmo' | 'zelle' | 'cashapp' | 'card' | 'cash' | 'pay_later'
   paymentNowChoice?: 'pay_now' | 'pay_at_pickup'
   lines: OrderLine[]
   subtotalCents: number
