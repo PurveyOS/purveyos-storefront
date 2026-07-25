@@ -2753,21 +2753,6 @@ export function CheckoutPage() {
                       <span>Total:</span>
                       <span>${(checkoutDisplayTotalCents / 100).toFixed(2)}</span>
                     </div>
-
-                    {hasDepositProductInCart && (
-                      <>
-                        <div className="flex justify-between text-sm font-semibold text-amber-800">
-                          <span>Due Today:</span>
-                          <span>${(checkoutDueTodayCents / 100).toFixed(2)}</span>
-                        </div>
-                        {checkoutFixedDepositDeferralCents > 0 && (
-                          <div className="flex justify-between text-sm font-semibold text-gray-600">
-                            <span>Due Later:</span>
-                            <span>${(checkoutFixedDepositDeferralCents / 100).toFixed(2)}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
                   </div>
                 </div>
               ) : (
