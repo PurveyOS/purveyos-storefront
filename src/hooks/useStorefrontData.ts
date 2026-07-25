@@ -455,6 +455,7 @@ export function useStorefrontData(tenantId: string): {
             available: effectiveInventory > 0 || (p.allow_pre_order === true),
             inventory: effectiveInventory,
             allowPreOrder: p.allow_pre_order === true,
+            taxBehavior: ((p as any).tax_behavior as 'inherit' | 'taxable' | 'exempt' | undefined) ?? 'inherit',
             isSubscription: hasSubscription,
             subscriptionData: subscription,
             is_deposit_product: p.is_deposit_product === true,

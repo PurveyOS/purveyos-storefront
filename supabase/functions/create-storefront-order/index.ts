@@ -148,14 +148,28 @@ serve(async (req: Request) => {
       return lineIsPreOrder && (hasWeight || isWeightPriced)
     })
 
-    const estimatedTotalCents = orderRequest.estimatedTotalCents ?? (isWeightEstimate ? orderRequest.totalCents : null)
+    const estimatedTotalCents = orderRequest.estimatedTotalCents ?? (isWeightEstimate ? totalCentsServer : null)
 
     // Preflight stock check to prevent orders on unavailable items
     const productIds = Array.from(new Set(orderRequest.lines.map((l) => l.productId)))
 
+    const { data: tenantTaxConfig, error: tenantTaxError } = await supabaseAdmin
+      .from('tenants')
+      .select('tax_rate, tax_included, charge_tax_on_online')
+      .eq('id', orderRequest.tenantId)
+      .single()
+
+    if (tenantTaxError) {
+      console.error('Error fetching tenant tax config:', tenantTaxError)
+      return new Response(JSON.stringify({ error: 'Unable to load tenant tax settings' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { data: products, error: productsError } = await supabaseAdmin
       .from('products')
-      .select('id, unit, qty, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total, reserved_weight_lbs')
+      .select('id, unit, qty, tax_behavior, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total, reserved_weight_lbs')
       .eq('tenant_id', orderRequest.tenantId)
       .in('id', productIds)
 
@@ -195,7 +209,18 @@ serve(async (req: Request) => {
       })
     }
 
-    type ProductRow = { id: string; unit?: string | null; qty?: number | null; allow_pre_order?: boolean | null; pricing_mode?: string | null; is_deposit_product?: boolean | null; deposit_prod_price_per_lb?: number | string | null; deposit_fixed_total?: number | string | null; reserved_weight_lbs?: number | null }
+    type ProductRow = {
+      id: string;
+      unit?: string | null;
+      qty?: number | null;
+      tax_behavior?: 'inherit' | 'taxable' | 'exempt' | null;
+      allow_pre_order?: boolean | null;
+      pricing_mode?: string | null;
+      is_deposit_product?: boolean | null;
+      deposit_prod_price_per_lb?: number | string | null;
+      deposit_fixed_total?: number | string | null;
+      reserved_weight_lbs?: number | null;
+    }
     type PackageBinRow = {
       package_key: string;
       qty?: number | null;
@@ -208,6 +233,38 @@ serve(async (req: Request) => {
     }
 
     const productsById = new Map<string, ProductRow>((products ?? []).map((p: ProductRow) => [p.id, p]))
+
+    const subtotalCentsServer = orderRequest.lines.reduce(
+      (sum, line) => sum + Math.max(0, Number(line.lineTotalCents ?? 0)),
+      0
+    )
+    const discountCentsServer = Math.max(0, Number(orderRequest.discountCents ?? 0))
+    const shippingChargeCentsServer = Math.max(0, Number(orderRequest.shippingChargeCents ?? 0))
+    const deliveryChargeCentsServer = Math.max(0, Number(orderRequest.deliveryChargeCents ?? 0))
+    const subtotalAfterDiscountCentsServer = Math.max(0, subtotalCentsServer - discountCentsServer)
+
+    const tenantChargeTax = tenantTaxConfig?.charge_tax_on_online !== false
+    const tenantTaxIncluded = tenantTaxConfig?.tax_included === true
+    const tenantTaxRate = Number(tenantTaxConfig?.tax_rate ?? 0)
+
+    const taxableSubtotalCentsServer = orderRequest.lines.reduce((sum, line) => {
+      const product = productsById.get(line.productId)
+      const behavior = (product?.tax_behavior ?? 'exempt') as 'inherit' | 'taxable' | 'exempt'
+      const lineTotal = Math.max(0, Number(line.lineTotalCents ?? 0))
+      const taxable = behavior === 'taxable' || (behavior === 'inherit' && tenantChargeTax)
+      return taxable ? (sum + lineTotal) : sum
+    }, 0)
+
+    let taxCentsServer = 0
+    if (tenantChargeTax && !tenantTaxIncluded && tenantTaxRate > 0) {
+      const discountRatio = subtotalCentsServer > 0
+        ? Math.min(1, subtotalAfterDiscountCentsServer / subtotalCentsServer)
+        : 0
+      const taxableAfterDiscountCents = Math.max(0, Math.round(taxableSubtotalCentsServer * discountRatio))
+      taxCentsServer = Math.round(taxableAfterDiscountCents * tenantTaxRate)
+    }
+
+    const totalCentsServer = subtotalAfterDiscountCentsServer + taxCentsServer + shippingChargeCentsServer + deliveryChargeCentsServer
     const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
     const bulkBinsByProduct = new Map<string, PackageBinRow>()
     const binsByProduct = new Map<string, PackageBinRow[]>()
@@ -268,12 +325,12 @@ serve(async (req: Request) => {
     }
 
     const depositAmount = hasDepositProduct
-      ? ((orderRequest.depositChargeCents ?? orderRequest.totalCents) / 100)
+      ? ((orderRequest.depositChargeCents ?? totalCentsServer) / 100)
       : null
     const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
     const depositPricePerLb = depositProducts.find((p) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
     const balanceDue = hasDepositProduct && depositAmount !== null
-      ? Math.max(0, (orderRequest.totalCents / 100) - depositAmount)
+      ? Math.max(0, (totalCentsServer / 100) - depositAmount)
       : null
 
     const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
@@ -474,14 +531,14 @@ serve(async (req: Request) => {
         customer_city: orderRequest.customerCity ?? null,
         customer_state: orderRequest.customerState ?? null,
         note: note || null,
-        subtotal_cents: orderRequest.subtotalCents,
-        tax_cents: orderRequest.taxCents,
-        shipping_cents: orderRequest.shippingChargeCents ?? 0,
-        shipping_estimate_high_cents: orderRequest.shippingEstimateHighCents ?? orderRequest.shippingChargeCents ?? 0,
-        delivery_cents: orderRequest.deliveryChargeCents ?? 0,
-        total_cents: orderRequest.totalCents,
-        total: (orderRequest.totalCents / 100).toFixed(2),
-        discount_cents: orderRequest.discountCents ?? 0,
+        subtotal_cents: subtotalCentsServer,
+        tax_cents: taxCentsServer,
+        shipping_cents: shippingChargeCentsServer,
+        shipping_estimate_high_cents: orderRequest.shippingEstimateHighCents ?? shippingChargeCentsServer,
+        delivery_cents: deliveryChargeCentsServer,
+        total_cents: totalCentsServer,
+        total: (totalCentsServer / 100).toFixed(2),
+        discount_cents: discountCentsServer,
         payment_method: orderRequest.paymentMethod,
         is_weight_estimate: isWeightEstimate,
         estimated_total_cents: estimatedTotalCents,
@@ -505,11 +562,11 @@ serve(async (req: Request) => {
       .select()
       .single()
 
-    console.log('💳 [Edge] Order created with discount_cents:', orderRequest.discountCents ?? 0, 'Full order object:', {
-      subtotal_cents: orderRequest.subtotalCents,
-      discount_cents: orderRequest.discountCents ?? 0,
-      tax_cents: orderRequest.taxCents,
-      total_cents: orderRequest.totalCents,
+    console.log('💳 [Edge] Order created with discount_cents:', discountCentsServer, 'Full order object:', {
+      subtotal_cents: subtotalCentsServer,
+      discount_cents: discountCentsServer,
+      tax_cents: taxCentsServer,
+      total_cents: totalCentsServer,
     });
 
     if (orderError) {
@@ -520,8 +577,8 @@ serve(async (req: Request) => {
     console.log('Order created:', order)
 
     // Log discount usage if discount was applied
-    if (orderRequest.discountCents && orderRequest.discountCents > 0) {
-      console.log('📝 Creating discount_usage_log entry for order:', { orderId, discountCents: orderRequest.discountCents })
+    if (discountCentsServer > 0) {
+      console.log('📝 Creating discount_usage_log entry for order:', { orderId, discountCents: discountCentsServer })
       
       // Find discount by matching the discount amount (heuristic - may need refinement)
       const { data: discounts } = await supabaseAdmin
@@ -541,7 +598,7 @@ serve(async (req: Request) => {
           tenant_id: orderRequest.tenantId,
           order_id: orderId,
           customer_id: userId || null,
-          discount_amount_applied: orderRequest.discountCents,
+          discount_amount_applied: discountCentsServer,
           created_at: new Date().toISOString(),
         })
       
@@ -774,7 +831,7 @@ serve(async (req: Request) => {
               : null,
             deliveries_fulfilled: 0,  // Changed from 1 to 0 (not fulfilled yet, just ordered)
             payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
-            total_paid_cents: orderRequest.stripePaymentIntentId ? (hasDepositProduct ? (orderRequest.depositChargeCents ?? orderRequest.totalCents) : orderRequest.totalCents) : 0,
+            total_paid_cents: orderRequest.stripePaymentIntentId ? (hasDepositProduct ? (orderRequest.depositChargeCents ?? totalCentsServer) : totalCentsServer) : 0,
             stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,  // Link for idempotency + tracking
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -930,7 +987,7 @@ serve(async (req: Request) => {
           customerName: orderRequest.customerName,
           customerEmail: orderRequest.customerEmail,
           customerPhone: orderRequest.customerPhone || null,
-          totalCents: orderRequest.totalCents,
+          totalCents: totalCentsServer,
           source: 'web',
           notifyCustomer: false  // Send tenant notification (not customer confirmation)
         }

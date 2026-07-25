@@ -66,6 +66,15 @@ export interface TenantTaxConfig {
   chargeTaxOnOnline?: boolean;   // allow disabling tax for online orders
 }
 
+type ProductTaxBehavior = 'inherit' | 'taxable' | 'exempt';
+
+function isProductTaxable(product: any, chargeTaxOnOnline: boolean): boolean {
+  const behavior = ((product?.taxBehavior ?? product?.tax_behavior ?? 'exempt') as ProductTaxBehavior);
+  if (behavior === 'taxable') return true;
+  if (behavior === 'exempt') return false;
+  return chargeTaxOnOnline;
+}
+
 interface TotalsResult {
   subtotalCents: number;
   taxCents: number;
@@ -193,6 +202,7 @@ export function useCheckout() {
             pricePer: meta.subscriptionTotalPrice || 0,
             unit: 'ea',
             pricingMode: 'fixed',
+            taxBehavior: 'inherit',
             allowPreOrder: false,
             subscriptionInterval: interval,
           } as any;
@@ -280,19 +290,32 @@ export function useCheckout() {
       const discountCents = checkoutData.discountCents || 0;
       const shippingChargeCents = checkoutData.shippingChargeCents || 0;
       const deliveryChargeCents = checkoutData.deliveryChargeCents || 0;
-      
-      console.log('💰 [createOrder] Calculating totals:', { discountCents, shippingChargeCents, taxConfig });
-      
-      const totals = calculateTotalsFromCents(
-        lines.map((line) => line.lineTotalCents),
-        taxConfig,
-        discountCents
-      );
 
-      const subtotalCents = totals.subtotalCents;
-      const taxCents = totals.taxCents;
+      console.log('💰 [createOrder] Calculating totals:', { discountCents, shippingChargeCents, deliveryChargeCents, taxConfig });
+
+      const subtotalCents = lines.reduce((sum, line) => sum + (line.lineTotalCents || 0), 0);
+      const chargeTax = taxConfig?.chargeTaxOnOnline !== false;
+      const taxIncluded = taxConfig?.taxIncluded ?? false;
+      const taxRate = taxConfig?.taxRate ?? 0;
+      const productById = new Map(products.map((product) => [product.id, product]));
+      const taxableSubtotalCents = lines.reduce((sum, line) => {
+        const product = productById.get(line.productId);
+        if (!isProductTaxable(product, chargeTax)) return sum;
+        return sum + (line.lineTotalCents || 0);
+      }, 0);
+
+      let taxCents = 0;
+      if (chargeTax && !taxIncluded && taxRate > 0) {
+        const subtotalAfterDiscountCents = Math.max(0, subtotalCents - discountCents);
+        const discountRatio = subtotalCents > 0
+          ? Math.min(1, subtotalAfterDiscountCents / subtotalCents)
+          : 0;
+        const taxableAfterDiscountCents = Math.max(0, Math.round(taxableSubtotalCents * discountRatio));
+        taxCents = Math.round(taxableAfterDiscountCents * taxRate);
+      }
+
       // Add shipping/delivery charge to the final total
-      const totalCents = totals.totalCents + shippingChargeCents + deliveryChargeCents;
+      const totalCents = Math.max(0, subtotalCents - discountCents) + taxCents + shippingChargeCents + deliveryChargeCents;
 
       const depositChargeCents = checkoutData.depositChargeCents ?? cart.items.reduce((sum, item: any) => {
         const product = products.find((p) => p.id === item.productId) as any;
