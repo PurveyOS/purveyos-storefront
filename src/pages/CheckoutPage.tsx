@@ -27,6 +27,47 @@ interface Discount {
   is_active: boolean;
 }
 
+type ProductTaxBehavior = 'inherit' | 'taxable' | 'exempt';
+
+function isProductTaxable(product: any, tenantChargeTaxOnOnline: boolean): boolean {
+  const behavior = ((product?.taxBehavior ?? product?.tax_behavior ?? 'exempt') as ProductTaxBehavior);
+  if (behavior === 'taxable') return true;
+  if (behavior === 'exempt') return false;
+  return tenantChargeTaxOnOnline;
+}
+
+function getCartItemLineTotalCents(item: any, product: any): number {
+  if (!product) return 0;
+
+  const weight = item.weight;
+  const requestedWeightLbs = item.requestedWeightLbs;
+  const binWeight = item.binWeight;
+  const unitPriceCents = item.unitPriceCents;
+  const metaPrice: number | undefined = item.metadata?.subscriptionTotalPrice;
+  const quantity = item.quantity ?? 1;
+
+  if (binWeight && unitPriceCents) {
+    const isEach = (product.unit || '').toLowerCase() === 'ea' || Boolean(product?.variantSize || product?.variantUnit);
+    return isEach
+      ? Math.round(unitPriceCents * quantity)
+      : Math.round(binWeight * unitPriceCents * quantity);
+  }
+
+  if (requestedWeightLbs && requestedWeightLbs > 0) {
+    return Math.round(product.pricePer * requestedWeightLbs * quantity * 100);
+  }
+
+  if (weight && weight > 0) {
+    return Math.round(product.pricePer * weight * quantity * 100);
+  }
+
+  if (metaPrice && metaPrice > 0) {
+    return Math.round(metaPrice * quantity * 100);
+  }
+
+  return Math.round(product.pricePer * quantity * 100);
+}
+
 export function CheckoutPage() {
   const isDev = import.meta.env.DEV;
 
@@ -892,8 +933,14 @@ export function CheckoutPage() {
     await saveCustomerProfile();
 
     try {
+      const taxRate = tenant?.tax_rate ?? 0;
+      const chargeTax = tenant?.charge_tax_on_online !== false;
+      const taxIncluded = tenant?.tax_included ?? false;
+      let productSubtotalCents = 0;
+      let taxableProductSubtotalCents = 0;
+
       // Prepare line items for Stripe
-      const lineItems = cart.items.map((item: any) => {
+      const lineItems: any[] = cart.items.map((item: any) => {
         const product = storefrontData.products.find((p: any) => p.id === item.productId);
         const productName = product?.name || 'Product';
         
@@ -942,6 +989,12 @@ export function CheckoutPage() {
           totalPrice: unitPriceInCents * itemQuantity
         });
 
+        const lineTotalCents = unitPriceInCents * itemQuantity;
+        productSubtotalCents += lineTotalCents;
+        if (isProductTaxable(product, chargeTax)) {
+          taxableProductSubtotalCents += lineTotalCents;
+        }
+
         // Validate price
         if (!unitPriceInCents || unitPriceInCents <= 0) {
           throw new Error(`Invalid price for ${productName}: ${unitPriceInCents}`);
@@ -957,6 +1010,7 @@ export function CheckoutPage() {
                 : undefined,
               metadata: {
                 product_id: item.productId, // Store product ID for order creation
+                tax_behavior: product?.taxBehavior ?? 'inherit',
                 binWeight: item.binWeight ? String(item.binWeight) : undefined, // Weight per unit for pre-packaged bins
                 weight: item.weight ? String(item.weight) : undefined, // Weight per unit for custom weight
                 unit: product?.unit || 'ea', // 'lb' or 'ea'
@@ -983,6 +1037,7 @@ export function CheckoutPage() {
               description: undefined,
               metadata: {
                 product_id: 'shipping',
+                tax_behavior: 'inherit',
                 binWeight: undefined,
                 weight: undefined,
                 unit: 'ea',
@@ -1002,7 +1057,7 @@ export function CheckoutPage() {
             product_data: {
               name: 'Delivery Fee',
               description: deliveryGeoResult?.matched_zone?.label ? `${deliveryGeoResult.matched_zone.label} zone` : undefined,
-              metadata: { product_id: 'delivery', binWeight: undefined, weight: undefined, unit: 'ea' },
+              metadata: { product_id: 'delivery', tax_behavior: 'inherit', binWeight: undefined, weight: undefined, unit: 'ea' },
             },
             unit_amount: deliveryChargeCents,
           },
@@ -1011,14 +1066,15 @@ export function CheckoutPage() {
       }
 
       // Calculate tax if applicable
-      const taxRate = tenant?.tax_rate ?? 0;
-      const chargeTax = tenant?.charge_tax_on_online !== false;
-      const taxIncluded = tenant?.tax_included ?? false;
-      
       if (chargeTax && !taxIncluded && taxRate > 0) {
-        // Calculate tax on subtotal minus discount (including shipping in taxable base)
-        const subtotalAfterDiscount = cart.total + (shippingChargeCents / 100) - (discountCents / 100);
-        const taxAmount = Math.round(subtotalAfterDiscount * 100 * taxRate);
+        const discountRatio = productSubtotalCents > 0
+          ? Math.min(1, discountCents / productSubtotalCents)
+          : 0;
+        const taxableAfterDiscountCents = Math.max(
+          0,
+          Math.round(taxableProductSubtotalCents * (1 - discountRatio))
+        );
+        const taxAmount = Math.round(taxableAfterDiscountCents * taxRate);
         lineItems.push({
           price_data: {
             currency: 'usd',
@@ -1027,6 +1083,7 @@ export function CheckoutPage() {
               description: undefined,
               metadata: {
                 product_id: 'tax',
+                tax_behavior: 'inherit',
                 binWeight: undefined,
                 weight: undefined,
                 unit: 'ea',
@@ -1188,7 +1245,7 @@ export function CheckoutPage() {
     // Save customer profile with email preference
     await saveCustomerProfile();
 
-    const orderValue = (hasDepositProductInCart ? checkoutDueTodayCents : checkoutDisplayTotalCents) / 100;
+    const orderValue = checkoutDisplayTotalCents / 100;
 
     if (formData.paymentMethod === 'card' && !cardPaymentAvailable) {
       setOrderError('Card payments are not available for this store. Please choose another method.');
@@ -1289,7 +1346,6 @@ export function CheckoutPage() {
     shippingChargeCents: formData.deliveryMethod === 'shipping' ? shippingChargeCents : 0,
     shippingEstimateHighCents: formData.deliveryMethod === 'shipping' ? (shippingEstimate?.range_high_cents ?? shippingChargeCents) : 0,
     deliveryChargeCents: formData.deliveryMethod === 'delivery' ? deliveryChargeCents : 0,
-    depositChargeCents: hasDepositProductInCart ? checkoutDepositChargeCents : 0,
     paymentMethodId,
   },
   {
@@ -1556,6 +1612,7 @@ export function CheckoutPage() {
         unit: 'ea',
         imageUrl: '/subscription-placeholder.png',
         categoryId: 'subscription',
+        taxBehavior: 'inherit',
         available: true,
         inventory: 1,
         subscriptionInterval: interval,
@@ -1567,36 +1624,19 @@ export function CheckoutPage() {
     return product ? { ...item, product } : null;
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 
-  // Calculate actual cart total based on items
-  const cartTotal = cartItems.reduce((sum, item) => {
-    if (!item?.product) return sum;
-    
-    const weight = (item as any).weight;
-    const requestedWeightLbs = (item as any).requestedWeightLbs;
-    const binWeight = (item as any).binWeight;
-    const unitPriceCents = (item as any).unitPriceCents;
-    const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
-    const quantity = item.quantity;
-    
-    let itemTotal = 0;
-    
-    if (binWeight && unitPriceCents) {
-      const isEach = (item.product.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any).variantSize || (item.product as any).variantUnit);
-      itemTotal = (isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100))) * quantity;
-    } else if (requestedWeightLbs && requestedWeightLbs > 0) {
-      itemTotal = item.product.pricePer * requestedWeightLbs * quantity;
-    } else if (weight && weight > 0) {
-      itemTotal = item.product.pricePer * weight * quantity;
-    } else if ((item.product as any).is_deposit_product && Number((item.product as any).deposit_fixed_total) > 0) {
-      itemTotal = Number((item.product as any).deposit_fixed_total) * quantity;
-    } else if (metaPrice && metaPrice > 0) {
-      itemTotal = metaPrice * quantity;
-    } else {
-      itemTotal = item.product.pricePer * quantity;
-    }
-    
-    return sum + itemTotal;
+  const checkoutChargeTax = tenant?.charge_tax_on_online !== false;
+
+  // Calculate cart subtotal and taxable subtotal from line items in cents.
+  const cartSubtotalCents = cartItems.reduce((sum, item) => {
+    return sum + getCartItemLineTotalCents(item, item.product);
   }, 0);
+
+  const taxableProductSubtotalCents = cartItems.reduce((sum, item) => {
+    if (!isProductTaxable(item.product, checkoutChargeTax)) return sum;
+    return sum + getCartItemLineTotalCents(item, item.product);
+  }, 0);
+
+  const cartTotal = cartSubtotalCents / 100;
 
   const onlinePaymentFeeSettings = storefrontData?.settings.onlinePaymentFeeSettings;
   const checkoutShippingChargeCents = formData.deliveryMethod === 'shipping'
@@ -1608,10 +1648,18 @@ export function CheckoutPage() {
   const checkoutDeliveryChargeCents = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
     ? deliveryGeoResult.matched_zone.charge_cents
     : 0;
-  const checkoutSubtotalAfterDiscountCents = Math.max(0, Math.round(cartTotal * 100) - discountCents);
+  const checkoutSubtotalAfterDiscountCents = Math.max(0, cartSubtotalCents - discountCents);
   const checkoutTaxCents = tenant?.charge_tax_on_online === false || tenant?.tax_included
     ? 0
-    : Math.round(checkoutSubtotalAfterDiscountCents * (tenant?.tax_rate ?? 0));
+    : Math.round(
+        Math.max(
+          0,
+          Math.round(
+            taxableProductSubtotalCents *
+              (cartSubtotalCents > 0 ? (checkoutSubtotalAfterDiscountCents / cartSubtotalCents) : 0)
+          )
+        ) * (tenant?.tax_rate ?? 0)
+      );
   const checkoutBaseTotalCents = checkoutSubtotalAfterDiscountCents + checkoutTaxCents + checkoutShippingChargeCents + checkoutDeliveryChargeCents;
   const checkoutOnlinePaymentFeeCents = getOnlinePaymentFeeCents({
     paymentMethod: formData.paymentMethod,
@@ -1620,23 +1668,6 @@ export function CheckoutPage() {
     settings: onlinePaymentFeeSettings,
   });
   const checkoutDisplayTotalCents = addOnlinePaymentFee(checkoutBaseTotalCents, checkoutOnlinePaymentFeeCents);
-  const checkoutDepositChargeCents = cartItems.reduce((sum, item: any) => {
-    if (!item?.product || !(item.product as any).is_deposit_product) return sum;
-    const qty = item.quantity ?? 1;
-    return sum + Math.round((Number(item.product.pricePer) || 0) * 100) * qty;
-  }, 0);
-  const checkoutFixedDepositDeferralCents = cartItems.reduce((sum, item: any) => {
-    if (!item?.product || !(item.product as any).is_deposit_product) return sum;
-    const fixedTotal = Number((item.product as any).deposit_fixed_total || 0);
-    if (fixedTotal <= 0) return sum;
-    const qty = item.quantity ?? 1;
-    const depositNow = Number(item.product.pricePer || 0);
-    const deferredPerUnit = Math.max(0, fixedTotal - depositNow);
-    return sum + Math.round(deferredPerUnit * 100) * qty;
-  }, 0);
-  const checkoutDueTodayCents = hasDepositProductInCart
-    ? Math.max(0, checkoutDisplayTotalCents - checkoutFixedDepositDeferralCents)
-    : checkoutDisplayTotalCents;
 
   const shippingEstimateDebug = formData.deliveryMethod === 'shipping' ? {
     request: {
@@ -2297,7 +2328,7 @@ export function CheckoutPage() {
                 {hasDepositProductInCart && (
                   <div className="rounded-md p-4 mb-4 border border-amber-300 bg-amber-50">
                     <p className="text-sm text-amber-800">
-                      Deposit products require payment by card at checkout. The amount charged today is the upfront deposit; remaining balance (if any) is collected later.
+                      Deposit products require payment by card at checkout. Pay later options are disabled for this order.
                     </p>
                   </div>
                 )}
@@ -2515,9 +2546,6 @@ export function CheckoutPage() {
                       // Weight-based
                       displayText = `${weight} ${item.product.unit} @ $${item.product.pricePer.toFixed(2)}/${item.product.unit}`;
                       itemTotal = item.product.pricePer * weight * item.quantity;
-                    } else if ((item.product as any).is_deposit_product && Number((item.product as any).deposit_fixed_total) > 0) {
-                      displayText = `Deposit $${item.product.pricePer.toFixed(2)} now · Final total $${Number((item.product as any).deposit_fixed_total).toFixed(2)}`;
-                      itemTotal = Number((item.product as any).deposit_fixed_total) * item.quantity;
                     } else if (metaPrice && metaPrice > 0) {
                       displayText = `${item.product.name} (${(item.product as any).subscriptionInterval || 'subscription'})`;
                       itemTotal = metaPrice * item.quantity;
@@ -2647,16 +2675,9 @@ export function CheckoutPage() {
                     )}
 
                     <div className="flex justify-between text-lg font-bold text-gray-800 border-t pt-2">
-                      <span>{hasDepositProductInCart ? 'Order Total:' : 'Total:'}</span>
+                      <span>Total:</span>
                       <span>${(checkoutDisplayTotalCents / 100).toFixed(2)}</span>
                     </div>
-
-                    {hasDepositProductInCart && (
-                      <div className="flex justify-between text-sm font-semibold text-amber-800">
-                        <span>Due Today:</span>
-                        <span>${(checkoutDueTodayCents / 100).toFixed(2)}</span>
-                      </div>
-                    )}
 
                   </div>
                 </div>
