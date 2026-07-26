@@ -383,21 +383,27 @@ export function CheckoutPage() {
     let state = '';
     let zip = '';
 
-    if (parts.length >= 4) {
+    if (parts.length >= 2) {
       street = parts[0];
       city = parts[1];
-      state = parts[2];
-      zip = parts.slice(3).join(' ');
-    } else if (parts.length === 3) {
-      street = parts[0];
-      city = parts[1];
-      const stateZip = parts[2];
-      const match = stateZip.match(/^(.+?)\s+(\d{5}(?:-\d{4})?)$/);
-      if (match) {
-        state = match[1];
-        zip = match[2];
+
+      // Handles both "City, ST 12345" and "City, ST 12345, USA".
+      const trailingStateZipMatch = value.match(/,\s*([^,]+?)\s+(\d{5}(?:-\d{4})?)(?:\s*,\s*[^,]+)?\s*$/);
+      if (trailingStateZipMatch) {
+        state = trailingStateZipMatch[1];
+        zip = trailingStateZipMatch[2];
       } else {
-        state = stateZip;
+        const stateZipCandidate = parts.slice(2).join(' ');
+        const stateZipMatch = stateZipCandidate.match(/([A-Za-z]{2}|[A-Za-z .'-]+)\s+(\d{5}(?:-\d{4})?)/);
+        if (stateZipMatch) {
+          state = stateZipMatch[1];
+          zip = stateZipMatch[2];
+        } else if (parts.length >= 4) {
+          state = parts[2];
+          zip = parts[3];
+        } else if (parts.length === 3) {
+          state = parts[2];
+        }
       }
     } else {
       return null;
@@ -454,7 +460,7 @@ export function CheckoutPage() {
       const normalizedAddress = normalizeAddress(parsedGeocoded);
       return {
         normalizedAddress,
-        formattedAddress: data.formatted_address,
+        formattedAddress: formatShippingAddress(normalizedAddress),
       };
     } catch {
       return null;
@@ -2318,24 +2324,51 @@ export function CheckoutPage() {
                     </label>
 
                     {deliveryDateSchedulingEnabled ? (
-                      <select
-                        required
-                        value={formData.requestedDeliveryDate || ''}
-                        onChange={(e) => handleInputChange('requestedDeliveryDate', e.target.value)}
-                        disabled={deliveryDatesLoading || deliveryDateOptions.length === 0}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      >
-                        <option value="">
-                          {deliveryDatesLoading ? 'Loading delivery dates...' : 'Choose a delivery date...'}
-                        </option>
-                        {deliveryDateOptions.map((option) => (
-                          <option key={option.delivery_date} value={option.delivery_date}>
-                            {formatDeliveryDateLabel(option.delivery_date)} ({option.remaining_slots} of {option.max_deliveries} slots left)
-                          </option>
-                        ))}
-                      </select>
+                      <div className="space-y-3">
+                        {deliveryDatesLoading ? (
+                          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                            Loading delivery dates...
+                          </div>
+                        ) : deliveryDateOptions.length > 0 ? (
+                          <>
+                            <p className="text-xs text-gray-500">
+                              Available delivery dates are highlighted below.
+                            </p>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {deliveryDateOptions.map((option) => {
+                                const isSelected = formData.requestedDeliveryDate === option.delivery_date;
+                                return (
+                                  <button
+                                    key={option.delivery_date}
+                                    type="button"
+                                    onClick={() => handleInputChange('requestedDeliveryDate', option.delivery_date)}
+                                    className="w-full rounded-lg border-2 px-3 py-2 text-left transition-all"
+                                    style={isSelected
+                                      ? {
+                                          borderColor: primaryColor,
+                                          backgroundColor: `${primaryColor}12`,
+                                          boxShadow: `0 0 0 1px ${primaryColor}22`,
+                                        }
+                                      : {
+                                          borderColor: '#e5e7eb',
+                                          backgroundColor: '#ffffff',
+                                        }}
+                                  >
+                                    <p className="text-sm font-semibold text-gray-800">{formatDeliveryDateLabel(option.delivery_date)}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {option.remaining_slots} of {option.max_deliveries} slots left
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            No delivery dates are currently available.
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <input
                         type="date"
