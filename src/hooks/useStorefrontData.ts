@@ -345,6 +345,8 @@ export function useStorefrontData(tenantId: string): {
             settingsData.zelle_instructions,
             buildDefaultZelleInstructions((tenantPolicyData as any)?.email, (tenantPolicyData as any)?.phone),
           ) ?? '',
+          zelle_email: firstNonEmpty(settingsData.contact_email, (tenantPolicyData as any)?.email) ?? '',
+          zelle_phone: firstNonEmpty(settingsData.contact_phone, (tenantPolicyData as any)?.phone) ?? '',
           venmo_qr_url: firstNonEmpty(settingsData.venmo_qr_url, (tenantPolicyData as any)?.qr_venmo_url),
           zelle_qr_url: firstNonEmpty(
             settingsData.zelle_qr_url,

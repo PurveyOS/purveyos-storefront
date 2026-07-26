@@ -148,31 +148,43 @@ export function CheckoutPage() {
   const [selectedSubscriptionProductId, setSelectedSubscriptionProductId] = useState('');
   const [subscriptionSelections, setSubscriptionSelections] = useState<Record<string, GroupChoice[]>>({});
   const [loadingSubscriptionProducts, setLoadingSubscriptionProducts] = useState(false);
+  const settings = (storefrontData?.settings as any) || {};
+  const venmoHandle = String(settings.venmo_handle || '').trim();
+  const zelleInstructions = String(settings.zelle_instructions || '').trim();
+  const zelleEmail = String(settings.zelle_email || settings.contactEmail || settings.contact_email || '').trim();
+  const zellePhone = String(settings.zelle_phone || settings.contactPhone || settings.contact_phone || '').trim();
+
   const payLaterOptions = [
-    (storefrontData?.settings as any)?.enable_cash ? 'Cash' : null,
-    (storefrontData?.settings as any)?.enable_cashapp ? 'CashApp' : null,
+    settings.enable_cash ? 'Cash' : null,
+    settings.enable_cashapp ? 'CashApp' : null,
   ].filter(Boolean) as string[];
+
+  const zelleCopyFields = [
+    zelleEmail ? { label: 'Zelle email', value: zelleEmail } : null,
+    zellePhone ? { label: 'Zelle phone', value: zellePhone } : null,
+    zelleInstructions && zelleInstructions !== zelleEmail && zelleInstructions !== zellePhone
+      ? { label: 'Zelle instructions', value: zelleInstructions }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+
   const externalPaymentOptions = [
-    (storefrontData?.settings as any)?.enable_venmo ? {
+    settings.enable_venmo ? {
       method: 'venmo' as const,
       label: 'Venmo',
-      qrUrl: (storefrontData?.settings as any)?.venmo_qr_url as string | null | undefined,
-      detailLabel: 'Venmo handle',
-      detail: (storefrontData?.settings as any)?.venmo_handle as string | undefined,
+      qrUrl: settings.venmo_qr_url as string | null | undefined,
+      copyFields: venmoHandle ? [{ label: 'Venmo handle', value: venmoHandle }] : [],
     } : null,
-    (storefrontData?.settings as any)?.enable_zelle ? {
+    settings.enable_zelle ? {
       method: 'zelle' as const,
       label: 'Zelle',
-      qrUrl: (storefrontData?.settings as any)?.zelle_qr_url as string | null | undefined,
-      detailLabel: 'Zelle details',
-      detail: (storefrontData?.settings as any)?.zelle_instructions as string | undefined,
+      qrUrl: settings.zelle_qr_url as string | null | undefined,
+      copyFields: zelleCopyFields,
     } : null,
   ].filter(Boolean) as Array<{
     method: 'venmo' | 'zelle';
     label: string;
     qrUrl?: string | null;
-    detailLabel: string;
-    detail?: string;
+    copyFields: Array<{ label: string; value: string }>;
   }>;
   const hasDepositProductInCart = cart.items.some((item: any) => {
     const storefrontProduct = storefrontData?.products?.find((product: any) => product.id === item.productId);
@@ -265,6 +277,29 @@ export function CheckoutPage() {
   
   // Cart validation modal state
   const [showCartValidationModal, setShowCartValidationModal] = useState(false);
+
+  const copyPaymentValue = async (value: string, label: string) => {
+    if (!value) return;
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = value;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      toast.success(`${label} copied`);
+    } catch (copyError) {
+      console.error('Failed to copy payment detail:', copyError);
+      toast.error(`Could not copy ${label.toLowerCase()}`);
+    }
+  };
   const [removedItemsData, setRemovedItemsData] = useState<Array<{
     productId: string;
     productName: string;
@@ -2769,13 +2804,33 @@ export function CheckoutPage() {
                         className="mb-3 h-40 w-40 rounded-lg border border-amber-200 bg-white object-contain p-2"
                       />
                     )}
-                    {selectedExternalPayment.detail && (
-                      <div className="rounded-lg bg-white/80 border border-amber-200 p-3 text-sm text-gray-800 whitespace-pre-line">
-                        <span className="font-semibold">{selectedExternalPayment.detailLabel}: </span>
-                        {selectedExternalPayment.detail}
+                    {selectedExternalPayment.copyFields.length > 0 && (
+                      <div className="space-y-2">
+                        {selectedExternalPayment.copyFields.map((field) => (
+                          <div key={`${selectedExternalPayment.method}-${field.label}`}>
+                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">
+                              {field.label}
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                readOnly
+                                value={field.value}
+                                className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-800"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => copyPaymentValue(field.value, field.label)}
+                                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
-                    {!selectedExternalPayment.qrUrl && !selectedExternalPayment.detail && (
+                    {!selectedExternalPayment.qrUrl && selectedExternalPayment.copyFields.length === 0 && (
                       <p className="text-sm text-amber-800">
                         This store accepts {selectedExternalPayment.label}, but has not added QR or account details. Please contact the store for payment instructions.
                       </p>
