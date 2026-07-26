@@ -1489,10 +1489,12 @@ export function CheckoutPage() {
     }
 
     if (hasDepositProductInCart) {
-      const isPayingDepositNow = formData.paymentMethod === 'card' && formData.paymentNowChoice !== 'pay_at_pickup';
+      const isPayingDepositNow = (formData.paymentMethod === 'card' && formData.paymentNowChoice !== 'pay_at_pickup') ||
+        formData.paymentMethod === 'venmo' ||
+        formData.paymentMethod === 'zelle';
 
       if (!isPayingDepositNow) {
-        setOrderError('Deposit products must be paid at checkout by card. Please choose Credit Card to continue.');
+        setOrderError('Deposit products must be paid at checkout by card, Venmo, or Zelle. Pay later is not available for these items.');
         return;
       }
     }
@@ -1717,7 +1719,7 @@ export function CheckoutPage() {
   }, [cardPaymentAvailable, firstExternalPaymentMethod, formData.paymentMethod, payLaterAllowed]);
 
   useEffect(() => {
-    if (hasDepositProductInCart && formData.paymentMethod && formData.paymentMethod !== 'card') {
+    if (hasDepositProductInCart && ['pay_later', 'cash', 'cashapp'].includes(formData.paymentMethod as any)) {
       setFormData(prev => ({ ...prev, paymentMethod: (cardPaymentAvailable ? 'card' : firstExternalPaymentMethod ?? '') as any }));
     }
   }, [cardPaymentAvailable, firstExternalPaymentMethod, formData.paymentMethod, hasDepositProductInCart]);

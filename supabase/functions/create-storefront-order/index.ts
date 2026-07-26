@@ -316,7 +316,9 @@ serve(async (req: Request) => {
       }
     }
     const hasDepositProduct = depositProducts.length > 0
-    const depositPaymentWillBeCollectedNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
+    const externalDepositPaymentMethod = ['venmo', 'zelle'].includes((orderRequest.paymentMethod || '').toLowerCase())
+    const cardDepositPaymentNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
+    const depositPaymentWillBeCollectedNow = cardDepositPaymentNow || externalDepositPaymentMethod
 
     if (hasDepositProduct && !depositPaymentWillBeCollectedNow) {
       return new Response(JSON.stringify({ error: 'deposit_requires_pay_now' }), {

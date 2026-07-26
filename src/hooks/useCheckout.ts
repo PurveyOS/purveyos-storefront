@@ -452,7 +452,7 @@ export function useCheckout() {
           throw new Error('Please choose a valid delivery date.');
         }
         if (functionMessage.includes('deposit_requires_pay_now')) {
-          throw new Error('Deposit items require card payment at checkout. Please select Credit Card to complete your order.');
+          throw new Error('Deposit items require payment at checkout by card, Venmo, or Zelle.');
         }
         if (functionMessage.includes('out_of_stock')) {
           throw new Error('One or more items are no longer in stock. Please refresh your cart and try again.');
@@ -463,11 +463,11 @@ export function useCheckout() {
           checkoutData.depositChargeCents &&
           checkoutData.depositChargeCents > 0 &&
           (
-            checkoutData.paymentMethod !== 'card' ||
-            checkoutData.paymentNowChoice === 'pay_at_pickup'
+            !['card', 'venmo', 'zelle'].includes((checkoutData.paymentMethod || '').toLowerCase()) ||
+            (checkoutData.paymentMethod === 'card' && checkoutData.paymentNowChoice === 'pay_at_pickup')
           )
         ) {
-          throw new Error('Deposit products must be paid at checkout by card. Please choose Credit Card to continue.');
+          throw new Error('Deposit products must be paid at checkout by card, Venmo, or Zelle. Pay later is not available for these items.');
         }
 
         throw functionError;
