@@ -125,6 +125,9 @@ function parseVenmoHandleFromQrUrl(value?: string | null): string {
     const parts = url.pathname.split('/').filter(Boolean);
     const candidate = parts[parts.length - 1] || '';
     if (!candidate) return '';
+    // Ignore generic Venmo "code" links; they do not contain a handle.
+    const lower = candidate.toLowerCase();
+    if (lower === 'code' || lower === 'pay' || lower === 'u') return '';
     return candidate.startsWith('@') ? candidate : `@${candidate}`;
   } catch {
     return '';
@@ -237,7 +240,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         const { data: tenantPolicyData, error: tenantPolicyError } = await supabase
           .from('tenants')
-          .select('storefront_payment_policy, storefront_default_order_mode, qr_venmo_url, qr_zelle_url, qr_zelle_image_data_url, qr_cashapp_url, qr_cashapp_image_data_url, email, phone')
+          .select('storefront_payment_policy, storefront_default_order_mode, qr_venmo_url, qr_zelle_url, qr_zelle_image_data_url, qr_cashapp_url, qr_cashapp_image_data_url, notification_settings, email, phone')
           .eq('id', tenantId)
           .single();
 
@@ -287,6 +290,14 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         // Transform settings data
         // ============================================================================
+        const invoicePaymentPreferences = ((tenantPolicyData as any)?.notification_settings?.invoice_payment_preferences ?? {}) as {
+          venmo_handle?: string | null;
+          venmo_phone_last4?: string | null;
+          zelle_email?: string | null;
+          zelle_phone?: string | null;
+          zelle_instructions?: string | null;
+        };
+
         const settings = settingsData ? {
           delivery_allowed_weekdays: Array.isArray((settingsData as any).delivery_allowed_weekdays)
             ? (settingsData as any).delivery_allowed_weekdays
@@ -339,18 +350,21 @@ export function useStorefrontData(tenantId: string): {
           enable_cashapp: (settingsData as any).enable_cashapp ?? false,
           venmo_handle: firstNonEmpty(
             settingsData.venmo_handle,
+            invoicePaymentPreferences.venmo_handle,
             parseVenmoHandleFromQrUrl((tenantPolicyData as any)?.qr_venmo_url),
           ) ?? '',
+          venmo_phone_last4: firstNonEmpty(invoicePaymentPreferences.venmo_phone_last4) ?? '',
           zelle_instructions: firstNonEmpty(
             settingsData.zelle_instructions,
+            invoicePaymentPreferences.zelle_instructions,
             buildDefaultZelleInstructions((tenantPolicyData as any)?.email, (tenantPolicyData as any)?.phone),
           ) ?? '',
-          zelle_email: firstNonEmpty(settingsData.contact_email, (tenantPolicyData as any)?.email) ?? '',
-          zelle_phone: firstNonEmpty(settingsData.contact_phone, (tenantPolicyData as any)?.phone) ?? '',
+          zelle_email: firstNonEmpty(invoicePaymentPreferences.zelle_email, settingsData.contact_email, (tenantPolicyData as any)?.email) ?? '',
+          zelle_phone: firstNonEmpty(invoicePaymentPreferences.zelle_phone, settingsData.contact_phone, (tenantPolicyData as any)?.phone) ?? '',
           venmo_qr_url: firstNonEmpty(settingsData.venmo_qr_url, (tenantPolicyData as any)?.qr_venmo_url),
           zelle_qr_url: firstNonEmpty(
-            settingsData.zelle_qr_url,
             (tenantPolicyData as any)?.qr_zelle_image_data_url,
+            settingsData.zelle_qr_url,
             (tenantPolicyData as any)?.qr_zelle_url,
           ),
           cashapp_qr_url: firstNonEmpty(

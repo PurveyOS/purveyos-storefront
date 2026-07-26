@@ -34,6 +34,23 @@ interface DeliveryDateOption {
   is_available: boolean;
 }
 
+function looksLikeImageSource(value: string | null | undefined): boolean {
+  const src = String(value || '').trim().toLowerCase();
+  if (!src) return false;
+  if (src.startsWith('data:image/')) return true;
+  if (src.startsWith('blob:')) return true;
+  if (/\.(png|jpe?g|gif|webp|svg)(\?.*)?$/.test(src)) return true;
+  if (src.includes('/storage/v1/object/')) return true;
+  return false;
+}
+
+function buildQrImageFromValue(value: string | null | undefined): string | null {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (looksLikeImageSource(raw)) return raw;
+  return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(raw)}`;
+}
+
 export function CheckoutPage() {
   const isDev = import.meta.env.DEV;
 
@@ -150,6 +167,7 @@ export function CheckoutPage() {
   const [loadingSubscriptionProducts, setLoadingSubscriptionProducts] = useState(false);
   const settings = (storefrontData?.settings as any) || {};
   const venmoHandle = String(settings.venmo_handle || '').trim();
+  const venmoPhoneLast4 = String(settings.venmo_phone_last4 || '').replace(/\D/g, '').slice(-4);
   const zelleInstructions = String(settings.zelle_instructions || '').trim();
   const zelleEmail = String(settings.zelle_email || settings.contactEmail || settings.contact_email || '').trim();
   const zellePhone = String(settings.zelle_phone || settings.contactPhone || settings.contact_phone || '').trim();
@@ -171,19 +189,29 @@ export function CheckoutPage() {
     settings.enable_venmo ? {
       method: 'venmo' as const,
       label: 'Venmo',
-      qrUrl: settings.venmo_qr_url as string | null | undefined,
-      copyFields: venmoHandle ? [{ label: 'Venmo handle', value: venmoHandle }] : [],
+      qrUrl: buildQrImageFromValue(settings.venmo_qr_url as string | null | undefined),
+      paymentLink: !looksLikeImageSource(settings.venmo_qr_url as string | null | undefined)
+        ? (settings.venmo_qr_url as string | null | undefined)
+        : null,
+      copyFields: [
+        venmoHandle ? { label: 'Venmo handle', value: venmoHandle } : null,
+        venmoPhoneLast4 ? { label: 'Venmo phone last 4', value: venmoPhoneLast4 } : null,
+      ].filter(Boolean) as Array<{ label: string; value: string }>,
     } : null,
     settings.enable_zelle ? {
       method: 'zelle' as const,
       label: 'Zelle',
-      qrUrl: settings.zelle_qr_url as string | null | undefined,
+      qrUrl: buildQrImageFromValue(settings.zelle_qr_url as string | null | undefined),
+      paymentLink: !looksLikeImageSource(settings.zelle_qr_url as string | null | undefined)
+        ? (settings.zelle_qr_url as string | null | undefined)
+        : null,
       copyFields: zelleCopyFields,
     } : null,
   ].filter(Boolean) as Array<{
     method: 'venmo' | 'zelle';
     label: string;
     qrUrl?: string | null;
+    paymentLink?: string | null;
     copyFields: Array<{ label: string; value: string }>;
   }>;
   const hasDepositProductInCart = cart.items.some((item: any) => {
@@ -2803,6 +2831,16 @@ export function CheckoutPage() {
                         alt={`${selectedExternalPayment.label} QR code`}
                         className="mb-3 h-40 w-40 rounded-lg border border-amber-200 bg-white object-contain p-2"
                       />
+                    )}
+                    {selectedExternalPayment.paymentLink && (
+                      <a
+                        href={selectedExternalPayment.paymentLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mb-3 inline-block rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                      >
+                        Open {selectedExternalPayment.label} payment link
+                      </a>
                     )}
                     {selectedExternalPayment.copyFields.length > 0 && (
                       <div className="space-y-2">
