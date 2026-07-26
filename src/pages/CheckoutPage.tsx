@@ -134,6 +134,11 @@ export function CheckoutPage() {
   const [deliveryDateOptions, setDeliveryDateOptions] = useState<DeliveryDateOption[]>([]);
   const [deliveryDatesLoading, setDeliveryDatesLoading] = useState(false);
   const [deliveryDatesError, setDeliveryDatesError] = useState<string | null>(null);
+  const [showDeliveryDateModal, setShowDeliveryDateModal] = useState(false);
+  const [deliveryCalendarMonth, setDeliveryCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   const [subscribeToEmails, setSubscribeToEmails] = useState(false);
   
@@ -502,6 +507,62 @@ export function CheckoutPage() {
       month: 'short',
       day: 'numeric',
     });
+  };
+
+  const parseIsoDate = (isoDate: string) => {
+    const [year, month, day] = isoDate.split('-').map(Number);
+    return new Date(year, (month || 1) - 1, day || 1);
+  };
+
+  const toIsoDate = (date: Date) => {
+    return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
+  };
+
+  const fallbackDeliveryDateOptions: DeliveryDateOption[] = Array.from({ length: deliveryDateWindowDays }, (_, index) => {
+    const date = parseIsoDate(minimumDeliveryDateIso);
+    date.setDate(date.getDate() + index);
+    return {
+      delivery_date: toIsoDate(date),
+      remaining_slots: 1,
+      max_deliveries: 1,
+      is_available: true,
+    };
+  });
+
+  const calendarDeliveryDateOptions = deliveryDateSchedulingEnabled
+    ? deliveryDateOptions
+    : fallbackDeliveryDateOptions;
+
+  const availableDateMap = new Map(calendarDeliveryDateOptions.map((option) => [option.delivery_date, option]));
+  const firstAvailableDateIso = calendarDeliveryDateOptions[0]?.delivery_date;
+  const lastAvailableDateIso = calendarDeliveryDateOptions[calendarDeliveryDateOptions.length - 1]?.delivery_date;
+
+  const firstAvailableMonth = firstAvailableDateIso
+    ? new Date(parseIsoDate(firstAvailableDateIso).getFullYear(), parseIsoDate(firstAvailableDateIso).getMonth(), 1)
+    : null;
+  const lastAvailableMonth = lastAvailableDateIso
+    ? new Date(parseIsoDate(lastAvailableDateIso).getFullYear(), parseIsoDate(lastAvailableDateIso).getMonth(), 1)
+    : null;
+
+  const canGoPrevMonth = Boolean(
+    firstAvailableMonth &&
+    (deliveryCalendarMonth.getFullYear() > firstAvailableMonth.getFullYear() ||
+      (deliveryCalendarMonth.getFullYear() === firstAvailableMonth.getFullYear() &&
+        deliveryCalendarMonth.getMonth() > firstAvailableMonth.getMonth()))
+  );
+
+  const canGoNextMonth = Boolean(
+    lastAvailableMonth &&
+    (deliveryCalendarMonth.getFullYear() < lastAvailableMonth.getFullYear() ||
+      (deliveryCalendarMonth.getFullYear() === lastAvailableMonth.getFullYear() &&
+        deliveryCalendarMonth.getMonth() < lastAvailableMonth.getMonth()))
+  );
+
+  const openDeliveryDateModal = () => {
+    const seedDateIso = formData.requestedDeliveryDate || firstAvailableDateIso || minimumDeliveryDateIso;
+    const seedDate = parseIsoDate(seedDateIso);
+    setDeliveryCalendarMonth(new Date(seedDate.getFullYear(), seedDate.getMonth(), 1));
+    setShowDeliveryDateModal(true);
   };
 
   const loadDeliveryDateAvailability = async () => {
@@ -2323,67 +2384,151 @@ export function CheckoutPage() {
                       Select Delivery Date *
                     </label>
 
-                    {deliveryDateSchedulingEnabled ? (
-                      <div className="space-y-3">
-                        {deliveryDatesLoading ? (
-                          <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
-                            Loading delivery dates...
-                          </div>
-                        ) : deliveryDateOptions.length > 0 ? (
-                          <>
-                            <p className="text-xs text-gray-500">
-                              Available delivery dates are highlighted below.
-                            </p>
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              {deliveryDateOptions.map((option) => {
-                                const isSelected = formData.requestedDeliveryDate === option.delivery_date;
-                                return (
-                                  <button
-                                    key={option.delivery_date}
-                                    type="button"
-                                    onClick={() => handleInputChange('requestedDeliveryDate', option.delivery_date)}
-                                    className="w-full rounded-lg border-2 px-3 py-2 text-left transition-all"
-                                    style={isSelected
-                                      ? {
-                                          borderColor: primaryColor,
-                                          backgroundColor: `${primaryColor}12`,
-                                          boxShadow: `0 0 0 1px ${primaryColor}22`,
-                                        }
-                                      : {
-                                          borderColor: '#e5e7eb',
-                                          backgroundColor: '#ffffff',
-                                        }}
-                                  >
-                                    <p className="text-sm font-semibold text-gray-800">{formatDeliveryDateLabel(option.delivery_date)}</p>
-                                    <p className="text-xs text-gray-500">
-                                      {option.remaining_slots} of {option.max_deliveries} slots left
-                                    </p>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                            No delivery dates are currently available.
-                          </div>
-                        )}
+                    {deliveryDatesLoading ? (
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+                        Loading delivery dates...
                       </div>
                     ) : (
-                      <input
-                        type="date"
-                        required
-                        min={minimumDeliveryDateIso}
-                        value={formData.requestedDeliveryDate || ''}
-                        onChange={(e) => handleInputChange('requestedDeliveryDate', e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      />
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={openDeliveryDateModal}
+                          disabled={calendarDeliveryDateOptions.length === 0}
+                          className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                          onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                          onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                        >
+                          <span className="block text-sm font-medium text-gray-800">
+                            {formData.requestedDeliveryDate
+                              ? formatDeliveryDateLabel(formData.requestedDeliveryDate)
+                              : 'Choose a delivery date'}
+                          </span>
+                          <span className="block text-xs text-gray-500 mt-0.5">
+                            {calendarDeliveryDateOptions.length > 0
+                              ? 'Tap to open calendar and pick an available date'
+                              : 'No delivery dates are currently available'}
+                          </span>
+                        </button>
+                      </div>
                     )}
 
                     {deliveryDatesError && deliveryDateSchedulingEnabled && (
                       <p className="text-sm text-red-600">{deliveryDatesError}</p>
+                    )}
+
+                    {showDeliveryDateModal && (
+                      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
+                        <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+                          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                            <h3 className="text-base font-semibold text-gray-900">Select Delivery Date</h3>
+                            <button
+                              type="button"
+                              onClick={() => setShowDeliveryDateModal(false)}
+                              className="rounded px-2 py-1 text-sm text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                            >
+                              Close
+                            </button>
+                          </div>
+
+                          <div className="space-y-3 px-4 py-4">
+                            <div className="flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                                disabled={!canGoPrevMonth}
+                                className="rounded border border-gray-200 px-2 py-1 text-sm text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                Prev
+                              </button>
+                              <p className="text-sm font-semibold text-gray-800">
+                                {deliveryCalendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                                disabled={!canGoNextMonth}
+                                className="rounded border border-gray-200 px-2 py-1 text-sm text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                Next
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase text-gray-500">
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayName) => (
+                                <div key={dayName} className="py-1">{dayName}</div>
+                              ))}
+                            </div>
+
+                            <div className="grid grid-cols-7 gap-1">
+                              {(() => {
+                                const year = deliveryCalendarMonth.getFullYear();
+                                const month = deliveryCalendarMonth.getMonth();
+                                const firstDayOfMonth = new Date(year, month, 1);
+                                const startOffset = firstDayOfMonth.getDay();
+                                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                                const dayCells: React.ReactNode[] = [];
+
+                                for (let i = 0; i < startOffset; i += 1) {
+                                  dayCells.push(<div key={`empty-start-${i}`} className="h-10" />);
+                                }
+
+                                for (let day = 1; day <= daysInMonth; day += 1) {
+                                  const date = new Date(year, month, day);
+                                  const iso = toIsoDate(date);
+                                  const option = availableDateMap.get(iso);
+                                  const isAvailable = Boolean(option?.is_available);
+                                  const isSelected = formData.requestedDeliveryDate === iso;
+
+                                  dayCells.push(
+                                    <button
+                                      key={iso}
+                                      type="button"
+                                      disabled={!isAvailable}
+                                      onClick={() => {
+                                        handleInputChange('requestedDeliveryDate', iso);
+                                        setShowDeliveryDateModal(false);
+                                      }}
+                                      className="h-10 rounded-md border text-sm transition-colors disabled:cursor-not-allowed"
+                                      style={isSelected
+                                        ? {
+                                            borderColor: primaryColor,
+                                            backgroundColor: `${primaryColor}20`,
+                                            color: '#111827',
+                                            fontWeight: 700,
+                                          }
+                                        : isAvailable
+                                          ? {
+                                              borderColor: '#86efac',
+                                              backgroundColor: '#f0fdf4',
+                                              color: '#166534',
+                                            }
+                                          : {
+                                              borderColor: '#e5e7eb',
+                                              backgroundColor: '#f9fafb',
+                                              color: '#9ca3af',
+                                            }}
+                                      title={isAvailable && option
+                                        ? `${formatDeliveryDateLabel(iso)} (${option.remaining_slots} slots left)`
+                                        : `${formatDeliveryDateLabel(iso)} unavailable`}
+                                    >
+                                      {day}
+                                    </button>
+                                  );
+                                }
+
+                                return dayCells;
+                              })()}
+                            </div>
+
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                              <p>
+                                Green dates are available.
+                                {formData.requestedDeliveryDate ? ` Selected: ${formatDeliveryDateLabel(formData.requestedDeliveryDate)}.` : ''}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                   
