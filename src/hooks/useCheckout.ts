@@ -154,18 +154,43 @@ export function useCheckout() {
   const readFunctionErrorMessage = async (invokeError: any): Promise<string | null> => {
     try {
       const context = invokeError?.context;
-      if (!context?.json) return null;
-      const payload = await context.json();
-      if (typeof payload?.error === 'string' && payload.error) {
-        return payload.error;
+      if (context?.json) {
+        const payload = await context.json();
+        if (typeof payload?.error === 'string' && payload.error) {
+          return payload.error;
+        }
+        if (typeof payload?.message === 'string' && payload.message) {
+          return payload.message;
+        }
+        if (typeof payload === 'string' && payload) {
+          return payload;
+        }
+      }
+      if (context?.text) {
+        const textPayload = await context.text();
+        if (!textPayload) return null;
+        try {
+          const parsed = JSON.parse(textPayload);
+          if (typeof parsed?.error === 'string' && parsed.error) {
+            return parsed.error;
+          }
+          if (typeof parsed?.message === 'string' && parsed.message) {
+            return parsed.message;
+          }
+        } catch {
+          return textPayload;
+        }
       }
     } catch {
-      return null;
+      // Fall through to final message-based checks below.
+    }
+
+    if (typeof invokeError?.message === 'string' && invokeError.message) {
+      return invokeError.message;
     }
 
     return null;
   };
-
   const createOrder = async (
     tenantId: string,
     cart: Cart,
@@ -407,21 +432,30 @@ export function useCheckout() {
 
       if (functionError) {
         console.error('❌ [createOrder] Edge Function returned error:', functionError);
-        const functionMessage = await readFunctionErrorMessage(functionError);
-        if (functionMessage === 'delivery_date_capacity_reached') {
+        const functionMessage = (await readFunctionErrorMessage(functionError)) || '';
+        if (functionMessage.includes('delivery_date_capacity_reached')) {
           throw new Error('That delivery date is full. Please choose another date.');
         }
-        if (functionMessage === 'delivery_date_in_past') {
+        if (functionMessage.includes('delivery_date_in_past')) {
           throw new Error('Please choose a future delivery date.');
         }
-        if (functionMessage === 'delivery_date_outside_window') {
+        if (functionMessage.includes('delivery_date_outside_window')) {
           throw new Error('That delivery date is outside the booking window. Please choose another date.');
         }
-        if (functionMessage === 'delivery_date_not_allowed') {
+        if (functionMessage.includes('delivery_date_not_allowed')) {
           throw new Error('That date is not part of this store\'s delivery schedule. Please choose another date.');
         }
-        if (functionMessage === 'delivery_date_before_lead_time') {
+        if (functionMessage.includes('delivery_date_before_lead_time')) {
           throw new Error('That date is too soon for this store\'s lead time. Please choose a later date.');
+        }
+        if (functionMessage.includes('requested_delivery_date_invalid')) {
+          throw new Error('Please choose a valid delivery date.');
+        }
+        if (functionMessage.includes('deposit_requires_pay_now')) {
+          throw new Error('Deposit items require card payment at checkout. Please select Credit Card to complete your order.');
+        }
+        if (functionMessage.includes('out_of_stock')) {
+          throw new Error('One or more items are no longer in stock. Please refresh your cart and try again.');
         }
         throw functionError;
       }

@@ -2068,18 +2068,30 @@ export function CheckoutPage() {
                         handleInputChange('deliveryMethod', 'shipping');
                         handleInputChange('requestedDeliveryDate', '');
                         handleInputChange('fulfillmentLocation', '');
+                        let prefilledShippingAddress: ShippingAddress | null = null;
                         if (isAddressBlank(shippingAddress)) {
                           const parsedShipping = parseSavedAddress(formData.deliveryAddress || '');
                           if (parsedShipping) {
-                            setShippingAddress(parsedShipping);
-                            setShippingAddressInput(formData.deliveryAddress || formatShippingAddress(parsedShipping));
+                            const normalizedShipping = normalizeAddress(parsedShipping);
+                            setShippingAddress(normalizedShipping);
+                            setShippingAddressInput(formData.deliveryAddress || formatShippingAddress(normalizedShipping));
+                            prefilledShippingAddress = normalizedShipping;
                           } else if (hasCompleteShippingAddress(deliveryAddress)) {
                             const normalizedDeliveryAddress = normalizeAddress(deliveryAddress);
                             setShippingAddress(normalizedDeliveryAddress);
                             setShippingAddressInput(formatShippingAddress(normalizedDeliveryAddress));
+                            prefilledShippingAddress = normalizedDeliveryAddress;
                           }
                         } else {
-                          setShippingAddressInput(formatShippingAddress(normalizeAddress(shippingAddress)) || shippingAddressInput);
+                          const normalizedShipping = normalizeAddress(shippingAddress);
+                          setShippingAddressInput(formatShippingAddress(normalizedShipping) || shippingAddressInput);
+                          if (hasCompleteShippingAddress(normalizedShipping)) {
+                            prefilledShippingAddress = normalizedShipping;
+                          }
+                        }
+
+                        if (prefilledShippingAddress && hasCompleteShippingAddress(prefilledShippingAddress)) {
+                          void fetchShippingEstimate(prefilledShippingAddress);
                         }
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
