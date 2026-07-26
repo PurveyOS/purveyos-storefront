@@ -117,6 +117,34 @@ const MOCK_PRODUCTS: Product[] = [
   },
 ];
 
+function parseVenmoHandleFromQrUrl(value?: string | null): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const candidate = parts[parts.length - 1] || '';
+    if (!candidate) return '';
+    return candidate.startsWith('@') ? candidate : `@${candidate}`;
+  } catch {
+    return '';
+  }
+}
+
+function buildDefaultZelleInstructions(email?: string | null, phone?: string | null): string {
+  const emailTrimmed = (email || '').trim();
+  if (emailTrimmed) return emailTrimmed;
+  return (phone || '').trim();
+}
+
+function firstNonEmpty(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = (value || '').trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 export function useStorefrontData(tenantId: string): {
   data: StorefrontData | null;
   loading: boolean;
@@ -209,7 +237,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         const { data: tenantPolicyData, error: tenantPolicyError } = await supabase
           .from('tenants')
-          .select('storefront_payment_policy, storefront_default_order_mode')
+          .select('storefront_payment_policy, storefront_default_order_mode, qr_venmo_url, qr_zelle_url, qr_zelle_image_data_url, qr_cashapp_url, qr_cashapp_image_data_url, email, phone')
           .eq('id', tenantId)
           .single();
 
@@ -309,10 +337,24 @@ export function useStorefrontData(tenantId: string): {
           enable_venmo: settingsData.enable_venmo ?? false,
           enable_zelle: settingsData.enable_zelle ?? false,
           enable_cashapp: (settingsData as any).enable_cashapp ?? false,
-          venmo_handle: settingsData.venmo_handle ?? '',
-          zelle_instructions: settingsData.zelle_instructions ?? '',
-          venmo_qr_url: settingsData.venmo_qr_url ?? null,
-          zelle_qr_url: settingsData.zelle_qr_url ?? null,
+          venmo_handle: firstNonEmpty(
+            settingsData.venmo_handle,
+            parseVenmoHandleFromQrUrl((tenantPolicyData as any)?.qr_venmo_url),
+          ) ?? '',
+          zelle_instructions: firstNonEmpty(
+            settingsData.zelle_instructions,
+            buildDefaultZelleInstructions((tenantPolicyData as any)?.email, (tenantPolicyData as any)?.phone),
+          ) ?? '',
+          venmo_qr_url: firstNonEmpty(settingsData.venmo_qr_url, (tenantPolicyData as any)?.qr_venmo_url),
+          zelle_qr_url: firstNonEmpty(
+            settingsData.zelle_qr_url,
+            (tenantPolicyData as any)?.qr_zelle_image_data_url,
+            (tenantPolicyData as any)?.qr_zelle_url,
+          ),
+          cashapp_qr_url: firstNonEmpty(
+            (tenantPolicyData as any)?.qr_cashapp_image_data_url,
+            (tenantPolicyData as any)?.qr_cashapp_url,
+          ),
           shipping_charge_cents: settingsData.shipping_charge_cents ?? 0,
           pickup_locations: Array.isArray(settingsData.pickup_locations) ? settingsData.pickup_locations : [],
           delivery_lead_time_days: Math.max(0, Number((settingsData as any).delivery_lead_time_days ?? 0)),

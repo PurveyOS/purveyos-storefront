@@ -9,7 +9,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type EmailType = 'order_confirmation' | 'order_ready';
+type EmailType = 'order_confirmation' | 'order_ready' | 'payment_received';
 
 interface NotifyBody {
   orderId: string;
@@ -26,6 +26,8 @@ interface OrderData {
   customer_name?: string;
   fulfillment_method?: string;
   pickup_location?: string;
+  payment_method?: string;
+  payment_status?: string;
   total_cents: number;
   tax_cents?: number;
   subtotal_cents?: number;
@@ -146,8 +148,8 @@ serve(async (req: Request) => {
 
     if (!body.orderId) throw new Error('orderId required');
     if (!body.emailType) throw new Error('emailType required');
-    if (!['order_confirmation', 'order_ready'].includes(body.emailType)) {
-      throw new Error(`emailType must be 'order_confirmation' or 'order_ready', got: ${body.emailType}`);
+    if (!['order_confirmation', 'order_ready', 'payment_received'].includes(body.emailType)) {
+      throw new Error(`emailType must be 'order_confirmation', 'order_ready', or 'payment_received', got: ${body.emailType}`);
     }
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -302,6 +304,27 @@ ${tenantName}
 `;
 
       smsMessage = `Your ${tenantName} order is ready. Order: ${order.id}`;
+    }
+
+    if (body.emailType === 'payment_received') {
+      subject = `Payment received — ${tenantName} (Order ${order.id})`;
+
+      emailBody =
+`Hi ${customerName},
+
+We received your payment for Order ${order.id} from ${tenantName}.
+
+Payment method: ${order.payment_method || 'Recorded by store'}
+Payment status: ${order.payment_status || 'paid'}
+
+Order total: ${money(order.total_cents)}
+${order.balance_due != null ? `Remaining balance: $${Number(order.balance_due).toFixed(2)}\n` : ''}
+
+Thank you!
+${tenantName}
+`;
+
+      smsMessage = `Payment received for your ${tenantName} order ${order.id}. Thank you!`;
     }
 
     // Check idempotency: skip if already notified
