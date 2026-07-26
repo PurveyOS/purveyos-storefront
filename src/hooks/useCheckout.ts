@@ -457,6 +457,19 @@ export function useCheckout() {
         if (functionMessage.includes('out_of_stock')) {
           throw new Error('One or more items are no longer in stock. Please refresh your cart and try again.');
         }
+
+        // Fallback when Supabase error body cannot be parsed from context.
+        if (
+          checkoutData.depositChargeCents &&
+          checkoutData.depositChargeCents > 0 &&
+          (
+            checkoutData.paymentMethod !== 'card' ||
+            checkoutData.paymentNowChoice === 'pay_at_pickup'
+          )
+        ) {
+          throw new Error('Deposit products must be paid at checkout by card. Please choose Credit Card to continue.');
+        }
+
         throw functionError;
       }
 
