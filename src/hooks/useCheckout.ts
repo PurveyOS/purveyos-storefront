@@ -454,6 +454,9 @@ export function useCheckout() {
         if (functionMessage.includes('deposit_requires_pay_now')) {
           throw new Error('Deposit items require payment at checkout by card, Venmo, or Zelle.');
         }
+        if (functionMessage.includes('deposit_pricing_mode_conflict')) {
+          throw new Error('This deposit item has conflicting pricing settings. Please contact the store to fix product setup.');
+        }
         if (functionMessage.includes('out_of_stock')) {
           throw new Error('One or more items are no longer in stock. Please refresh your cart and try again.');
         }

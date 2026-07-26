@@ -49,6 +49,7 @@ interface OrderRequest {
   totalCents: number
   discountCents?: number
   shippingChargeCents?: number
+  shippingEstimateHighCents?: number
   deliveryChargeCents?: number
   depositChargeCents?: number
   isWeightEstimate?: boolean
@@ -149,7 +150,7 @@ serve(async (req: Request) => {
       return lineIsPreOrder && (hasWeight || isWeightPriced)
     })
 
-    const estimatedTotalCents = orderRequest.estimatedTotalCents ?? (isWeightEstimate ? totalCentsServer : null)
+    let estimatedTotalCents: number | null = orderRequest.estimatedTotalCents ?? null
 
     // Preflight stock check to prevent orders on unavailable items
     const productIds = Array.from(new Set(orderRequest.lines.map((l) => l.productId)))
@@ -266,6 +267,9 @@ serve(async (req: Request) => {
     }
 
     const totalCentsServer = subtotalAfterDiscountCentsServer + taxCentsServer + shippingChargeCentsServer + deliveryChargeCentsServer
+    if (estimatedTotalCents === null && isWeightEstimate) {
+      estimatedTotalCents = totalCentsServer
+    }
     const binsByKey = new Map<string, PackageBinRow>((bins ?? []).map((b: PackageBinRow) => [b.package_key, b]))
     const bulkBinsByProduct = new Map<string, PackageBinRow>()
     const binsByProduct = new Map<string, PackageBinRow[]>()
@@ -308,10 +312,20 @@ serve(async (req: Request) => {
     for (const p of depositProducts) {
       const hasWeightFinal = p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined && Number(p.deposit_prod_price_per_lb) > 0
       const hasFixedFinal = p.deposit_fixed_total !== null && p.deposit_fixed_total !== undefined && Number(p.deposit_fixed_total) > 0
-      if (hasWeightFinal === hasFixedFinal) {
-        return new Response(JSON.stringify({ error: 'deposit_pricing_mode_invalid' }), {
+      if (hasWeightFinal && hasFixedFinal) {
+        console.warn('Blocking order: deposit pricing conflict (both weight and fixed configured)', {
+          productId: p.id,
+          deposit_prod_price_per_lb: p.deposit_prod_price_per_lb,
+          deposit_fixed_total: p.deposit_fixed_total,
+        })
+        return new Response(JSON.stringify({ error: 'deposit_pricing_mode_conflict' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      if (!hasWeightFinal && !hasFixedFinal) {
+        console.warn('Deposit pricing mode not configured on product; continuing with order total as source of truth', {
+          productId: p.id,
         })
       }
     }
@@ -331,7 +345,7 @@ serve(async (req: Request) => {
       ? ((orderRequest.depositChargeCents ?? totalCentsServer) / 100)
       : null
     const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
-    const depositPricePerLb = depositProducts.find((p) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
+    const depositPricePerLb = depositProducts.find((p: ProductRow) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
     const balanceDue = hasDepositProduct && depositAmount !== null
       ? Math.max(0, (totalCentsServer / 100) - depositAmount)
       : null
@@ -462,7 +476,7 @@ serve(async (req: Request) => {
               .update({ reserved_weight_lbs: actualReservedWeight })
               .eq('id', line.productId)
               .eq('tenant_id', orderRequest.tenantId)
-              .then(({ error }) => {
+              .then(({ error }: { error: any }) => {
                 if (error) console.error('Failed to repair reserved_weight_lbs cache:', error)
                 else console.log(`✅ Repaired reserved_weight_lbs for ${line.productId}: ${cachedReservedWeight} → ${actualReservedWeight}`)
               })
