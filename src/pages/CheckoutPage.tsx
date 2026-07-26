@@ -534,28 +534,23 @@ export function CheckoutPage() {
     : fallbackDeliveryDateOptions;
 
   const availableDateMap = new Map(calendarDeliveryDateOptions.map((option) => [option.delivery_date, option]));
+  const horizonStartDate = parseIsoDate(minimumDeliveryDateIso);
+  const horizonEndDate = new Date(horizonStartDate);
+  horizonEndDate.setDate(horizonEndDate.getDate() + Math.max(deliveryDateWindowDays - 1, 0));
+  const firstHorizonMonth = new Date(horizonStartDate.getFullYear(), horizonStartDate.getMonth(), 1);
+  const lastHorizonMonth = new Date(horizonEndDate.getFullYear(), horizonEndDate.getMonth(), 1);
   const firstAvailableDateIso = calendarDeliveryDateOptions[0]?.delivery_date;
-  const lastAvailableDateIso = calendarDeliveryDateOptions[calendarDeliveryDateOptions.length - 1]?.delivery_date;
-
-  const firstAvailableMonth = firstAvailableDateIso
-    ? new Date(parseIsoDate(firstAvailableDateIso).getFullYear(), parseIsoDate(firstAvailableDateIso).getMonth(), 1)
-    : null;
-  const lastAvailableMonth = lastAvailableDateIso
-    ? new Date(parseIsoDate(lastAvailableDateIso).getFullYear(), parseIsoDate(lastAvailableDateIso).getMonth(), 1)
-    : null;
 
   const canGoPrevMonth = Boolean(
-    firstAvailableMonth &&
-    (deliveryCalendarMonth.getFullYear() > firstAvailableMonth.getFullYear() ||
-      (deliveryCalendarMonth.getFullYear() === firstAvailableMonth.getFullYear() &&
-        deliveryCalendarMonth.getMonth() > firstAvailableMonth.getMonth()))
+    deliveryCalendarMonth.getFullYear() > firstHorizonMonth.getFullYear() ||
+    (deliveryCalendarMonth.getFullYear() === firstHorizonMonth.getFullYear() &&
+      deliveryCalendarMonth.getMonth() > firstHorizonMonth.getMonth())
   );
 
   const canGoNextMonth = Boolean(
-    lastAvailableMonth &&
-    (deliveryCalendarMonth.getFullYear() < lastAvailableMonth.getFullYear() ||
-      (deliveryCalendarMonth.getFullYear() === lastAvailableMonth.getFullYear() &&
-        deliveryCalendarMonth.getMonth() < lastAvailableMonth.getMonth()))
+    deliveryCalendarMonth.getFullYear() < lastHorizonMonth.getFullYear() ||
+    (deliveryCalendarMonth.getFullYear() === lastHorizonMonth.getFullYear() &&
+      deliveryCalendarMonth.getMonth() < lastHorizonMonth.getMonth())
   );
 
   const openDeliveryDateModal = () => {
