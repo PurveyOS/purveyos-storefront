@@ -346,8 +346,10 @@ serve(async (req: Request) => {
       : null
     const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
     const depositPricePerLb = depositProducts.find((p: ProductRow) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
+    // Delivery/shipping are paid at checkout; balance_due should represent product/tax remaining.
+    const baseOrderTotalExcludingFulfillmentCents = Math.max(0, totalCentsServer - shippingChargeCentsServer - deliveryChargeCentsServer)
     const balanceDue = hasDepositProduct && depositAmount !== null
-      ? Math.max(0, (totalCentsServer / 100) - depositAmount)
+      ? Math.max(0, (baseOrderTotalExcludingFulfillmentCents / 100) - depositAmount)
       : null
 
     const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
