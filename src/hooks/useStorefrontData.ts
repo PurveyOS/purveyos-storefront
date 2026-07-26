@@ -260,6 +260,24 @@ export function useStorefrontData(tenantId: string): {
         // Transform settings data
         // ============================================================================
         const settings = settingsData ? {
+          delivery_allowed_weekdays: Array.isArray((settingsData as any).delivery_allowed_weekdays)
+            ? (settingsData as any).delivery_allowed_weekdays
+                .map((value: any) => Number(value))
+                .filter((value: number) => Number.isInteger(value) && value >= 0 && value <= 6)
+            : [0, 1, 2, 3, 4, 5, 6],
+          delivery_allowed_month_days: Array.isArray((settingsData as any).delivery_allowed_month_days)
+            ? (settingsData as any).delivery_allowed_month_days
+                .map((value: any) => Number(value))
+                .filter((value: number) => Number.isInteger(value) && value >= 1 && value <= 31)
+            : [],
+          delivery_allowed_month_dates: Array.isArray((settingsData as any).delivery_allowed_month_dates)
+            ? (settingsData as any).delivery_allowed_month_dates
+                .filter((value: any) => typeof value === 'string')
+                .map((value: string) => value.trim())
+                .filter((value: string) => /^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/.test(value))
+                .filter((value: string, index: number, array: string[]) => array.indexOf(value) === index)
+                .sort()
+            : [],
           templateId: settingsData.template_id || "modern",
           primaryColor: settingsData.primary_color || "#0f6fff",
           accentColor: settingsData.accent_color || "#ffcc00",
@@ -281,6 +299,7 @@ export function useStorefrontData(tenantId: string): {
           delivery_origin_lng: settingsData.delivery_origin_lng ?? null,
           delivery_zones: Array.isArray(settingsData.delivery_zones) ? settingsData.delivery_zones : [],
           delivery_schedule_note: settingsData.delivery_schedule_note ?? '',
+          delivery_schedule_mode: ((settingsData as any).delivery_schedule_mode === 'monthly' ? 'monthly' : 'weekly') as 'weekly' | 'monthly',
           enable_card: settingsData.enable_card ?? settingsData.allow_card ?? false,
           allow_card: settingsData.allow_card ?? settingsData.enable_card ?? false,
           enable_cash: settingsData.enable_cash ?? false,
@@ -293,6 +312,7 @@ export function useStorefrontData(tenantId: string): {
           zelle_qr_url: settingsData.zelle_qr_url ?? null,
           shipping_charge_cents: settingsData.shipping_charge_cents ?? 0,
           pickup_locations: Array.isArray(settingsData.pickup_locations) ? settingsData.pickup_locations : [],
+          delivery_lead_time_days: Math.max(0, Number((settingsData as any).delivery_lead_time_days ?? 0)),
           storefront_payment_policy: (tenantPolicyData as any)?.storefront_payment_policy ?? 'pay_now',
           onlinePaymentFeeSettings: {
             enabled: Boolean((onlinePaymentFeeData as any)?.enabled),

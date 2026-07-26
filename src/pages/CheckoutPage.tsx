@@ -27,45 +27,11 @@ interface Discount {
   is_active: boolean;
 }
 
-type ProductTaxBehavior = 'inherit' | 'taxable' | 'exempt';
-
-function isProductTaxable(product: any, tenantChargeTaxOnOnline: boolean): boolean {
-  const behavior = ((product?.taxBehavior ?? product?.tax_behavior ?? 'exempt') as ProductTaxBehavior);
-  if (behavior === 'taxable') return true;
-  if (behavior === 'exempt') return false;
-  return tenantChargeTaxOnOnline;
-}
-
-function getCartItemLineTotalCents(item: any, product: any): number {
-  if (!product) return 0;
-
-  const weight = item.weight;
-  const requestedWeightLbs = item.requestedWeightLbs;
-  const binWeight = item.binWeight;
-  const unitPriceCents = item.unitPriceCents;
-  const metaPrice: number | undefined = item.metadata?.subscriptionTotalPrice;
-  const quantity = item.quantity ?? 1;
-
-  if (binWeight && unitPriceCents) {
-    const isEach = (product.unit || '').toLowerCase() === 'ea' || Boolean(product?.variantSize || product?.variantUnit);
-    return isEach
-      ? Math.round(unitPriceCents * quantity)
-      : Math.round(binWeight * unitPriceCents * quantity);
-  }
-
-  if (requestedWeightLbs && requestedWeightLbs > 0) {
-    return Math.round(product.pricePer * requestedWeightLbs * quantity * 100);
-  }
-
-  if (weight && weight > 0) {
-    return Math.round(product.pricePer * weight * quantity * 100);
-  }
-
-  if (metaPrice && metaPrice > 0) {
-    return Math.round(metaPrice * quantity * 100);
-  }
-
-  return Math.round(product.pricePer * quantity * 100);
+interface DeliveryDateOption {
+  delivery_date: string;
+  remaining_slots: number;
+  max_deliveries: number;
+  is_available: boolean;
 }
 
 export function CheckoutPage() {
@@ -97,6 +63,7 @@ export function CheckoutPage() {
     customerEmail: '',
     customerPhone: '',
     deliveryMethod: 'pickup',
+    requestedDeliveryDate: '',
     paymentMethod: '' as any,
     deliveryAddress: '',
     deliveryNotes: '',
@@ -108,6 +75,7 @@ export function CheckoutPage() {
     state: '',
     zip: '',
   });
+  const [shippingAddressInput, setShippingAddressInput] = useState('');
 
   const [shippingEstimate, setShippingEstimate] = useState<{
     estimate_cents: number | null;
@@ -151,6 +119,7 @@ export function CheckoutPage() {
     state: '',
     zip: '',
   });
+  const [deliveryAddressInput, setDeliveryAddressInput] = useState('');
   const [deliveryGeoResult, setDeliveryGeoResult] = useState<{
     distance_miles: number;
     matched_zone: { id: string; label: string; charge_cents: number } | null;
@@ -162,6 +131,9 @@ export function CheckoutPage() {
   const [loadingDeliverySuggestions, setLoadingDeliverySuggestions] = useState(false);
   const deliveryAutocompleteTimeoutRef = useRef<number | null>(null);
   const [deliveryError, setDeliveryError] = useState('');
+  const [deliveryDateOptions, setDeliveryDateOptions] = useState<DeliveryDateOption[]>([]);
+  const [deliveryDatesLoading, setDeliveryDatesLoading] = useState(false);
+  const [deliveryDatesError, setDeliveryDatesError] = useState<string | null>(null);
 
   const [subscribeToEmails, setSubscribeToEmails] = useState(false);
   
@@ -379,6 +351,10 @@ export function CheckoutPage() {
     return [address.street, address.city, address.state, address.zip].filter(Boolean).join(', ');
   };
 
+  const formatDeliveryAddress = (addr: ShippingAddress): string => {
+    return [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
+  };
+
   const normalizeZip = (value: string) => value.replace(/\D/g, '').slice(0, 5);
 
   const normalizeState = (value: string) => {
@@ -445,15 +421,166 @@ export function CheckoutPage() {
     );
   };
 
+  const resolveAddressFromInput = async (rawInput: string): Promise<{
+    normalizedAddress: ShippingAddress;
+    formattedAddress: string;
+  } | null> => {
+    const trimmed = rawInput.trim();
+    if (!trimmed) return null;
+
+    const parsedInput = parseSavedAddress(trimmed);
+    if (parsedInput && hasCompleteShippingAddress(parsedInput)) {
+      const normalizedAddress = normalizeAddress(parsedInput);
+      return {
+        normalizedAddress,
+        formattedAddress: formatShippingAddress(normalizedAddress),
+      };
+    }
+
+    try {
+      const { data, error } = await supabase!.functions.invoke('geocode-address', {
+        body: { address: trimmed },
+      });
+
+      if (error || !data?.formatted_address) {
+        return null;
+      }
+
+      const parsedGeocoded = parseSavedAddress(data.formatted_address);
+      if (!parsedGeocoded || !hasCompleteShippingAddress(parsedGeocoded)) {
+        return null;
+      }
+
+      const normalizedAddress = normalizeAddress(parsedGeocoded);
+      return {
+        normalizedAddress,
+        formattedAddress: data.formatted_address,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const deliveryDateSchedulingEnabled = Boolean(
+    (storefrontData?.settings as any)?.delivery_date_scheduling_enabled &&
+    Number((storefrontData?.settings as any)?.delivery_max_per_day ?? 0) > 0
+  );
+
+  const deliveryDateWindowDays = Math.max(
+    1,
+    Number((storefrontData?.settings as any)?.delivery_date_window_days ?? 14)
+  );
+
+  const deliveryLeadTimeDays = Math.max(
+    0,
+    Number((storefrontData?.settings as any)?.delivery_lead_time_days ?? 0)
+  );
+
+  const getLocalIsoDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const minimumDeliveryDateIso = (() => {
+    const date = new Date();
+    date.setDate(date.getDate() + deliveryLeadTimeDays);
+    return getLocalIsoDate(date);
+  })();
+
+  const formatDeliveryDateLabel = (isoDate: string) => {
+    const date = new Date(`${isoDate}T00:00:00`);
+    return date.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  const loadDeliveryDateAvailability = async () => {
+    if (!tenant?.id || !deliveryDateSchedulingEnabled) {
+      setDeliveryDateOptions([]);
+      setDeliveryDatesError(null);
+      return;
+    }
+
+    setDeliveryDatesLoading(true);
+    setDeliveryDatesError(null);
+
+    try {
+      const todayIso = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase.rpc('get_storefront_delivery_date_availability', {
+        p_tenant_id: tenant.id,
+        p_start_date: todayIso,
+        p_days: deliveryDateWindowDays,
+      });
+
+      if (error) throw error;
+
+      const options = Array.isArray(data)
+        ? (data as DeliveryDateOption[]).filter((option) => option.is_available)
+        : [];
+
+      setDeliveryDateOptions(options);
+
+      if (options.length === 0) {
+        setDeliveryDatesError('No delivery dates are currently available. Please choose pickup or shipping.');
+      }
+    } catch (err) {
+      console.error('Failed to load delivery date availability:', err);
+      setDeliveryDateOptions([]);
+      setDeliveryDatesError('Unable to load delivery dates right now. Please try again.');
+    } finally {
+      setDeliveryDatesLoading(false);
+    }
+  };
+
   useEffect(() => {
+    if (formData.deliveryMethod !== 'delivery') return;
+    if (!deliveryDateSchedulingEnabled) {
+      setDeliveryDateOptions([]);
+      setDeliveryDatesError(null);
+      return;
+    }
+
+    void loadDeliveryDateAvailability();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.deliveryMethod, tenant?.id, deliveryDateSchedulingEnabled, deliveryDateWindowDays]);
+
+  useEffect(() => {
+    if (formData.deliveryMethod !== 'delivery') return;
+    if (!deliveryDateSchedulingEnabled) return;
+    if (formData.requestedDeliveryDate) return;
+    if (deliveryDateOptions.length === 0) return;
+
+    handleInputChange('requestedDeliveryDate', deliveryDateOptions[0].delivery_date);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryDateOptions, formData.deliveryMethod, formData.requestedDeliveryDate, deliveryDateSchedulingEnabled]);
+
+  useEffect(() => {
+    if (formData.deliveryMethod !== 'delivery') return;
+    if (deliveryDateSchedulingEnabled) return;
+    if (formData.requestedDeliveryDate) return;
+
+    handleInputChange('requestedDeliveryDate', minimumDeliveryDateIso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.deliveryMethod, formData.requestedDeliveryDate, deliveryDateSchedulingEnabled, minimumDeliveryDateIso]);
+
+  useEffect(() => {
+    if (!deliveryAddressInput && formData.deliveryAddress) {
+      setDeliveryAddressInput(formData.deliveryAddress);
+    }
+
     if (!isAddressBlank(deliveryAddress)) return;
     if (!formData.deliveryAddress) return;
 
     const parsed = parseSavedAddress(formData.deliveryAddress);
     if (parsed) {
       setDeliveryAddress(parsed);
+      setDeliveryAddressInput(formData.deliveryAddress);
     }
-  }, [formData.deliveryAddress, deliveryAddress]);
+  }, [formData.deliveryAddress, deliveryAddress, deliveryAddressInput]);
 
   const buildBinKey = (productId: string, binWeight?: number) => {
     const weightBtn = Math.round((binWeight ?? 0) * 100) / 100;
@@ -626,65 +753,76 @@ export function CheckoutPage() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleShippingAddressChange = (field: keyof ShippingAddress, value: string) => {
-    const normalizedValue = field === 'zip'
-      ? normalizeZip(value)
-      : field === 'state'
-      ? normalizeState(value)
-      : value;
+  const handleShippingAddressInputChange = (value: string) => {
+    setShippingAddressInput(value);
+    setShippingAddress({ street: value, city: '', state: '', zip: '' });
+    setShippingEstimate(null);
+    setEstimateError(null);
 
-    setShippingAddress(prev => {
-      const updated = { ...prev, [field]: normalizedValue };
-      if (formData.deliveryMethod === 'shipping') {
-        setFormData(current => ({ ...current, deliveryAddress: formatShippingAddress(updated) }));
-      }
-      if (hasCompleteShippingAddress(updated)) {
-        fetchShippingEstimate(updated);
-      } else {
-        setShippingEstimate(null);
-        setEstimateError(null);
-      }
-      return updated;
-    });
+    if (formData.deliveryMethod === 'shipping') {
+      handleInputChange('deliveryAddress', value);
+    }
 
-    if (field === 'street' || showShippingSuggestions) {
-      scheduleAddressSuggestions('shipping', {
-        ...shippingAddress,
-        [field]: normalizedValue,
-      });
+    if (showShippingSuggestions || value.trim().length >= 4) {
+      scheduleAddressSuggestions('shipping', { street: value, city: '', state: '', zip: '' });
     }
   };
 
-  const handleDeliveryAddressChange = (field: keyof ShippingAddress, value: string) => {
-    const normalizedValue = field === 'zip'
-      ? normalizeZip(value)
-      : field === 'state'
-      ? normalizeState(value)
-      : value;
-
-    setDeliveryAddress(prev => {
-      const updated = { ...prev, [field]: normalizedValue };
-      setFormData(current => (
-        current.deliveryMethod === 'delivery'
-          ? { ...current, deliveryAddress: formatDeliveryAddress(updated) }
-          : current
-      ));
-      return updated;
-    });
-
-    if (field === 'street' || showDeliverySuggestions) {
-      scheduleAddressSuggestions('delivery', {
-        ...deliveryAddress,
-        [field]: normalizedValue,
-      });
-    }
-
+  const handleDeliveryAddressInputChange = (value: string) => {
+    setDeliveryAddressInput(value);
+    setDeliveryAddress({ street: value, city: '', state: '', zip: '' });
     setDeliveryGeoResult(null);
     setDeliveryError('');
+
+    if (formData.deliveryMethod === 'delivery') {
+      handleInputChange('deliveryAddress', value);
+    }
+
+    if (showDeliverySuggestions || value.trim().length >= 4) {
+      scheduleAddressSuggestions('delivery', { street: value, city: '', state: '', zip: '' });
+    }
   };
 
-  const formatDeliveryAddress = (addr: ShippingAddress): string => {
-    return [addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
+  const resolveShippingAddressInput = async () => {
+    const resolved = await resolveAddressFromInput(shippingAddressInput);
+    if (!resolved) {
+      if (shippingAddressInput.trim()) {
+        setEstimateError('Please enter a complete shipping address and select a valid match.');
+      }
+      return null;
+    }
+
+    setShippingAddress(resolved.normalizedAddress);
+    setShippingAddressInput(resolved.formattedAddress);
+    setShowShippingSuggestions(false);
+    setShippingSuggestions([]);
+    setEstimateError(null);
+
+    if (formData.deliveryMethod === 'shipping') {
+      handleInputChange('deliveryAddress', resolved.formattedAddress);
+    }
+
+    await fetchShippingEstimate(resolved.normalizedAddress);
+    return resolved;
+  };
+
+  const resolveDeliveryAddressInput = async () => {
+    const resolved = await resolveAddressFromInput(deliveryAddressInput);
+    if (!resolved) {
+      if (deliveryAddressInput.trim()) {
+        setDeliveryError('Please enter a complete delivery address and select a valid match.');
+      }
+      return null;
+    }
+
+    setDeliveryAddress(resolved.normalizedAddress);
+    setDeliveryAddressInput(resolved.formattedAddress);
+    setShowDeliverySuggestions(false);
+    setDeliverySuggestions([]);
+    setDeliveryGeoResult(null);
+    setDeliveryError('');
+    handleInputChange('deliveryAddress', resolved.formattedAddress);
+    return resolved;
   };
 
   const getGeocodeErrorMessage = async (error: any): Promise<string> => {
@@ -791,6 +929,7 @@ export function CheckoutPage() {
 
     if (mode === 'shipping') {
       setShippingAddress(resolvedAddress);
+      setShippingAddressInput(formattedAddress);
       setShowShippingSuggestions(false);
       setShippingSuggestions([]);
       setEstimateError(null);
@@ -806,6 +945,7 @@ export function CheckoutPage() {
     }
 
     setDeliveryAddress(resolvedAddress);
+    setDeliveryAddressInput(formattedAddress);
     setShowDeliverySuggestions(false);
     setDeliverySuggestions([]);
     setDeliveryError('');
@@ -825,15 +965,22 @@ export function CheckoutPage() {
   }, []);
 
   const calculateDeliveryFee = async () => {
-    const normalizedAddress = normalizeAddress(deliveryAddress);
-    setDeliveryAddress(normalizedAddress);
+    let normalizedAddress = normalizeAddress(deliveryAddress);
+    let fullAddress = deliveryAddressInput.trim() || formatDeliveryAddress(normalizedAddress);
 
     if (!hasCompleteShippingAddress(normalizedAddress)) {
-      setDeliveryError('Please enter a complete delivery address (street, city, state, and 5-digit ZIP).');
-      return;
+      const resolved = await resolveDeliveryAddressInput();
+      if (!resolved) {
+        setDeliveryError('Please enter a complete delivery address and select a valid match.');
+        return;
+      }
+
+      normalizedAddress = resolved.normalizedAddress;
+      fullAddress = resolved.formattedAddress;
     }
 
-    const fullAddress = formatDeliveryAddress(normalizedAddress);
+    setDeliveryAddress(normalizedAddress);
+
     if (!fullAddress || !tenant?.id) return;
     
     setGeocodingDelivery(true);
@@ -868,7 +1015,9 @@ export function CheckoutPage() {
       }
       
       setDeliveryGeoResult(data);
-      handleInputChange('deliveryAddress', data.formatted_address || fullAddress);
+      const formattedAddress = data.formatted_address || fullAddress;
+      setDeliveryAddressInput(formattedAddress);
+      handleInputChange('deliveryAddress', formattedAddress);
     } catch (err) {
       console.error('Delivery geocode error:', err);
       setDeliveryError('Failed to calculate delivery fee. Please try again.');
@@ -953,14 +1102,8 @@ export function CheckoutPage() {
     await saveCustomerProfile();
 
     try {
-      const taxRate = tenant?.tax_rate ?? 0;
-      const chargeTax = tenant?.charge_tax_on_online !== false;
-      const taxIncluded = tenant?.tax_included ?? false;
-      let productSubtotalCents = 0;
-      let taxableProductSubtotalCents = 0;
-
       // Prepare line items for Stripe
-      const lineItems: any[] = cart.items.map((item: any) => {
+      const lineItems = cart.items.map((item: any) => {
         const product = storefrontData.products.find((p: any) => p.id === item.productId);
         const productName = product?.name || 'Product';
         
@@ -1009,12 +1152,6 @@ export function CheckoutPage() {
           totalPrice: unitPriceInCents * itemQuantity
         });
 
-        const lineTotalCents = unitPriceInCents * itemQuantity;
-        productSubtotalCents += lineTotalCents;
-        if (isProductTaxable(product, chargeTax)) {
-          taxableProductSubtotalCents += lineTotalCents;
-        }
-
         // Validate price
         if (!unitPriceInCents || unitPriceInCents <= 0) {
           throw new Error(`Invalid price for ${productName}: ${unitPriceInCents}`);
@@ -1030,7 +1167,6 @@ export function CheckoutPage() {
                 : undefined,
               metadata: {
                 product_id: item.productId, // Store product ID for order creation
-                tax_behavior: product?.taxBehavior ?? 'inherit',
                 binWeight: item.binWeight ? String(item.binWeight) : undefined, // Weight per unit for pre-packaged bins
                 weight: item.weight ? String(item.weight) : undefined, // Weight per unit for custom weight
                 unit: product?.unit || 'ea', // 'lb' or 'ea'
@@ -1057,7 +1193,6 @@ export function CheckoutPage() {
               description: undefined,
               metadata: {
                 product_id: 'shipping',
-                tax_behavior: 'inherit',
                 binWeight: undefined,
                 weight: undefined,
                 unit: 'ea',
@@ -1077,7 +1212,7 @@ export function CheckoutPage() {
             product_data: {
               name: 'Delivery Fee',
               description: deliveryGeoResult?.matched_zone?.label ? `${deliveryGeoResult.matched_zone.label} zone` : undefined,
-              metadata: { product_id: 'delivery', tax_behavior: 'inherit', binWeight: undefined, weight: undefined, unit: 'ea' },
+              metadata: { product_id: 'delivery', binWeight: undefined, weight: undefined, unit: 'ea' },
             },
             unit_amount: deliveryChargeCents,
           },
@@ -1086,15 +1221,14 @@ export function CheckoutPage() {
       }
 
       // Calculate tax if applicable
+      const taxRate = tenant?.tax_rate ?? 0;
+      const chargeTax = tenant?.charge_tax_on_online !== false;
+      const taxIncluded = tenant?.tax_included ?? false;
+      
       if (chargeTax && !taxIncluded && taxRate > 0) {
-        const discountRatio = productSubtotalCents > 0
-          ? Math.min(1, discountCents / productSubtotalCents)
-          : 0;
-        const taxableAfterDiscountCents = Math.max(
-          0,
-          Math.round(taxableProductSubtotalCents * (1 - discountRatio))
-        );
-        const taxAmount = Math.round(taxableAfterDiscountCents * taxRate);
+        // Calculate tax on subtotal minus discount (including shipping in taxable base)
+        const subtotalAfterDiscount = cart.total + (shippingChargeCents / 100) - (discountCents / 100);
+        const taxAmount = Math.round(subtotalAfterDiscount * 100 * taxRate);
         lineItems.push({
           price_data: {
             currency: 'usd',
@@ -1103,7 +1237,6 @@ export function CheckoutPage() {
               description: undefined,
               metadata: {
                 product_id: 'tax',
-                tax_behavior: 'inherit',
                 binWeight: undefined,
                 weight: undefined,
                 unit: 'ea',
@@ -1129,6 +1262,7 @@ export function CheckoutPage() {
         ? {
             ...formData,
             deliveryAddress: formatDeliveryAddress(deliveryAddress),
+            requestedDeliveryDate: formData.requestedDeliveryDate || undefined,
           }
         : formData;
       localStorage.setItem('checkout-form-data', JSON.stringify(checkoutFormData));
@@ -1159,6 +1293,7 @@ export function CheckoutPage() {
             delivery_method: formData.deliveryMethod,
             delivery_address: checkoutFormData.deliveryAddress || '',
             delivery_notes: formData.deliveryNotes || '',
+            requested_delivery_date: formData.requestedDeliveryDate || '',
             fulfillment_location: formData.fulfillmentLocation || '',
             discount_cents: discountCents,
             discount_code: appliedDiscount?.code || '',
@@ -1215,10 +1350,25 @@ export function CheckoutPage() {
       return;
     }
 
+    let effectiveShippingAddress = shippingAddress;
+    let effectiveDeliveryAddress = deliveryAddress;
+
     if (formData.deliveryMethod === 'delivery') {
-      if (!deliveryAddress.street || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.zip) {
-        setOrderError('Please provide a full delivery address.');
+      if (!formData.requestedDeliveryDate) {
+        setOrderError('Please select a delivery date.');
         return;
+      }
+      if (!deliveryDateSchedulingEnabled && formData.requestedDeliveryDate < minimumDeliveryDateIso) {
+        setOrderError(`Please choose a delivery date on or after ${minimumDeliveryDateIso}.`);
+        return;
+      }
+      if (!hasCompleteShippingAddress(effectiveDeliveryAddress)) {
+        const resolvedDelivery = await resolveDeliveryAddressInput();
+        if (!resolvedDelivery) {
+          setOrderError('Please provide a valid delivery address.');
+          return;
+        }
+        effectiveDeliveryAddress = resolvedDelivery.normalizedAddress;
       }
       if (!deliveryGeoResult?.matched_zone) {
         setOrderError('Please calculate the delivery fee before placing your order.');
@@ -1227,11 +1377,15 @@ export function CheckoutPage() {
     }
 
     if (formData.deliveryMethod === 'shipping') {
-      if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.zip) {
-        setOrderError('Please provide street, city, state, and ZIP for shipping.');
-        return;
+      if (!hasCompleteShippingAddress(effectiveShippingAddress)) {
+        const resolvedShipping = await resolveShippingAddressInput();
+        if (!resolvedShipping) {
+          setOrderError('Please provide a valid shipping address.');
+          return;
+        }
+        effectiveShippingAddress = resolvedShipping.normalizedAddress;
       }
-      const formattedAddress = formatShippingAddress(shippingAddress);
+      const formattedAddress = formatShippingAddress(effectiveShippingAddress);
       if (!formattedAddress) {
         setOrderError('Please provide a full shipping address.');
         return;
@@ -1331,9 +1485,9 @@ export function CheckoutPage() {
     const shippingChargeCents = checkoutShippingChargeCents;
 
     const deliveryAddr = formData.deliveryMethod === 'delivery'
-      ? formatDeliveryAddress(deliveryAddress)
+      ? formatDeliveryAddress(effectiveDeliveryAddress)
       : formData.deliveryMethod === 'shipping'
-      ? formatShippingAddress(shippingAddress)
+      ? formatShippingAddress(effectiveShippingAddress)
       : formData.deliveryAddress;
 
     console.log('📦 [ORDER] Starting order creation with parameters:', {
@@ -1359,10 +1513,11 @@ export function CheckoutPage() {
   {
     ...formData,
     deliveryAddress: deliveryAddr,
-    customerZip: formData.deliveryMethod === 'shipping' ? shippingAddress.zip : undefined,
-    customerStreet: formData.deliveryMethod === 'shipping' ? shippingAddress.street : undefined,
-    customerCity: formData.deliveryMethod === 'shipping' ? shippingAddress.city : undefined,
-    customerState: formData.deliveryMethod === 'shipping' ? shippingAddress.state : undefined,
+    requestedDeliveryDate: formData.deliveryMethod === 'delivery' ? (formData.requestedDeliveryDate || undefined) : undefined,
+    customerZip: formData.deliveryMethod === 'shipping' ? effectiveShippingAddress.zip : undefined,
+    customerStreet: formData.deliveryMethod === 'shipping' ? effectiveShippingAddress.street : undefined,
+    customerCity: formData.deliveryMethod === 'shipping' ? effectiveShippingAddress.city : undefined,
+    customerState: formData.deliveryMethod === 'shipping' ? effectiveShippingAddress.state : undefined,
     subscription: subscriptionPayload,
     discountCents,
     shippingChargeCents: formData.deliveryMethod === 'shipping' ? shippingChargeCents : 0,
@@ -1636,7 +1791,6 @@ export function CheckoutPage() {
         unit: 'ea',
         imageUrl: '/subscription-placeholder.png',
         categoryId: 'subscription',
-        taxBehavior: 'inherit',
         available: true,
         inventory: 1,
         subscriptionInterval: interval,
@@ -1648,19 +1802,34 @@ export function CheckoutPage() {
     return product ? { ...item, product } : null;
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 
-  const checkoutChargeTax = tenant?.charge_tax_on_online !== false;
-
-  // Calculate cart subtotal and taxable subtotal from line items in cents.
-  const cartSubtotalCents = cartItems.reduce((sum, item) => {
-    return sum + getCartItemLineTotalCents(item, item.product);
+  // Calculate actual cart total based on items
+  const cartTotal = cartItems.reduce((sum, item) => {
+    if (!item?.product) return sum;
+    
+    const weight = (item as any).weight;
+    const requestedWeightLbs = (item as any).requestedWeightLbs;
+    const binWeight = (item as any).binWeight;
+    const unitPriceCents = (item as any).unitPriceCents;
+    const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
+    const quantity = item.quantity;
+    
+    let itemTotal = 0;
+    
+    if (binWeight && unitPriceCents) {
+      const isEach = (item.product.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any).variantSize || (item.product as any).variantUnit);
+      itemTotal = (isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100))) * quantity;
+    } else if (requestedWeightLbs && requestedWeightLbs > 0) {
+      itemTotal = item.product.pricePer * requestedWeightLbs * quantity;
+    } else if (weight && weight > 0) {
+      itemTotal = item.product.pricePer * weight * quantity;
+    } else if (metaPrice && metaPrice > 0) {
+      itemTotal = metaPrice * quantity;
+    } else {
+      itemTotal = item.product.pricePer * quantity;
+    }
+    
+    return sum + itemTotal;
   }, 0);
-
-  const taxableProductSubtotalCents = cartItems.reduce((sum, item) => {
-    if (!isProductTaxable(item.product, checkoutChargeTax)) return sum;
-    return sum + getCartItemLineTotalCents(item, item.product);
-  }, 0);
-
-  const cartTotal = cartSubtotalCents / 100;
 
   const onlinePaymentFeeSettings = storefrontData?.settings.onlinePaymentFeeSettings;
   const checkoutShippingChargeCents = formData.deliveryMethod === 'shipping'
@@ -1672,18 +1841,10 @@ export function CheckoutPage() {
   const checkoutDeliveryChargeCents = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
     ? deliveryGeoResult.matched_zone.charge_cents
     : 0;
-  const checkoutSubtotalAfterDiscountCents = Math.max(0, cartSubtotalCents - discountCents);
+  const checkoutSubtotalAfterDiscountCents = Math.max(0, Math.round(cartTotal * 100) - discountCents);
   const checkoutTaxCents = tenant?.charge_tax_on_online === false || tenant?.tax_included
     ? 0
-    : Math.round(
-        Math.max(
-          0,
-          Math.round(
-            taxableProductSubtotalCents *
-              (cartSubtotalCents > 0 ? (checkoutSubtotalAfterDiscountCents / cartSubtotalCents) : 0)
-          )
-        ) * (tenant?.tax_rate ?? 0)
-      );
+    : Math.round(checkoutSubtotalAfterDiscountCents * (tenant?.tax_rate ?? 0));
   const checkoutBaseTotalCents = checkoutSubtotalAfterDiscountCents + checkoutTaxCents + checkoutShippingChargeCents + checkoutDeliveryChargeCents;
   const checkoutOnlinePaymentFeeCents = getOnlinePaymentFeeCents({
     paymentMethod: formData.paymentMethod,
@@ -1815,6 +1976,7 @@ export function CheckoutPage() {
                       type="button"
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'pickup');
+                        handleInputChange('requestedDeliveryDate', '');
                         handleInputChange('fulfillmentLocation', '');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
@@ -1842,14 +2004,20 @@ export function CheckoutPage() {
                       type="button"
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'shipping');
+                        handleInputChange('requestedDeliveryDate', '');
                         handleInputChange('fulfillmentLocation', '');
                         if (isAddressBlank(shippingAddress)) {
                           const parsedShipping = parseSavedAddress(formData.deliveryAddress || '');
                           if (parsedShipping) {
                             setShippingAddress(parsedShipping);
+                            setShippingAddressInput(formData.deliveryAddress || formatShippingAddress(parsedShipping));
                           } else if (hasCompleteShippingAddress(deliveryAddress)) {
-                            setShippingAddress(normalizeAddress(deliveryAddress));
+                            const normalizedDeliveryAddress = normalizeAddress(deliveryAddress);
+                            setShippingAddress(normalizedDeliveryAddress);
+                            setShippingAddressInput(formatShippingAddress(normalizedDeliveryAddress));
                           }
+                        } else {
+                          setShippingAddressInput(formatShippingAddress(normalizeAddress(shippingAddress)) || shippingAddressInput);
                         }
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
@@ -1881,6 +2049,7 @@ export function CheckoutPage() {
                       type="button"
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'other');
+                        handleInputChange('requestedDeliveryDate', '');
                         handleInputChange('fulfillmentLocation', '');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
@@ -1909,13 +2078,24 @@ export function CheckoutPage() {
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'delivery');
                         handleInputChange('fulfillmentLocation', '');
+                        if (deliveryDateSchedulingEnabled && !formData.requestedDeliveryDate) {
+                          const firstAvailableDate = deliveryDateOptions.find((option) => option.is_available)?.delivery_date;
+                          if (firstAvailableDate) {
+                            handleInputChange('requestedDeliveryDate', firstAvailableDate);
+                          }
+                        }
                         if (isAddressBlank(deliveryAddress)) {
                           const parsedDelivery = parseSavedAddress(formData.deliveryAddress || '');
                           if (parsedDelivery) {
                             setDeliveryAddress(parsedDelivery);
+                            setDeliveryAddressInput(formData.deliveryAddress || formatDeliveryAddress(parsedDelivery));
                           } else if (hasCompleteShippingAddress(shippingAddress)) {
-                            setDeliveryAddress(normalizeAddress(shippingAddress));
+                            const normalizedShippingAddress = normalizeAddress(shippingAddress);
+                            setDeliveryAddress(normalizedShippingAddress);
+                            setDeliveryAddressInput(formatDeliveryAddress(normalizedShippingAddress));
                           }
+                        } else {
+                          setDeliveryAddressInput(formatDeliveryAddress(normalizeAddress(deliveryAddress)) || deliveryAddressInput);
                         }
                         setDeliveryGeoResult(null);
                         setDeliveryError('');
@@ -1979,99 +2159,58 @@ export function CheckoutPage() {
                       Shipping Address *
                     </label>
                     <p className="text-xs text-gray-500 -mt-2">
-                      Start typing your address to choose from known matches.
+                      Start typing your full address and select a match.
                     </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="shippingStreet"
-                          autoComplete="shipping street-address"
-                          required
-                          value={shippingAddress.street}
-                          onChange={(e) => handleShippingAddressChange('street', e.target.value)}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                          onFocus={(e) => {
-                            e.currentTarget.style.borderColor = primaryColor;
-                            setShowShippingSuggestions(true);
-                            scheduleAddressSuggestions('shipping', shippingAddress);
-                          }}
-                          onBlur={(e) => {
-                            e.currentTarget.style.borderColor = '';
-                            window.setTimeout(() => setShowShippingSuggestions(false), 120);
-                          }}
-                          placeholder="Street address"
-                        />
-                        {showShippingSuggestions && (loadingShippingSuggestions || shippingSuggestions.length > 0) && (
-                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-64 overflow-auto">
-                            {loadingShippingSuggestions ? (
-                              <div className="px-3 py-2 text-sm text-gray-500">Searching addresses...</div>
-                            ) : (
-                              shippingSuggestions.map((suggestion) => (
-                                <button
-                                  key={suggestion}
-                                  type="button"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    applySuggestedAddress('shipping', suggestion);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                                >
-                                  {suggestion}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
+                    <div className="relative">
                       <input
                         type="text"
-                        name="shippingCity"
-                        autoComplete="shipping address-level2"
+                        name="shippingAddress"
+                        autoComplete="shipping street-address"
                         required
-                        value={shippingAddress.city}
-                        onChange={(e) => handleShippingAddressChange('city', e.target.value)}
+                        value={shippingAddressInput}
+                        onChange={(e) => handleShippingAddressInputChange(e.target.value)}
                         className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                        placeholder="City"
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = primaryColor;
+                          setShowShippingSuggestions(true);
+                          scheduleAddressSuggestions('shipping', { street: shippingAddressInput, city: '', state: '', zip: '' });
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = '';
+                          window.setTimeout(() => {
+                            setShowShippingSuggestions(false);
+                            void resolveShippingAddressInput();
+                          }, 120);
+                        }}
+                        placeholder="Street, City, State ZIP"
                       />
-                      <input
-                        type="text"
-                        name="shippingState"
-                        autoComplete="shipping address-level1"
-                        required
-                        value={shippingAddress.state}
-                        onChange={(e) => handleShippingAddressChange('state', e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                        placeholder="State (e.g. TX)"
-                      />
-                      {/* ZIP triggers live estimate */}
-                      <div className="relative">
-                        <input
-                          type="text"
-                          required
-                          maxLength={5}
-                          name="shippingZip"
-                          autoComplete="shipping postal-code"
-                          inputMode="numeric"
-                          pattern="[0-9]{5}"
-                          value={shippingAddress.zip}
-                          onChange={(e) => handleShippingAddressChange('zip', e.target.value)}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                          onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                          onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                          placeholder="ZIP code"
-                        />
-                        {estimateLoading && (
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                            <div className="h-4 w-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        )}
-                      </div>
+                      {estimateLoading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <div className="h-4 w-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      )}
+                      {showShippingSuggestions && (loadingShippingSuggestions || shippingSuggestions.length > 0) && (
+                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-64 overflow-auto">
+                          {loadingShippingSuggestions ? (
+                            <div className="px-3 py-2 text-sm text-gray-500">Searching addresses...</div>
+                          ) : (
+                            shippingSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  applySuggestedAddress('shipping', suggestion);
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                {suggestion}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Shipping estimate banner — appears once ZIP is valid */}
@@ -2172,102 +2311,106 @@ export function CheckoutPage() {
                       </p>
                     </div>
                   )}
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Select Delivery Date *
+                    </label>
+
+                    {deliveryDateSchedulingEnabled ? (
+                      <select
+                        required
+                        value={formData.requestedDeliveryDate || ''}
+                        onChange={(e) => handleInputChange('requestedDeliveryDate', e.target.value)}
+                        disabled={deliveryDatesLoading || deliveryDateOptions.length === 0}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                      >
+                        <option value="">
+                          {deliveryDatesLoading ? 'Loading delivery dates...' : 'Choose a delivery date...'}
+                        </option>
+                        {deliveryDateOptions.map((option) => (
+                          <option key={option.delivery_date} value={option.delivery_date}>
+                            {formatDeliveryDateLabel(option.delivery_date)} ({option.remaining_slots} of {option.max_deliveries} slots left)
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="date"
+                        required
+                        min={minimumDeliveryDateIso}
+                        value={formData.requestedDeliveryDate || ''}
+                        onChange={(e) => handleInputChange('requestedDeliveryDate', e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
+                        onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
+                        onBlur={(e) => e.currentTarget.style.borderColor = ''}
+                      />
+                    )}
+
+                    {deliveryDatesError && deliveryDateSchedulingEnabled && (
+                      <p className="text-sm text-red-600">{deliveryDatesError}</p>
+                    )}
+                  </div>
                   
                   <label className="block text-sm font-medium text-gray-700">
                     Delivery Address *
                   </label>
                   <p className="text-xs text-gray-500 -mt-2">
-                    Start typing your address to choose from known matches.
+                    Start typing your full address and select a match.
                   </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        name="deliveryStreet"
-                        autoComplete="shipping street-address"
-                        required
-                        value={deliveryAddress.street}
-                        onChange={(e) => handleDeliveryAddressChange('street', e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                        onFocus={(e) => {
-                          e.currentTarget.style.borderColor = primaryColor;
-                          setShowDeliverySuggestions(true);
-                          scheduleAddressSuggestions('delivery', deliveryAddress);
-                        }}
-                        onBlur={(e) => {
-                          e.currentTarget.style.borderColor = '';
-                          window.setTimeout(() => setShowDeliverySuggestions(false), 120);
-                        }}
-                        placeholder="Street address"
-                      />
-                      {showDeliverySuggestions && (loadingDeliverySuggestions || deliverySuggestions.length > 0) && (
-                        <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-64 overflow-auto">
-                          {loadingDeliverySuggestions ? (
-                            <div className="px-3 py-2 text-sm text-gray-500">Searching addresses...</div>
-                          ) : (
-                            deliverySuggestions.map((suggestion) => (
-                              <button
-                                key={suggestion}
-                                type="button"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  applySuggestedAddress('delivery', suggestion);
-                                }}
-                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                              >
-                                {suggestion}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
+                  <div className="relative">
                     <input
                       type="text"
-                      name="deliveryCity"
-                      autoComplete="shipping address-level2"
+                      name="deliveryAddress"
+                      autoComplete="shipping street-address"
                       required
-                      value={deliveryAddress.city}
-                      onChange={(e) => handleDeliveryAddressChange('city', e.target.value)}
+                      value={deliveryAddressInput}
+                      onChange={(e) => handleDeliveryAddressInputChange(e.target.value)}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      placeholder="City"
+                      onFocus={(e) => {
+                        e.currentTarget.style.borderColor = primaryColor;
+                        setShowDeliverySuggestions(true);
+                        scheduleAddressSuggestions('delivery', { street: deliveryAddressInput, city: '', state: '', zip: '' });
+                      }}
+                      onBlur={(e) => {
+                        e.currentTarget.style.borderColor = '';
+                        window.setTimeout(() => {
+                          setShowDeliverySuggestions(false);
+                          void resolveDeliveryAddressInput();
+                        }, 120);
+                      }}
+                      placeholder="Street, City, State ZIP"
                     />
-                    <input
-                      type="text"
-                      name="deliveryState"
-                      autoComplete="shipping address-level1"
-                      required
-                      value={deliveryAddress.state}
-                      onChange={(e) => handleDeliveryAddressChange('state', e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      placeholder="State"
-                    />
-                    <input
-                      type="text"
-                      name="deliveryZip"
-                      autoComplete="shipping postal-code"
-                      inputMode="numeric"
-                      pattern="[0-9]{5}"
-                      maxLength={5}
-                      required
-                      value={deliveryAddress.zip}
-                      onChange={(e) => handleDeliveryAddressChange('zip', e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-current transition-colors"
-                      onFocus={(e) => e.currentTarget.style.borderColor = primaryColor}
-                      onBlur={(e) => e.currentTarget.style.borderColor = ''}
-                      placeholder="ZIP code"
-                    />
+                    {showDeliverySuggestions && (loadingDeliverySuggestions || deliverySuggestions.length > 0) && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-64 overflow-auto">
+                        {loadingDeliverySuggestions ? (
+                          <div className="px-3 py-2 text-sm text-gray-500">Searching addresses...</div>
+                        ) : (
+                          deliverySuggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                applySuggestedAddress('delivery', suggestion);
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              {suggestion}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                   
                   <div>
                     <button
                       type="button"
                       onClick={calculateDeliveryFee}
-                      disabled={geocodingDelivery || !deliveryAddress.street || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.zip}
+                      disabled={geocodingDelivery || !deliveryAddressInput.trim()}
                       className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ borderColor: primaryColor, color: primaryColor }}
                     >
@@ -2718,8 +2861,8 @@ export function CheckoutPage() {
                             ? <span className="text-gray-400 text-xs">Calculating...</span>
                             : shippingEstimate?.estimate_cents
                             ? `$${(shippingEstimate.range_high_cents / 100).toFixed(2)}`
-                            : shippingAddress.zip.length < 5
-                            ? <span className="text-gray-400 text-xs">Enter ZIP above</span>
+                            : shippingAddressInput.trim().length < 5
+                            ? <span className="text-gray-400 text-xs">Enter address above</span>
                             : <span className="text-gray-400 text-xs">Calculated at fulfillment</span>
                           }
                         </span>

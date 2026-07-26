@@ -29,6 +29,7 @@ export interface CheckoutData {
   customerPhone: string;
   deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other';
   deliveryAddress?: string;
+  requestedDeliveryDate?: string;
   paymentMethod: 'venmo' | 'zelle' | 'cashapp' | 'card' | 'cash' | 'pay_later';
   paymentNowChoice?: 'pay_now' | 'pay_at_pickup';
   paymentDetails?: string; // Card token or payment confirmation
@@ -149,6 +150,21 @@ interface OutgoingOrderLine {
 export function useCheckout() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const readFunctionErrorMessage = async (invokeError: any): Promise<string | null> => {
+    try {
+      const context = invokeError?.context;
+      if (!context?.json) return null;
+      const payload = await context.json();
+      if (typeof payload?.error === 'string' && payload.error) {
+        return payload.error;
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  };
 
   const createOrder = async (
     tenantId: string,
@@ -354,6 +370,7 @@ export function useCheckout() {
         customerPhone: checkoutData.customerPhone,
         deliveryMethod: checkoutData.deliveryMethod,
         deliveryAddress: checkoutData.deliveryAddress,
+        requestedDeliveryDate: checkoutData.requestedDeliveryDate,
         deliveryNotes: checkoutData.deliveryNotes,
         paymentMethod: checkoutData.paymentMethod,
         paymentNowChoice: checkoutData.paymentNowChoice,
@@ -390,6 +407,22 @@ export function useCheckout() {
 
       if (functionError) {
         console.error('❌ [createOrder] Edge Function returned error:', functionError);
+        const functionMessage = await readFunctionErrorMessage(functionError);
+        if (functionMessage === 'delivery_date_capacity_reached') {
+          throw new Error('That delivery date is full. Please choose another date.');
+        }
+        if (functionMessage === 'delivery_date_in_past') {
+          throw new Error('Please choose a future delivery date.');
+        }
+        if (functionMessage === 'delivery_date_outside_window') {
+          throw new Error('That delivery date is outside the booking window. Please choose another date.');
+        }
+        if (functionMessage === 'delivery_date_not_allowed') {
+          throw new Error('That date is not part of this store\'s delivery schedule. Please choose another date.');
+        }
+        if (functionMessage === 'delivery_date_before_lead_time') {
+          throw new Error('That date is too soon for this store\'s lead time. Please choose a later date.');
+        }
         throw functionError;
       }
 

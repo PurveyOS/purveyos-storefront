@@ -32,6 +32,14 @@ export interface StorefrontSettings {
   delivery_origin_lng?: number | null;
   delivery_zones?: any[];
   delivery_schedule_note?: string;
+  delivery_date_scheduling_enabled?: boolean;
+  delivery_max_per_day?: number;
+  delivery_date_window_days?: number;
+  delivery_schedule_mode?: 'weekly' | 'monthly';
+  delivery_allowed_weekdays?: number[];
+  delivery_allowed_month_days?: number[];
+  delivery_allowed_month_dates?: string[];
+  delivery_lead_time_days?: number;
   shipping_charge_cents?: number;
   pickup_locations?: Array<{ name: string; address: string }>;
   storefront_payment_policy?: 'pay_now' | 'pay_at_pickup' | 'both';

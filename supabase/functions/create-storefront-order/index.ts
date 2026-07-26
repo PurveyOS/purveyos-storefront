@@ -33,6 +33,7 @@ interface OrderRequest {
   customerEmail: string
   customerPhone: string
   deliveryMethod: 'pickup' | 'delivery' | 'shipping' | 'dropoff' | 'other'
+  requestedDeliveryDate?: string
   deliveryAddress?: string
   deliveryNotes?: string
   customerZip?: string
@@ -491,6 +492,21 @@ serve(async (req: Request) => {
     // Start a transaction by using multiple operations
     // 1. Create the order
     const orderId = crypto.randomUUID()
+
+    const normalizedRequestedDeliveryDate =
+      orderRequest.deliveryMethod === 'delivery' && typeof orderRequest.requestedDeliveryDate === 'string'
+        ? orderRequest.requestedDeliveryDate.trim()
+        : null
+
+    if (orderRequest.deliveryMethod === 'delivery' && normalizedRequestedDeliveryDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedRequestedDeliveryDate)) {
+      return new Response(
+        JSON.stringify({ error: 'requested_delivery_date_invalid' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
     
     // Build note field with delivery/payment info
     const noteParts = []
@@ -502,6 +518,9 @@ serve(async (req: Request) => {
     }
     if (orderRequest.deliveryAddress) {
       noteParts.push(`address: ${orderRequest.deliveryAddress}`)
+    }
+    if (normalizedRequestedDeliveryDate) {
+      noteParts.push(`requested delivery date: ${normalizedRequestedDeliveryDate}`)
     }
     if (orderRequest.shippingChargeCents && orderRequest.shippingChargeCents > 0) {
       noteParts.push(`shipping charge: $${(orderRequest.shippingChargeCents / 100).toFixed(2)}`)
@@ -531,6 +550,8 @@ serve(async (req: Request) => {
         customer_city: orderRequest.customerCity ?? null,
         customer_state: orderRequest.customerState ?? null,
         note: note || null,
+        fulfillment_method: orderRequest.deliveryMethod,
+        requested_delivery_date: normalizedRequestedDeliveryDate,
         subtotal_cents: subtotalCentsServer,
         tax_cents: taxCentsServer,
         shipping_cents: shippingChargeCentsServer,
@@ -571,6 +592,24 @@ serve(async (req: Request) => {
 
     if (orderError) {
       console.error('Error creating order:', orderError)
+      const orderMessage = `${orderError.message || ''}`
+      if (
+        orderMessage.includes('delivery_date_capacity_reached') ||
+        orderMessage.includes('delivery_date_in_past') ||
+        orderMessage.includes('delivery_date_outside_window') ||
+        orderMessage.includes('delivery_date_not_allowed') ||
+        orderMessage.includes('delivery_date_before_lead_time')
+      ) {
+        return new Response(
+          JSON.stringify({
+            error: orderMessage,
+          }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        )
+      }
       throw orderError
     }
 
