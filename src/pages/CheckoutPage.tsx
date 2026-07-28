@@ -53,6 +53,7 @@ function buildQrImageFromValue(value: string | null | undefined): string | null 
 
 export function CheckoutPage() {
   const isDev = import.meta.env.DEV;
+  type CheckoutSection = 'contact' | 'fulfillment' | 'payment';
 
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
@@ -147,6 +148,9 @@ export function CheckoutPage() {
   const [showDeliverySuggestions, setShowDeliverySuggestions] = useState(false);
   const [loadingDeliverySuggestions, setLoadingDeliverySuggestions] = useState(false);
   const deliveryAutocompleteTimeoutRef = useRef<number | null>(null);
+  const deliveryFeeAutoCalculateTimeoutRef = useRef<number | null>(null);
+  const lastDeliveryFeeAddressKeyRef = useRef<string | null>(null);
+  const deliveryFeeInFlightRef = useRef(false);
   const [deliveryError, setDeliveryError] = useState('');
   const [deliveryDateOptions, setDeliveryDateOptions] = useState<DeliveryDateOption[]>([]);
   const [deliveryDatesLoading, setDeliveryDatesLoading] = useState(false);
@@ -293,6 +297,9 @@ export function CheckoutPage() {
   const [needsStripeConfirmation, setNeedsStripeConfirmation] = useState(false);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [dismissedCheckoutError, setDismissedCheckoutError] = useState(false);
+  const [openSection, setOpenSection] = useState<CheckoutSection>('contact');
+  const prevContactCompleteRef = useRef(false);
+  const prevFulfillmentCompleteRef = useRef(false);
   const stripeCardRef = useRef<StripeCardFormHandle>(null);
   
   // Discount state
@@ -437,6 +444,11 @@ export function CheckoutPage() {
     state: normalizeState(address.state),
     zip: normalizeZip(address.zip),
   });
+
+  const getAddressCacheKey = (address: ShippingAddress) => {
+    const normalized = normalizeAddress(address);
+    return `${normalized.street}|${normalized.city}|${normalized.state}|${normalized.zip}`.toLowerCase();
+  };
 
   const parseSavedAddress = (value: string): ShippingAddress | null => {
     if (!value?.trim()) return null;
@@ -1086,10 +1098,15 @@ export function CheckoutPage() {
       if (deliveryAutocompleteTimeoutRef.current) {
         window.clearTimeout(deliveryAutocompleteTimeoutRef.current);
       }
+      if (deliveryFeeAutoCalculateTimeoutRef.current) {
+        window.clearTimeout(deliveryFeeAutoCalculateTimeoutRef.current);
+      }
     };
   }, []);
 
-  const calculateDeliveryFee = async () => {
+  const calculateDeliveryFee = async (options?: { force?: boolean }) => {
+    if (deliveryFeeInFlightRef.current) return;
+
     let normalizedAddress = normalizeAddress(deliveryAddress);
     let fullAddress = deliveryAddressInput.trim() || formatDeliveryAddress(normalizedAddress);
 
@@ -1107,7 +1124,14 @@ export function CheckoutPage() {
     setDeliveryAddress(normalizedAddress);
 
     if (!fullAddress || !tenant?.id) return;
+
+    const addressKey = getAddressCacheKey(normalizedAddress);
+    if (!options?.force && lastDeliveryFeeAddressKeyRef.current === addressKey) {
+      return;
+    }
+    lastDeliveryFeeAddressKeyRef.current = addressKey;
     
+    deliveryFeeInFlightRef.current = true;
     setGeocodingDelivery(true);
     setDeliveryError('');
     setDeliveryGeoResult(null);
@@ -1147,9 +1171,35 @@ export function CheckoutPage() {
       console.error('Delivery geocode error:', err);
       setDeliveryError('Failed to calculate delivery fee. Please try again.');
     } finally {
+      deliveryFeeInFlightRef.current = false;
       setGeocodingDelivery(false);
     }
   };
+
+  useEffect(() => {
+    if (formData.deliveryMethod !== 'delivery') return;
+    if (!tenant?.id) return;
+
+    const normalizedAddress = normalizeAddress(deliveryAddress);
+    if (!hasCompleteShippingAddress(normalizedAddress)) return;
+
+    const addressKey = getAddressCacheKey(normalizedAddress);
+    if (lastDeliveryFeeAddressKeyRef.current === addressKey) return;
+
+    if (deliveryFeeAutoCalculateTimeoutRef.current) {
+      window.clearTimeout(deliveryFeeAutoCalculateTimeoutRef.current);
+    }
+
+    deliveryFeeAutoCalculateTimeoutRef.current = window.setTimeout(() => {
+      void calculateDeliveryFee();
+    }, 450);
+
+    return () => {
+      if (deliveryFeeAutoCalculateTimeoutRef.current) {
+        window.clearTimeout(deliveryFeeAutoCalculateTimeoutRef.current);
+      }
+    };
+  }, [formData.deliveryMethod, tenant?.id, deliveryAddress.street, deliveryAddress.city, deliveryAddress.state, deliveryAddress.zip]);
 
   // Helper to get the delivery charge in cents
   const deliveryChargeCents = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
@@ -1496,7 +1546,9 @@ export function CheckoutPage() {
         effectiveDeliveryAddress = resolvedDelivery.normalizedAddress;
       }
       if (!deliveryGeoResult?.matched_zone) {
-        setOrderError('Please calculate the delivery fee before placing your order.');
+        setOrderError(geocodingDelivery
+          ? 'Delivery fee is still calculating. Please wait a moment and try again.'
+          : 'Please provide a valid delivery address inside the delivery area.');
         return;
       }
     }
@@ -1816,6 +1868,76 @@ export function CheckoutPage() {
     }
   }, [orderError, checkoutError]);
 
+  const hasValidContactInfo = Boolean(
+    formData.customerName.trim() &&
+    formData.customerEmail.trim() &&
+    formData.customerPhone.trim()
+  );
+
+  const hasSelectedDeliveryDate = Boolean(formData.requestedDeliveryDate);
+  const hasDeliveryZoneMatch = Boolean(deliveryGeoResult?.matched_zone);
+  const hasShippingEstimate = Boolean(shippingEstimate?.estimate_cents);
+  const pickupLocations = ((storefrontData?.settings as any)?.pickup_locations || []) as Array<any>;
+  const hasPickupLocation = Boolean(formData.fulfillmentLocation?.trim());
+  const pickupLocationRequired = pickupLocations.length > 0;
+
+  const isFulfillmentComplete = (() => {
+    if (formData.deliveryMethod === 'pickup') {
+      return pickupLocationRequired ? hasPickupLocation : true;
+    }
+    if (formData.deliveryMethod === 'delivery') {
+      return hasSelectedDeliveryDate && hasDeliveryZoneMatch;
+    }
+    if (formData.deliveryMethod === 'shipping') {
+      return hasShippingEstimate;
+    }
+    return false;
+  })();
+
+  const isPaymentComplete = Boolean(formData.paymentMethod);
+  const isCheckoutReady = cart.items.length > 0 && hasValidContactInfo && isFulfillmentComplete && isPaymentComplete;
+
+  const firstIncompleteSection: CheckoutSection = !hasValidContactInfo
+    ? 'contact'
+    : !isFulfillmentComplete
+    ? 'fulfillment'
+    : !isPaymentComplete
+    ? 'payment'
+    : 'payment';
+  const contactStatusText = hasValidContactInfo ? 'Complete' : 'Required';
+  const fulfillmentStatusText = isFulfillmentComplete ? 'Complete' : 'Required';
+  const paymentStatusText = isPaymentComplete ? 'Complete' : 'Required';
+
+  const handleStepHeaderClick = (section: CheckoutSection) => {
+    setOpenSection(section);
+  };
+
+  const ensureCheckoutReadiness = () => {
+    if (isCheckoutReady) return true;
+    setOpenSection(firstIncompleteSection);
+    return false;
+  };
+
+  useEffect(() => {
+    const wasComplete = prevContactCompleteRef.current;
+    const justCompleted = !wasComplete && hasValidContactInfo;
+    prevContactCompleteRef.current = hasValidContactInfo;
+
+    if (openSection === 'contact' && justCompleted) {
+      setOpenSection('fulfillment');
+    }
+  }, [hasValidContactInfo, openSection]);
+
+  useEffect(() => {
+    const wasComplete = prevFulfillmentCompleteRef.current;
+    const justCompleted = !wasComplete && isFulfillmentComplete;
+    prevFulfillmentCompleteRef.current = isFulfillmentComplete;
+
+    if (openSection === 'fulfillment' && justCompleted) {
+      setOpenSection('payment');
+    }
+  }, [isFulfillmentComplete, openSection]);
+
   if (dataLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -2035,12 +2157,37 @@ export function CheckoutPage() {
             </div>
           )}
           
-          <form onSubmit={handleSubmit} className="grid lg:grid-cols-2 gap-8">
+          <form
+            onSubmit={(e) => {
+              if (!ensureCheckoutReadiness()) {
+                e.preventDefault();
+                setOrderError('Please complete all required checkout sections before placing your order.');
+                return;
+              }
+              void handleSubmit(e);
+            }}
+            className="grid lg:grid-cols-2 gap-8"
+          >
             {/* Customer Information */}
             <div className="space-y-6">
               <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6">Contact Information</h2>
-                <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => handleStepHeaderClick('contact')}
+                  className="w-full flex items-center justify-between text-left"
+                >
+                  <h2 className="text-xl font-semibold text-gray-800">Contact Information</h2>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${hasValidContactInfo ? 'text-green-700' : 'text-amber-700'}`}>
+                      {contactStatusText}
+                    </span>
+                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-sm font-bold ${hasValidContactInfo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {hasValidContactInfo ? '✓' : '1'}
+                    </span>
+                  </div>
+                </button>
+                {openSection === 'contact' && (
+                <div className="space-y-4 mt-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Full Name *
@@ -2088,12 +2235,29 @@ export function CheckoutPage() {
                     />
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Fulfillment Method */}
               <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6">Fulfillment Method</h2>
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <button
+                  type="button"
+                  onClick={() => handleStepHeaderClick('fulfillment')}
+                  className="w-full flex items-center justify-between text-left"
+                >
+                  <h2 className="text-xl font-semibold text-gray-800">Fulfillment Method</h2>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${isFulfillmentComplete ? 'text-green-700' : 'text-amber-700'}`}>
+                      {fulfillmentStatusText}
+                    </span>
+                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-sm font-bold ${isFulfillmentComplete ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {isFulfillmentComplete ? '✓' : '2'}
+                    </span>
+                  </div>
+                </button>
+                {openSection === 'fulfillment' && (
+                <>
+                <div className="grid grid-cols-2 gap-4 mb-4 mt-6">
                   {/* Show Pickup if enabled */}
                   {(storefrontData?.settings as any)?.allow_pickup && (
                     <button
@@ -2435,8 +2599,6 @@ export function CheckoutPage() {
                     )}
                   </div>
                 )}
-              </div>
-
               {/* Delivery Address Input & Fee Calculator */}
               {formData.deliveryMethod === 'delivery' && (
                 <div className="mt-4 space-y-4">
@@ -2656,12 +2818,12 @@ export function CheckoutPage() {
                   <div>
                     <button
                       type="button"
-                      onClick={calculateDeliveryFee}
+                      onClick={() => void calculateDeliveryFee({ force: true })}
                       disabled={geocodingDelivery || !deliveryAddressInput.trim()}
                       className="w-full py-3 px-4 rounded-lg font-medium transition-all border-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ borderColor: primaryColor, color: primaryColor }}
                     >
-                      {geocodingDelivery ? 'Calculating...' : 'Calculate Delivery Fee'}
+                      {geocodingDelivery ? 'Calculating...' : 'Recalculate Delivery Fee'}
                     </button>
                   </div>
                   
@@ -2686,11 +2848,30 @@ export function CheckoutPage() {
                   )}
                 </div>
               )}
+                </>
+                )}
+              </div>
 
               {/* Payment Method */}
               <div className="bg-white rounded-lg shadow-md p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6">Payment Method</h2>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => handleStepHeaderClick('payment')}
+                  className="w-full flex items-center justify-between text-left"
+                >
+                  <h2 className="text-xl font-semibold text-gray-800">Payment Method</h2>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${isPaymentComplete ? 'text-green-700' : 'text-amber-700'}`}>
+                      {paymentStatusText}
+                    </span>
+                    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-sm font-bold ${isPaymentComplete ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {isPaymentComplete ? '✓' : '3'}
+                    </span>
+                  </div>
+                </button>
+                {openSection === 'payment' && (
+                <>
+                <div className="grid grid-cols-2 gap-3 mb-4 mt-6">
                   {payLaterAllowed && (
                     <button
                       type="button"
@@ -3005,6 +3186,8 @@ export function CheckoutPage() {
                     )}
                   </div>
                 )}
+                </>
+                )}
               </div>
             </div>
 
@@ -3199,12 +3382,20 @@ export function CheckoutPage() {
 
               <button
                 type="submit"
-                disabled={cartItems.length === 0 || checkoutLoading || !formData.paymentMethod}
+                disabled={checkoutLoading || !isCheckoutReady}
                 className="w-full mt-6 text-white py-3 px-4 rounded-lg font-medium transition-all duration-200 hover:opacity-90 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: primaryColor }}
               >
                 {checkoutLoading ? 'Processing...' : formData.paymentMethod === 'card' ? 'Continue to Payment' : 'Place Order'}
               </button>
+
+              {!isCheckoutReady && cartItems.length > 0 && (
+                <p className="text-xs text-amber-700 mt-3 text-center">
+                  {firstIncompleteSection === 'contact' && 'Complete Contact Information to continue.'}
+                  {firstIncompleteSection === 'fulfillment' && 'Complete Fulfillment Method details to continue.'}
+                  {firstIncompleteSection === 'payment' && 'Select a Payment Method to continue.'}
+                </p>
+              )}
 
               {checkoutOnlinePaymentFeeCents > 0 && (
                 <p className="text-xs text-gray-500 mt-3 text-center">
