@@ -53,6 +53,7 @@ interface OrderRequest {
   shippingChargeCents?: number
   shippingEstimateHighCents?: number
   deliveryChargeCents?: number
+  onlinePaymentFeeCents?: number
   depositChargeCents?: number
   isWeightEstimate?: boolean
   estimatedTotalCents?: number
@@ -247,6 +248,7 @@ serve(async (req: Request) => {
     const discountCentsServer = Math.max(0, Number(orderRequest.discountCents ?? 0))
     const shippingChargeCentsServer = Math.max(0, Number(orderRequest.shippingChargeCents ?? 0))
     const deliveryChargeCentsServer = Math.max(0, Number(orderRequest.deliveryChargeCents ?? 0))
+    const onlinePaymentFeeCentsServer = Math.max(0, Number(orderRequest.onlinePaymentFeeCents ?? 0))
     const subtotalAfterDiscountCentsServer = Math.max(0, subtotalCentsServer - discountCentsServer)
 
     const tenantChargeTax = tenantTaxConfig?.charge_tax_on_online !== false
@@ -270,7 +272,7 @@ serve(async (req: Request) => {
       taxCentsServer = Math.round(taxableAfterDiscountCents * tenantTaxRate)
     }
 
-    const totalCentsServer = subtotalAfterDiscountCentsServer + taxCentsServer + shippingChargeCentsServer + deliveryChargeCentsServer
+    const totalCentsServer = subtotalAfterDiscountCentsServer + taxCentsServer + shippingChargeCentsServer + deliveryChargeCentsServer + onlinePaymentFeeCentsServer
     if (estimatedTotalCents === null && isWeightEstimate) {
       estimatedTotalCents = totalCentsServer
     }
@@ -543,7 +545,7 @@ serve(async (req: Request) => {
       }
 
       const chargeAmountCents = hasDepositProduct
-        ? Math.max(0, Math.round(Number(orderRequest.depositChargeCents ?? totalCentsServer)))
+        ? Math.max(0, Math.round(Number((orderRequest.depositChargeCents ?? totalCentsServer) + onlinePaymentFeeCentsServer)))
         : totalCentsServer
 
       if (!Number.isFinite(chargeAmountCents) || chargeAmountCents <= 0) {
@@ -674,6 +676,7 @@ serve(async (req: Request) => {
         shipping_cents: shippingChargeCentsServer,
         shipping_estimate_high_cents: orderRequest.shippingEstimateHighCents ?? shippingChargeCentsServer,
         delivery_cents: deliveryChargeCentsServer,
+        online_payment_fee_cents: onlinePaymentFeeCentsServer,
         total_cents: totalCentsServer,
         total: (totalCentsServer / 100).toFixed(2),
         discount_cents: discountCentsServer,
@@ -704,6 +707,7 @@ serve(async (req: Request) => {
       subtotal_cents: subtotalCentsServer,
       discount_cents: discountCentsServer,
       tax_cents: taxCentsServer,
+      online_payment_fee_cents: onlinePaymentFeeCentsServer,
       total_cents: totalCentsServer,
     });
 
@@ -987,7 +991,11 @@ serve(async (req: Request) => {
               : null,
             deliveries_fulfilled: 0,  // Changed from 1 to 0 (not fulfilled yet, just ordered)
             payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
-            total_paid_cents: orderRequest.stripePaymentIntentId ? (hasDepositProduct ? (orderRequest.depositChargeCents ?? totalCentsServer) : totalCentsServer) : 0,
+            total_paid_cents: orderRequest.stripePaymentIntentId
+              ? (hasDepositProduct
+                ? ((orderRequest.depositChargeCents ?? totalCentsServer) + onlinePaymentFeeCentsServer)
+                : totalCentsServer)
+              : 0,
             stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,  // Link for idempotency + tracking
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),

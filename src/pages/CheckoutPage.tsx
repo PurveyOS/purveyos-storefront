@@ -1699,6 +1699,7 @@ export function CheckoutPage() {
     shippingChargeCents: formData.deliveryMethod === 'shipping' ? shippingChargeCents : 0,
     shippingEstimateHighCents: formData.deliveryMethod === 'shipping' ? (shippingEstimate?.range_high_cents ?? shippingChargeCents) : 0,
     deliveryChargeCents: formData.deliveryMethod === 'delivery' ? deliveryChargeCents : 0,
+    onlinePaymentFeeCents: checkoutOnlinePaymentFeeCents,
     paymentMethodId,
   },
   {

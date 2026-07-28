@@ -41,6 +41,7 @@ export interface CheckoutData {
   shippingChargeCents?: number; // Shipping charge if applicable
   shippingEstimateHighCents?: number; // Max shipping estimate shown to customer
   deliveryChargeCents?: number; // Delivery charge if applicable
+  onlinePaymentFeeCents?: number; // Online convenience fee when applicable
   depositChargeCents?: number; // Amount to collect now for deposit orders
   customerZip?: string;
   customerStreet?: string;
@@ -331,6 +332,7 @@ export function useCheckout() {
       const discountCents = checkoutData.discountCents || 0;
       const shippingChargeCents = checkoutData.shippingChargeCents || 0;
       const deliveryChargeCents = checkoutData.deliveryChargeCents || 0;
+      const onlinePaymentFeeCents = Math.max(0, Math.round(checkoutData.onlinePaymentFeeCents || 0));
 
       console.log('💰 [createOrder] Calculating totals:', { discountCents, shippingChargeCents, deliveryChargeCents, taxConfig });
 
@@ -356,7 +358,7 @@ export function useCheckout() {
       }
 
       // Add shipping/delivery charge to the final total
-      const totalCents = Math.max(0, subtotalCents - discountCents) + taxCents + shippingChargeCents + deliveryChargeCents;
+      const totalCents = Math.max(0, subtotalCents - discountCents) + taxCents + shippingChargeCents + deliveryChargeCents + onlinePaymentFeeCents;
 
       const depositChargeCents = checkoutData.depositChargeCents ?? cart.items.reduce((sum, item: any) => {
         const product = products.find((p) => p.id === item.productId) as any;
@@ -366,7 +368,14 @@ export function useCheckout() {
         return sum + depositNow;
       }, 0);
 
-      console.log('💰 [createOrder] Calculated totals:', { subtotalCents, taxCents, totalCents, shippingChargeCents });
+      console.log('💰 [createOrder] Calculated totals:', {
+        subtotalCents,
+        taxCents,
+        totalCents,
+        shippingChargeCents,
+        deliveryChargeCents,
+        onlinePaymentFeeCents,
+      });
 
       // 2.5) Derive subscription payload from cart metadata if not provided
       const subscriptionFromCart = cart.items.find((item: any) => item?.metadata?.isSubscription);
@@ -410,6 +419,7 @@ export function useCheckout() {
         shippingChargeCents,
         shippingEstimateHighCents: checkoutData.shippingEstimateHighCents ?? null,
         deliveryChargeCents,
+        onlinePaymentFeeCents,
         depositChargeCents,
 
         // Optional subscription payload (for storefront_subscriptions)
