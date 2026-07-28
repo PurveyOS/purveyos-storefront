@@ -460,6 +460,21 @@ export function useCheckout() {
         if (functionMessage.includes('out_of_stock')) {
           throw new Error('One or more items are no longer in stock. Please refresh your cart and try again.');
         }
+        if (functionMessage.includes('card_payment_method_required')) {
+          throw new Error('Card details were not captured. Please re-enter your card and try again.');
+        }
+        if (functionMessage.includes('card_authentication_required')) {
+          throw new Error('Your card requires additional authentication. Please try again and complete verification.');
+        }
+        if (functionMessage.includes('card_payment_failed')) {
+          throw new Error('Card payment failed. Please check your card details or use a different payment method.');
+        }
+        if (functionMessage.includes('stripe_account_not_connected')) {
+          throw new Error('This store is not configured for card payments yet. Please choose another payment method.');
+        }
+        if (functionMessage.includes('payment_processing_not_configured')) {
+          throw new Error('Card payment processing is temporarily unavailable. Please choose another payment method.');
+        }
 
         // Fallback when Supabase error body cannot be parsed from context.
         if (

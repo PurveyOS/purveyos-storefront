@@ -2,6 +2,8 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 // @ts-ignore: Deno deploy provides these remote modules at runtime
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.95.0'
+// @ts-ignore: Deno deploy provides these remote modules at runtime
+import Stripe from 'https://esm.sh/stripe@14.8.0?target=deno'
 
 // Minimal Deno env typing for TypeScript tooling
 declare const Deno: { env: { get(key: string): string | undefined } }
@@ -55,6 +57,8 @@ interface OrderRequest {
   isWeightEstimate?: boolean
   estimatedTotalCents?: number
   stripePaymentIntentId?: string  // Stripe payment intent ID for idempotency
+  confirmationToken?: string
+  paymentMethodId?: string
   subscription?: {
     enabled: boolean
     cadence?: 'weekly' | 'biweekly' | 'monthly'
@@ -157,7 +161,7 @@ serve(async (req: Request) => {
 
     const { data: tenantTaxConfig, error: tenantTaxError } = await supabaseAdmin
       .from('tenants')
-      .select('tax_rate, tax_included, charge_tax_on_online')
+      .select('tax_rate, tax_included, charge_tax_on_online, stripe_account_id')
       .eq('id', orderRequest.tenantId)
       .single()
 
@@ -505,6 +509,101 @@ serve(async (req: Request) => {
       }
 
       console.log('✅ Initial shortages resolved after cache recheck — proceeding with order')
+    }
+
+    // Charge card payments before creating order records so checkout cannot succeed without a Stripe charge.
+    let chargedStripePaymentIntentId: string | null = orderRequest.stripePaymentIntentId ?? null
+    const shouldChargeCardNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
+    if (shouldChargeCardNow && !chargedStripePaymentIntentId) {
+      const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
+      if (!stripeSecretKey) {
+        return new Response(JSON.stringify({ error: 'payment_processing_not_configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const connectedAccountId = typeof tenantTaxConfig?.stripe_account_id === 'string'
+        ? tenantTaxConfig.stripe_account_id
+        : ''
+      if (!connectedAccountId) {
+        return new Response(JSON.stringify({ error: 'stripe_account_not_connected' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const paymentMethodId = (orderRequest.paymentMethodId || '').trim()
+      const confirmationToken = (orderRequest.confirmationToken || '').trim()
+      if (!paymentMethodId && !confirmationToken) {
+        return new Response(JSON.stringify({ error: 'card_payment_method_required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const chargeAmountCents = hasDepositProduct
+        ? Math.max(0, Math.round(Number(orderRequest.depositChargeCents ?? totalCentsServer)))
+        : totalCentsServer
+
+      if (!Number.isFinite(chargeAmountCents) || chargeAmountCents <= 0) {
+        return new Response(JSON.stringify({ error: 'invalid_charge_amount' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      try {
+        const stripe = new Stripe(stripeSecretKey, {
+          apiVersion: '2023-10-16',
+          httpClient: Stripe.createFetchHttpClient(),
+        })
+
+        const paymentIntentParams: Record<string, any> = {
+          amount: chargeAmountCents,
+          currency: 'usd',
+          payment_method_types: ['card'],
+          confirm: true,
+          return_url: `${req.headers.get('origin') || 'https://app.purveyos.com'}/checkout/success`,
+          metadata: {
+            tenantId: orderRequest.tenantId,
+            customerEmail: orderRequest.customerEmail,
+            source: 'storefront',
+          },
+        }
+
+        if (paymentMethodId) {
+          paymentIntentParams.payment_method = paymentMethodId
+        } else {
+          paymentIntentParams.confirmation_token = confirmationToken
+        }
+
+        const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams, {
+          stripeAccount: connectedAccountId,
+        })
+
+        if (paymentIntent.status === 'succeeded') {
+          chargedStripePaymentIntentId = paymentIntent.id
+          orderRequest.stripePaymentIntentId = paymentIntent.id
+        } else if (paymentIntent.status === 'requires_action') {
+          return new Response(JSON.stringify({ error: 'card_authentication_required' }), {
+            status: 402,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        } else {
+          console.error('Card payment did not succeed:', paymentIntent.status)
+          return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
+            status: 402,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      } catch (stripeError) {
+        console.error('Error charging Stripe card payment:', stripeError)
+        return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     // Start a transaction by using multiple operations
