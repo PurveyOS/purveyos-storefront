@@ -298,6 +298,7 @@ export function CheckoutPage() {
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [dismissedCheckoutError, setDismissedCheckoutError] = useState(false);
   const [openSection, setOpenSection] = useState<CheckoutSection>('contact');
+  const [fulfillmentChargeAcknowledged, setFulfillmentChargeAcknowledged] = useState(false);
   const prevContactCompleteRef = useRef(false);
   const prevFulfillmentCompleteRef = useRef(false);
   const stripeCardRef = useRef<StripeCardFormHandle>(null);
@@ -1878,6 +1879,20 @@ export function CheckoutPage() {
   const hasSelectedDeliveryDate = Boolean(formData.requestedDeliveryDate);
   const hasDeliveryZoneMatch = Boolean(deliveryGeoResult?.matched_zone);
   const hasShippingEstimate = Boolean(shippingEstimate?.estimate_cents);
+  const currentFulfillmentChargeCents = formData.deliveryMethod === 'shipping'
+    ? (
+      shippingEstimate?.range_high_cents
+      ?? shippingEstimate?.estimate_cents
+      ?? ((storefrontData?.settings as any)?.shipping_charge_cents ?? 0)
+    )
+    : formData.deliveryMethod === 'delivery'
+      ? (deliveryGeoResult?.matched_zone?.charge_cents ?? 0)
+      : 0;
+  const requiresFulfillmentChargeAck =
+    (formData.deliveryMethod === 'shipping' || formData.deliveryMethod === 'delivery') &&
+    currentFulfillmentChargeCents > 0;
+  const hasFulfillmentChargeAck = !requiresFulfillmentChargeAck || fulfillmentChargeAcknowledged;
+  const isMissingFulfillmentChargeAck = requiresFulfillmentChargeAck && !fulfillmentChargeAcknowledged;
   const pickupLocations = ((storefrontData?.settings as any)?.pickup_locations || []) as Array<any>;
   const hasPickupLocation = Boolean(formData.fulfillmentLocation?.trim());
   const pickupLocationRequired = pickupLocations.length > 0;
@@ -1887,10 +1902,10 @@ export function CheckoutPage() {
       return pickupLocationRequired ? hasPickupLocation : true;
     }
     if (formData.deliveryMethod === 'delivery') {
-      return hasSelectedDeliveryDate && hasDeliveryZoneMatch;
+      return hasSelectedDeliveryDate && hasDeliveryZoneMatch && hasFulfillmentChargeAck;
     }
     if (formData.deliveryMethod === 'shipping') {
-      return hasShippingEstimate;
+      return hasShippingEstimate && hasFulfillmentChargeAck;
     }
     return false;
   })();
@@ -1938,6 +1953,10 @@ export function CheckoutPage() {
       setOpenSection('payment');
     }
   }, [isFulfillmentComplete, openSection]);
+
+  useEffect(() => {
+    setFulfillmentChargeAcknowledged(false);
+  }, [formData.deliveryMethod, currentFulfillmentChargeCents]);
 
   if (dataLoading) {
     return (
@@ -2849,6 +2868,30 @@ export function CheckoutPage() {
                   )}
                 </div>
               )}
+
+              {requiresFulfillmentChargeAck && (
+                <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                  <label className="flex items-start gap-3 text-sm text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={fulfillmentChargeAcknowledged}
+                      onChange={(e) => setFulfillmentChargeAcknowledged(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-amber-300"
+                      style={{ accentColor: primaryColor }}
+                    />
+                    <span>
+                      I acknowledge the
+                      {' '}
+                      {formData.deliveryMethod === 'shipping' ? 'shipping' : 'delivery'}
+                      {' '}
+                      charge of
+                      {' '}
+                      ${((currentFulfillmentChargeCents || 0) / 100).toFixed(2)}
+                      .
+                    </span>
+                  </label>
+                </div>
+              )}
                 </>
                 )}
               </div>
@@ -3393,7 +3436,8 @@ export function CheckoutPage() {
               {!isCheckoutReady && cartItems.length > 0 && (
                 <p className="text-xs text-amber-700 mt-3 text-center">
                   {firstIncompleteSection === 'contact' && 'Complete Contact Information to continue.'}
-                  {firstIncompleteSection === 'fulfillment' && 'Complete Fulfillment Method details to continue.'}
+                  {firstIncompleteSection === 'fulfillment' && !isMissingFulfillmentChargeAck && 'Complete Fulfillment Method details to continue.'}
+                  {firstIncompleteSection === 'fulfillment' && isMissingFulfillmentChargeAck && 'Please acknowledge the shipping or delivery charge to continue.'}
                   {firstIncompleteSection === 'payment' && 'Select a Payment Method to continue.'}
                 </p>
               )}
