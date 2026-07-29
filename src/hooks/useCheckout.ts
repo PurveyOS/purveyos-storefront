@@ -148,38 +148,83 @@ interface OutgoingOrderLine {
   pricePer?: 'weight' | 'fixed' | 'unit' | 'lb' | string;
 }
 
+interface FunctionShortage {
+  productId?: string;
+  productName?: string;
+  requestedQty?: number;
+  requestedWeightLbs?: number | null;
+  binWeight?: number | null;
+  weightLbs?: number | null;
+  lineType?: 'exact_package' | 'pack_for_you';
+  available?: number;
+}
+
+function formatShortageLine(shortage: FunctionShortage, lines: OutgoingOrderLine[]): string {
+  const requestedWeight =
+    Number(shortage.requestedWeightLbs ?? shortage.weightLbs ?? shortage.binWeight ?? 0) || 0;
+  const requestedQty = Math.max(1, Number(shortage.requestedQty ?? 1) || 1);
+
+  const matchedLine = lines.find((line) => {
+    if (line.productId !== shortage.productId) return false;
+
+    const shortageBinWeight = shortage.binWeight ?? null;
+    if (shortageBinWeight === null || shortageBinWeight === undefined) return true;
+
+    return Number(line.binWeight ?? line.weightLbs ?? line.requestedWeightLbs ?? 0) === Number(shortageBinWeight);
+  });
+
+  const label = shortage.productName || matchedLine?.productName || 'Selected item';
+  const available = Math.max(0, Number(shortage.available ?? 0));
+
+  if (requestedWeight > 0) {
+    return `${label} (${requestedWeight.toFixed(2)} lb package, qty ${requestedQty}) - available now: ${available.toFixed(2)} lb`;
+  }
+
+  return `${label} (qty ${requestedQty}) - available now: ${available}`;
+}
+
+function buildOutOfStockMessage(payload: any, lines: OutgoingOrderLine[]): string | null {
+  const shortages: FunctionShortage[] = Array.isArray(payload?.shortages) ? payload.shortages : [];
+  if (shortages.length === 0) return null;
+
+  const details = shortages.map((shortage) => `- ${formatShortageLine(shortage, lines)}`);
+  return `Some selected packages are no longer available. Remove or adjust these items:\n${details.join('\n')}`;
+}
+
 export function useCheckout() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const readFunctionErrorMessage = async (invokeError: any): Promise<string | null> => {
+  const readFunctionErrorDetails = async (invokeError: any): Promise<{ message: string | null; payload: any }> => {
     try {
       const context = invokeError?.context;
       if (context?.json) {
         const payload = await context.json();
         if (typeof payload?.error === 'string' && payload.error) {
-          return payload.error;
+          return { message: payload.error, payload };
         }
         if (typeof payload?.message === 'string' && payload.message) {
-          return payload.message;
+          return { message: payload.message, payload };
         }
         if (typeof payload === 'string' && payload) {
-          return payload;
+          return { message: payload, payload: null };
         }
+        return { message: null, payload };
       }
       if (context?.text) {
         const textPayload = await context.text();
-        if (!textPayload) return null;
+        if (!textPayload) return { message: null, payload: null };
         try {
           const parsed = JSON.parse(textPayload);
           if (typeof parsed?.error === 'string' && parsed.error) {
-            return parsed.error;
+            return { message: parsed.error, payload: parsed };
           }
           if (typeof parsed?.message === 'string' && parsed.message) {
-            return parsed.message;
+            return { message: parsed.message, payload: parsed };
           }
+          return { message: null, payload: parsed };
         } catch {
-          return textPayload;
+          return { message: textPayload, payload: null };
         }
       }
     } catch {
@@ -187,10 +232,10 @@ export function useCheckout() {
     }
 
     if (typeof invokeError?.message === 'string' && invokeError.message) {
-      return invokeError.message;
+      return { message: invokeError.message, payload: null };
     }
 
-    return null;
+    return { message: null, payload: null };
   };
   const createOrder = async (
     tenantId: string,
@@ -442,7 +487,8 @@ export function useCheckout() {
 
       if (functionError) {
         console.error('❌ [createOrder] Edge Function returned error:', functionError);
-        const functionMessage = (await readFunctionErrorMessage(functionError)) || '';
+        const { message: parsedFunctionMessage, payload: functionPayload } = await readFunctionErrorDetails(functionError);
+        const functionMessage = parsedFunctionMessage || '';
         if (functionMessage.includes('delivery_date_capacity_reached')) {
           throw new Error('That delivery date is full. Please choose another date.');
         }
@@ -468,7 +514,8 @@ export function useCheckout() {
           throw new Error('This deposit item has conflicting pricing settings. Please contact the store to fix product setup.');
         }
         if (functionMessage.includes('out_of_stock')) {
-          throw new Error('One or more items are no longer in stock. Please refresh your cart and try again.');
+          const detailedOutOfStockMessage = buildOutOfStockMessage(functionPayload, lines);
+          throw new Error(detailedOutOfStockMessage || 'One or more items are no longer in stock. Please refresh your cart and try again.');
         }
         if (functionMessage.includes('card_payment_method_required')) {
           throw new Error('Card details were not captured. Please re-enter your card and try again.');
@@ -503,6 +550,10 @@ export function useCheckout() {
 
       if (!(data as any)?.success) {
         console.error('❌ [createOrder] Order creation failed:', (data as any)?.error);
+        if ((data as any)?.error === 'out_of_stock') {
+          const detailedOutOfStockMessage = buildOutOfStockMessage(data, lines);
+          throw new Error(detailedOutOfStockMessage || 'One or more items are no longer in stock. Please refresh your cart and try again.');
+        }
         throw new Error((data as any)?.error || 'Failed to create order');
       }
 

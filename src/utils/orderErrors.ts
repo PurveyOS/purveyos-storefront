@@ -18,6 +18,13 @@ export function friendlyOrderError(raw: string | null | undefined): string {
 
   const msg = raw.toLowerCase();
 
+  if (
+    msg.includes('some selected packages are no longer available') ||
+    msg.includes('remove or adjust these items:')
+  ) {
+    return raw;
+  }
+
   if (isInventoryOrderError(raw)) {
     return 'One or more items in your cart are no longer available. Please go back and update your cart.';
   }

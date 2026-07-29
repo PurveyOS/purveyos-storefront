@@ -358,7 +358,16 @@ serve(async (req: Request) => {
       ? Math.max(0, (baseOrderTotalExcludingFulfillmentCents / 100) - depositAmount)
       : null
 
-    const shortages: Array<{ productId: string; binWeight?: number | null; weightLbs?: number | null; available: number }> = []
+    const shortages: Array<{
+      productId: string;
+      productName: string;
+      requestedQty: number;
+      requestedWeightLbs?: number | null;
+      binWeight?: number | null;
+      weightLbs?: number | null;
+      lineType?: 'exact_package' | 'pack_for_you';
+      available: number;
+    }> = []
 
     for (const line of orderRequest.lines) {
       // Skip inventory check for pre-order items
@@ -379,7 +388,16 @@ serve(async (req: Request) => {
         const availableBulk = Math.max(0, (bulkBin.qty_lbs ?? 0) - (bulkBin.reserved_lbs ?? 0))
         const requiredBulk = requestedWeightTotal
         if (requiredBulk > availableBulk) {
-          shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available: availableBulk })
+          shortages.push({
+            productId: line.productId,
+            productName: line.productName,
+            requestedQty: line.qty ?? 1,
+            requestedWeightLbs: requestedWeight,
+            binWeight: line.binWeight,
+            weightLbs: line.weightLbs,
+            lineType: line.lineType,
+            available: availableBulk,
+          })
         }
         continue
       }
@@ -405,7 +423,16 @@ serve(async (req: Request) => {
         const requiredWeight = requestedWeight * required
 
         if (requiredWeight > available) {
-          shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+          shortages.push({
+            productId: line.productId,
+            productName: line.productName,
+            requestedQty: required,
+            requestedWeightLbs: requestedWeight,
+            binWeight: line.binWeight,
+            weightLbs: line.weightLbs,
+            lineType: line.lineType,
+            available,
+          })
         }
       } else {
         const productBins = (binsByProduct.get(line.productId) ?? []).filter((b) => b.bin_kind !== 'bulk_weight')
@@ -415,7 +442,16 @@ serve(async (req: Request) => {
         const available = Math.max(0, (availableFromBins !== null ? availableFromBins : (productRow?.qty ?? 0)) - activeDemand.qty)
 
         if (required > available) {
-          shortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+          shortages.push({
+            productId: line.productId,
+            productName: line.productName,
+            requestedQty: required,
+            requestedWeightLbs: line.requestedWeightLbs ?? null,
+            binWeight: line.binWeight,
+            weightLbs: line.weightLbs,
+            lineType: line.lineType,
+            available,
+          })
         }
       }
     }
@@ -476,22 +512,33 @@ serve(async (req: Request) => {
 
           console.warn(`📊 Stock recheck for ${line.productId}: totalWeight=${totalWeight}, reservedBinWeight=${reservedBinWeight}, cachedReservedWeight=${cachedReservedWeight}, actualReservedWeight=${actualReservedWeight}, available=${available}, required=${requiredWeight}`)
 
-          // If cache was stale, fix it in the background (fire-and-forget)
+          // If cache was stale, fix it immediately to avoid dangling async work in edge runtime.
           if (cachedReservedWeight !== actualReservedWeight) {
             console.warn(`⚠️ Cache drift detected for product ${line.productId}: cached=${cachedReservedWeight}, actual=${actualReservedWeight}. Repairing.`)
-            supabaseAdmin
+            const { error: repairError } = await supabaseAdmin
               .from('products')
               .update({ reserved_weight_lbs: actualReservedWeight })
               .eq('id', line.productId)
               .eq('tenant_id', orderRequest.tenantId)
-              .then(({ error }: { error: any }) => {
-                if (error) console.error('Failed to repair reserved_weight_lbs cache:', error)
-                else console.log(`✅ Repaired reserved_weight_lbs for ${line.productId}: ${cachedReservedWeight} → ${actualReservedWeight}`)
-              })
+
+            if (repairError) {
+              console.error('Failed to repair reserved_weight_lbs cache:', repairError)
+            } else {
+              console.log(`✅ Repaired reserved_weight_lbs for ${line.productId}: ${cachedReservedWeight} → ${actualReservedWeight}`)
+            }
           }
 
           if (requiredWeight > available) {
-            verifiedShortages.push({ productId: line.productId, binWeight: line.binWeight, weightLbs: line.weightLbs, available })
+            verifiedShortages.push({
+              productId: line.productId,
+              productName: line.productName,
+              requestedQty: required,
+              requestedWeightLbs: reqWeight,
+              binWeight: line.binWeight,
+              weightLbs: line.weightLbs,
+              lineType: line.lineType,
+              available,
+            })
           }
         } else {
           // Non-lb items: recheck uses bin data directly (no cache dependency), so keep original shortage
@@ -898,6 +945,18 @@ serve(async (req: Request) => {
 
       if (lineError) {
         console.error('Error creating order line:', lineError)
+        const lineMessage = `${lineError.message || ''}`
+        if (lineMessage.includes('out_of_stock')) {
+          return new Response(
+            JSON.stringify({
+              error: lineMessage,
+            }),
+            {
+              status: 409,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          )
+        }
         throw lineError
       }
 
