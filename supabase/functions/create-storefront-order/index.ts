@@ -869,115 +869,17 @@ serve(async (req: Request) => {
         isPreOrder: line.isPreOrder
       })
 
-      // Build package_key for bin-based items (LB products)
-      const product = productsById.get(line.productId)
-      const bulkBinKey = `${line.productId}|bulk`
-      const bulkBin = bulkBinsByProduct.get(line.productId) ?? binsByKey.get(bulkBinKey)
       const isPackForYou = line.lineType === 'pack_for_you'
       const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
       const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
-      const isBulkReservation = Boolean(isPackForYou && bulkBin)
+      // Do not pre-reserve bins during storefront checkout.
+      // Active pending order demand is enforced by DB triggers, and pre-reserving here
+      // can double-count demand and leave stale reserved_qty on partial failures.
+      const selectedBinsPayload = null
 
-      // Resolve package_key: buildPackageKey works for lb products (key = productId|weight)
-      // but fails for EA variant products where the key uses variant_size (e.g. productId|4).
-      // When the computed key doesn't exist in pre-fetched bins, fall back to looking up
-      // the product's actual non-bulk bin from binsByProduct.
-      let packageKey: string
-      if (isBulkReservation) {
-        packageKey = String(bulkBin?.package_key ?? bulkBinKey)
-      } else {
-        const computedKey = buildPackageKey(line.productId, product?.unit, line)
-        if (binsByKey.has(computedKey)) {
-          packageKey = computedKey
-        } else {
-          // Fallback: find the product's non-bulk bin (handles EA variants where key uses variant_size)
-          const productBins = (binsByProduct.get(line.productId) ?? []).filter((b: PackageBinRow) => b.bin_kind !== 'bulk_weight')
-          if (productBins.length === 1) {
-            packageKey = productBins[0].package_key
-            console.log(`📦 Resolved EA variant bin key: ${computedKey} → ${packageKey}`)
-          } else if (productBins.length > 1) {
-            // Multiple bins for product: try matching by weight_btn if available
-            const matchByWeight = productBins.find((b: PackageBinRow) => {
-              const bw = line.binWeight ?? line.weightLbs ?? 0
-              return (b.weight_btn ?? 0) === bw
-            })
-            packageKey = matchByWeight ? matchByWeight.package_key : computedKey
-            console.log(`📦 Resolved multi-bin key: ${computedKey} → ${packageKey}`)
-          } else {
-            packageKey = computedKey
-          }
-        }
-      }
-
-      // Storefront reservation logic:
-      // - Pre-orders: No reservation (tenant fulfills later)
-      // - Pack-for-you: No bin reservation at creation (tenant selects packages during fulfillment)
-      // - Pick-your-pack: Reserve bins immediately (customer selected specific packages)
-      const shouldReserve = !line.isPreOrder && !isPackForYou
-
-      // Selected bins payload (used for reservation and order_lines.selected_bins)
-      // Pack-for-you orders should NOT store placeholder bins on the order line.
-      const avgWeightBtn = isBulkReservation
-        ? (bulkBin?.weight_btn ?? (requestedWeightTotal / Math.max(1, line.qty ?? 1)))
-        : null
-      const selectedBinsPayload = line.isPreOrder || isPackForYou
-        ? null
-        : [{
-            package_key: packageKey,
-            qty: isBulkReservation ? requestedWeightTotal : line.qty,
-            weight_btn: isBulkReservation ? (avgWeightBtn ?? requestedWeightTotal) : (line.binWeight ?? line.weightLbs ?? requestedWeight ?? 0),
-            ...(isBulkReservation ? { bin_kind: 'bulk_weight' } : {})
-          }]
-
-      // Reserve bins ONLY for pick-your-pack (where customer selected specific packages)
-      // Pack-for-you orders skip reservation here - tenant will select bins during fulfillment
+      // Reservation metadata stays null until fulfillment/make-ready time.
       let reservedAt: string | null = null
       let reservationExpiresAt: string | null = null
-      if (shouldReserve && selectedBinsPayload) {
-        const { data: reserveData, error: reserveError } = await supabaseAdmin.rpc('reserve_selected_bins', {
-          p_tenant_id: orderRequest.tenantId,
-          p_selected_bins: selectedBinsPayload,
-          p_expiration_minutes: null  // NULL = no expiration for storefront orders (customer may pick up days later)
-        })
-
-        if (reserveError) {
-          console.error('Error reserving bins for storefront order:', reserveError)
-          await rollbackFailedStorefrontOrder({
-            supabaseAdmin,
-            tenantId: orderRequest.tenantId,
-            orderId,
-          })
-          const reserveMessage = `${reserveError?.message || ''}`
-          if (reserveMessage.includes('out_of_stock')) {
-            const availableMatch = reserveMessage.match(/has\s+([0-9]+(?:\.[0-9]+)?)\s+available/i)
-            const available = availableMatch ? Number(availableMatch[1]) : 0
-            return new Response(
-              JSON.stringify({
-                error: 'out_of_stock',
-                shortages: [{
-                  productId: line.productId,
-                  productName: line.productName,
-                  requestedQty: line.qty ?? 1,
-                  requestedWeightLbs: line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? null,
-                  binWeight: line.binWeight ?? null,
-                  weightLbs: line.weightLbs ?? null,
-                  lineType: line.lineType,
-                  available,
-                }],
-              }),
-              {
-                status: 409,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              }
-            )
-          }
-          throw reserveError
-        }
-
-        reservedAt = reserveData?.reserved_at ?? new Date().toISOString()
-        reservationExpiresAt = reserveData?.reservation_expires_at ?? null
-        console.log('✅ Reserved bins for pick-your-pack (no expiration):', { packageKey, reservedAt, reservationExpiresAt })
-      }
 
       // For pack-for-you orders: Create product-level reservation (reserves weight, not packages)
       // This updates products.reserved_lbs via trigger, without touching package_bins.reserved_qty
@@ -1072,8 +974,8 @@ serve(async (req: Request) => {
 
       if (line.isPreOrder) {
         console.log(`Skipping inventory reservation for pre-order line ${line.productName}`)
-      } else if (shouldReserve) {
-        console.log(`Reserved (no decrement) for storefront line ${line.productName}`)
+      } else {
+        console.log(`Stored pending line demand for storefront line ${line.productName}`)
       }
     }
 
