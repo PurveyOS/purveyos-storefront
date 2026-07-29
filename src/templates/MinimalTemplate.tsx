@@ -326,12 +326,19 @@ export function MinimalTemplate({
                           return sum + ((b.weightBtn ?? 0) * (b.reservedQty ?? 0));
                         }, 0);
                         const reservedProductWeight = product.reservedWeightLbs ?? 0;
-                        totalAvailableWeight = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight - (product.activeOrderReservedLbs ?? 0));
+                        const activeOrderReservedLbs = product.activeOrderReservedLbs ?? 0;
+                        // activeOrderReservedLbs can overlap with reserved bin counts.
+                        // Only subtract the portion not already represented by reserved bins.
+                        const unaccountedActiveOrderLbs = Math.max(0, activeOrderReservedLbs - reservedBinWeight);
+                        totalAvailableWeight = Math.max(0, totalWeight - reservedBinWeight - reservedProductWeight - unaccountedActiveOrderLbs);
                       }
 
                       const adjustedBins = (product.weightBins || []).map((bin) => ({
                         ...bin,
-                        qty: Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0) - (binCountsInCart[bin.weightBtn ?? 0] || 0)),
+                        // Keep qty physical and fold cart picks into reservedQty so downstream
+                        // availability math (qty - reservedQty) runs exactly once.
+                        qty: Math.max(0, bin.qty ?? 0),
+                        reservedQty: Math.max(0, (bin.reservedQty ?? 0) + (binCountsInCart[bin.weightBtn ?? 0] || 0)),
                       }));
 
                       const legacyBins = adjustedBins.filter((bin) => bin.binKind !== 'bulk_weight');

@@ -186,8 +186,11 @@ export function ProductCard(props: ProductCardProps) {
     const counts = binCountsInCart || {};
     return (bins || []).map((bin) => ({
       ...bin,
-      // Subtract reserved from DB and any quantities already in cart for that bin weight
-      qty: Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0) - (counts[bin.weightBtn] || 0)),
+      // Keep qty as the physical count and fold cart-selected items into reservedQty.
+      // WeightBinSelector computes availability as (qty - reservedQty), so this avoids
+      // subtracting DB reservations twice.
+      qty: Math.max(0, bin.qty ?? 0),
+      reservedQty: Math.max(0, (bin.reservedQty ?? 0) + (counts[bin.weightBtn] || 0)),
     }));
   };
 
