@@ -476,7 +476,10 @@ export function useStorefrontData(tenantId: string): {
             const reservedBinWeight = nonBulkBins.reduce((sum, bin) => {
               return sum + ((bin.weightBtn ?? 0) * (bin.reservedQty ?? 0));
             }, 0);
-            const availableWeight = Math.max(0, totalBinWeight - reservedBinWeight - reservedWeightLbs - activeOrderReservedLbs);
+            // active_order_reserved_lbs can overlap with package_bins.reserved_qty.
+            // Only subtract the portion not already represented by reserved bins.
+            const unaccountedActiveOrderLbs = Math.max(0, activeOrderReservedLbs - reservedBinWeight);
+            const availableWeight = Math.max(0, totalBinWeight - reservedBinWeight - reservedWeightLbs - unaccountedActiveOrderLbs);
 
             // Convert available weight back to an approximate package count
             // so the inventory number is meaningful for the UI (0 = sold out)
@@ -507,7 +510,9 @@ export function useStorefrontData(tenantId: string): {
           // PHASE 7: Filter by bin_kind
           // For lb products with product-level reservations eating all weight,
           // mark no bins as available (forces sold-out / pre-order UI)
-          const lbWeightExhausted = isLbProduct && effectiveInventory <= 0 && reservedWeightLbs > 0;
+          const lbWeightExhausted = isLbProduct
+            && effectiveInventory <= 0
+            && (reservedWeightLbs > 0 || activeOrderReservedLbs > 0);
           const availableBins = allBins
             ? (lbWeightExhausted
                 ? []
