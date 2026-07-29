@@ -687,25 +687,6 @@ export function CheckoutPage() {
   }, [formData.deliveryMethod, tenant?.id, deliveryDateSchedulingEnabled, deliveryDateWindowDays]);
 
   useEffect(() => {
-    if (formData.deliveryMethod !== 'delivery') return;
-    if (!deliveryDateSchedulingEnabled) return;
-    if (formData.requestedDeliveryDate) return;
-    if (deliveryDateOptions.length === 0) return;
-
-    handleInputChange('requestedDeliveryDate', deliveryDateOptions[0].delivery_date);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deliveryDateOptions, formData.deliveryMethod, formData.requestedDeliveryDate, deliveryDateSchedulingEnabled]);
-
-  useEffect(() => {
-    if (formData.deliveryMethod !== 'delivery') return;
-    if (deliveryDateSchedulingEnabled) return;
-    if (formData.requestedDeliveryDate) return;
-
-    handleInputChange('requestedDeliveryDate', minimumDeliveryDateIso);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.deliveryMethod, formData.requestedDeliveryDate, deliveryDateSchedulingEnabled, minimumDeliveryDateIso]);
-
-  useEffect(() => {
     if (!deliveryAddressInput && formData.deliveryAddress) {
       setDeliveryAddressInput(formData.deliveryAddress);
     }
@@ -888,7 +869,35 @@ export function CheckoutPage() {
   };
 
   const handleInputChange = (field: keyof CheckoutData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      if (field !== 'deliveryMethod') {
+        return { ...prev, [field]: value };
+      }
+
+      setShippingAddress({ street: '', city: '', state: '', zip: '' });
+      setShippingAddressInput('');
+      setShippingEstimate(null);
+      setEstimateError(null);
+      setDeliveryAddress({ street: '', city: '', state: '', zip: '' });
+      setDeliveryAddressInput('');
+      setDeliveryGeoResult(null);
+      setDeliveryError('');
+      setShowShippingSuggestions(false);
+      setShippingSuggestions([]);
+      setShowDeliverySuggestions(false);
+      setDeliverySuggestions([]);
+      lastDeliveryFeeAddressKeyRef.current = null;
+      deliveryFeeInFlightRef.current = false;
+      setFulfillmentChargeAcknowledged(false);
+
+      return {
+        ...prev,
+        deliveryMethod: value,
+        requestedDeliveryDate: '',
+        fulfillmentLocation: '',
+        deliveryAddress: '',
+      };
+    });
   };
 
   const handleShippingAddressInputChange = (value: string) => {
@@ -2312,33 +2321,6 @@ export function CheckoutPage() {
                       type="button"
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'shipping');
-                        handleInputChange('requestedDeliveryDate', '');
-                        handleInputChange('fulfillmentLocation', '');
-                        let prefilledShippingAddress: ShippingAddress | null = null;
-                        if (isAddressBlank(shippingAddress)) {
-                          const parsedShipping = parseSavedAddress(formData.deliveryAddress || '');
-                          if (parsedShipping) {
-                            const normalizedShipping = normalizeAddress(parsedShipping);
-                            setShippingAddress(normalizedShipping);
-                            setShippingAddressInput(formData.deliveryAddress || formatShippingAddress(normalizedShipping));
-                            prefilledShippingAddress = normalizedShipping;
-                          } else if (hasCompleteShippingAddress(deliveryAddress)) {
-                            const normalizedDeliveryAddress = normalizeAddress(deliveryAddress);
-                            setShippingAddress(normalizedDeliveryAddress);
-                            setShippingAddressInput(formatShippingAddress(normalizedDeliveryAddress));
-                            prefilledShippingAddress = normalizedDeliveryAddress;
-                          }
-                        } else {
-                          const normalizedShipping = normalizeAddress(shippingAddress);
-                          setShippingAddressInput(formatShippingAddress(normalizedShipping) || shippingAddressInput);
-                          if (hasCompleteShippingAddress(normalizedShipping)) {
-                            prefilledShippingAddress = normalizedShipping;
-                          }
-                        }
-
-                        if (prefilledShippingAddress && hasCompleteShippingAddress(prefilledShippingAddress)) {
-                          void fetchShippingEstimate(prefilledShippingAddress);
-                        }
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
                         formData.deliveryMethod === 'shipping'
@@ -2397,28 +2379,6 @@ export function CheckoutPage() {
                       type="button"
                       onClick={() => {
                         handleInputChange('deliveryMethod', 'delivery');
-                        handleInputChange('fulfillmentLocation', '');
-                        if (deliveryDateSchedulingEnabled && !formData.requestedDeliveryDate) {
-                          const firstAvailableDate = deliveryDateOptions.find((option) => option.is_available)?.delivery_date;
-                          if (firstAvailableDate) {
-                            handleInputChange('requestedDeliveryDate', firstAvailableDate);
-                          }
-                        }
-                        if (isAddressBlank(deliveryAddress)) {
-                          const parsedDelivery = parseSavedAddress(formData.deliveryAddress || '');
-                          if (parsedDelivery) {
-                            setDeliveryAddress(parsedDelivery);
-                            setDeliveryAddressInput(formData.deliveryAddress || formatDeliveryAddress(parsedDelivery));
-                          } else if (hasCompleteShippingAddress(shippingAddress)) {
-                            const normalizedShippingAddress = normalizeAddress(shippingAddress);
-                            setDeliveryAddress(normalizedShippingAddress);
-                            setDeliveryAddressInput(formatDeliveryAddress(normalizedShippingAddress));
-                          }
-                        } else {
-                          setDeliveryAddressInput(formatDeliveryAddress(normalizeAddress(deliveryAddress)) || deliveryAddressInput);
-                        }
-                        setDeliveryGeoResult(null);
-                        setDeliveryError('');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
                         formData.deliveryMethod === 'delivery'
