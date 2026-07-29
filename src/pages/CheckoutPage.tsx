@@ -86,6 +86,7 @@ export function CheckoutPage() {
     deliveryAddress: '',
     deliveryNotes: '',
   });
+  const [hasChosenDeliveryMethod, setHasChosenDeliveryMethod] = useState(false);
 
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
     street: '',
@@ -874,6 +875,8 @@ export function CheckoutPage() {
         return { ...prev, [field]: value };
       }
 
+      setHasChosenDeliveryMethod(true);
+
       setShippingAddress({ street: '', city: '', state: '', zip: '' });
       setShippingAddressInput('');
       setShippingEstimate(null);
@@ -892,7 +895,7 @@ export function CheckoutPage() {
 
       return {
         ...prev,
-        deliveryMethod: value,
+        deliveryMethod: value as CheckoutData['deliveryMethod'],
         requestedDeliveryDate: '',
         fulfillmentLocation: '',
         deliveryAddress: '',
@@ -1907,6 +1910,10 @@ export function CheckoutPage() {
   const pickupLocationRequired = pickupLocations.length > 0;
 
   const isFulfillmentComplete = (() => {
+    if (!hasChosenDeliveryMethod) {
+      return false;
+    }
+
     if (formData.deliveryMethod === 'pickup') {
       return pickupLocationRequired ? hasPickupLocation : true;
     }
