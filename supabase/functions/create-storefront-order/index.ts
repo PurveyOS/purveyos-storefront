@@ -82,6 +82,42 @@ function buildPackageKey(productId: string, unit: string | null | undefined, lin
   return `${productId}|${weightStr}`
 }
 
+async function rollbackFailedStorefrontOrder(params: {
+  supabaseAdmin: SupabaseClient<any, 'public', any>
+  tenantId: string
+  orderId: string
+}) {
+  const { supabaseAdmin, tenantId, orderId } = params
+
+  // Best-effort cleanup to prevent ghost orders/reservations after partial failures.
+  const { error: reservationCleanupError } = await supabaseAdmin
+    .from('product_reservations')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('order_id', orderId)
+  if (reservationCleanupError) {
+    console.error('Rollback warning: failed to delete product_reservations:', reservationCleanupError)
+  }
+
+  const { error: lineCleanupError } = await supabaseAdmin
+    .from('order_lines')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('order_id', orderId)
+  if (lineCleanupError) {
+    console.error('Rollback warning: failed to delete order_lines:', lineCleanupError)
+  }
+
+  const { error: orderCleanupError } = await supabaseAdmin
+    .from('orders')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('id', orderId)
+  if (orderCleanupError) {
+    console.error('Rollback warning: failed to delete order:', orderCleanupError)
+  }
+}
+
 serve(async (req: Request) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -906,6 +942,35 @@ serve(async (req: Request) => {
 
         if (reserveError) {
           console.error('Error reserving bins for storefront order:', reserveError)
+          await rollbackFailedStorefrontOrder({
+            supabaseAdmin,
+            tenantId: orderRequest.tenantId,
+            orderId,
+          })
+          const reserveMessage = `${reserveError?.message || ''}`
+          if (reserveMessage.includes('out_of_stock')) {
+            const availableMatch = reserveMessage.match(/has\s+([0-9]+(?:\.[0-9]+)?)\s+available/i)
+            const available = availableMatch ? Number(availableMatch[1]) : 0
+            return new Response(
+              JSON.stringify({
+                error: 'out_of_stock',
+                shortages: [{
+                  productId: line.productId,
+                  productName: line.productName,
+                  requestedQty: line.qty ?? 1,
+                  requestedWeightLbs: line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? null,
+                  binWeight: line.binWeight ?? null,
+                  weightLbs: line.weightLbs ?? null,
+                  lineType: line.lineType,
+                  available,
+                }],
+              }),
+              {
+                status: 409,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              }
+            )
+          }
           throw reserveError
         }
 
@@ -945,11 +1010,28 @@ serve(async (req: Request) => {
 
       if (lineError) {
         console.error('Error creating order line:', lineError)
+        await rollbackFailedStorefrontOrder({
+          supabaseAdmin,
+          tenantId: orderRequest.tenantId,
+          orderId,
+        })
         const lineMessage = `${lineError.message || ''}`
         if (lineMessage.includes('out_of_stock')) {
+          const availableMatch = lineMessage.match(/has\s+([0-9]+(?:\.[0-9]+)?)\s+available/i)
+          const available = availableMatch ? Number(availableMatch[1]) : 0
           return new Response(
             JSON.stringify({
-              error: lineMessage,
+              error: 'out_of_stock',
+              shortages: [{
+                productId: line.productId,
+                productName: line.productName,
+                requestedQty: line.qty ?? 1,
+                requestedWeightLbs: line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? null,
+                binWeight: line.binWeight ?? null,
+                weightLbs: line.weightLbs ?? null,
+                lineType: line.lineType,
+                available,
+              }],
             }),
             {
               status: 409,
@@ -977,6 +1059,11 @@ serve(async (req: Request) => {
 
         if (productReservationError) {
           console.error('Error creating product reservation for pack-for-you:', productReservationError)
+          await rollbackFailedStorefrontOrder({
+            supabaseAdmin,
+            tenantId: orderRequest.tenantId,
+            orderId,
+          })
           throw productReservationError
         }
 
