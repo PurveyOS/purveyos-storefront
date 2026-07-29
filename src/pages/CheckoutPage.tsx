@@ -152,6 +152,7 @@ export function CheckoutPage() {
   const deliveryFeeAutoCalculateTimeoutRef = useRef<number | null>(null);
   const lastDeliveryFeeAddressKeyRef = useRef<string | null>(null);
   const deliveryFeeInFlightRef = useRef(false);
+  const pendingForcedDeliveryFeeRecalcRef = useRef(false);
   const [deliveryError, setDeliveryError] = useState('');
   const [deliveryDateOptions, setDeliveryDateOptions] = useState<DeliveryDateOption[]>([]);
   const [deliveryDatesLoading, setDeliveryDatesLoading] = useState(false);
@@ -299,7 +300,7 @@ export function CheckoutPage() {
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [dismissedCheckoutError, setDismissedCheckoutError] = useState(false);
   const [openSection, setOpenSection] = useState<CheckoutSection>('contact');
-  const [fulfillmentChargeAcknowledged, setFulfillmentChargeAcknowledged] = useState(false);
+  const [acknowledgedFulfillmentChargeToken, setAcknowledgedFulfillmentChargeToken] = useState<string | null>(null);
   const prevContactCompleteRef = useRef(false);
   const prevFulfillmentCompleteRef = useRef(false);
   const stripeCardRef = useRef<StripeCardFormHandle>(null);
@@ -891,7 +892,8 @@ export function CheckoutPage() {
       setDeliverySuggestions([]);
       lastDeliveryFeeAddressKeyRef.current = null;
       deliveryFeeInFlightRef.current = false;
-      setFulfillmentChargeAcknowledged(false);
+      pendingForcedDeliveryFeeRecalcRef.current = false;
+      setAcknowledgedFulfillmentChargeToken(null);
 
       return {
         ...prev,
@@ -969,7 +971,12 @@ export function CheckoutPage() {
     setDeliveryAddressInput(resolved.formattedAddress);
     setShowDeliverySuggestions(false);
     setDeliverySuggestions([]);
-    setDeliveryGeoResult(null);
+
+    const resolvedAddressKey = getAddressCacheKey(resolved.normalizedAddress);
+    if (lastDeliveryFeeAddressKeyRef.current !== resolvedAddressKey) {
+      setDeliveryGeoResult(null);
+    }
+
     setDeliveryError('');
     handleInputChange('deliveryAddress', resolved.formattedAddress);
     return resolved;
@@ -1118,7 +1125,12 @@ export function CheckoutPage() {
   }, []);
 
   const calculateDeliveryFee = async (options?: { force?: boolean }) => {
-    if (deliveryFeeInFlightRef.current) return;
+    if (deliveryFeeInFlightRef.current) {
+      if (options?.force) {
+        pendingForcedDeliveryFeeRecalcRef.current = true;
+      }
+      return;
+    }
 
     let normalizedAddress = normalizeAddress(deliveryAddress);
     let fullAddress = deliveryAddressInput.trim() || formatDeliveryAddress(normalizedAddress);
@@ -1147,7 +1159,6 @@ export function CheckoutPage() {
     deliveryFeeInFlightRef.current = true;
     setGeocodingDelivery(true);
     setDeliveryError('');
-    setDeliveryGeoResult(null);
     
     try {
       const { data, error } = await supabase!.functions.invoke('geocode-address', {
@@ -1186,6 +1197,11 @@ export function CheckoutPage() {
     } finally {
       deliveryFeeInFlightRef.current = false;
       setGeocodingDelivery(false);
+
+      if (pendingForcedDeliveryFeeRecalcRef.current) {
+        pendingForcedDeliveryFeeRecalcRef.current = false;
+        void calculateDeliveryFee({ force: true });
+      }
     }
   };
 
@@ -1903,14 +1919,17 @@ export function CheckoutPage() {
   const requiresFulfillmentChargeAck =
     (formData.deliveryMethod === 'shipping' || formData.deliveryMethod === 'delivery') &&
     currentFulfillmentChargeCents > 0;
+  const currentFulfillmentChargeToken = `${formData.deliveryMethod}:${currentFulfillmentChargeCents}`;
+  const fulfillmentChargeAcknowledged = acknowledgedFulfillmentChargeToken === currentFulfillmentChargeToken;
   const hasFulfillmentChargeAck = !requiresFulfillmentChargeAck || fulfillmentChargeAcknowledged;
   const isMissingFulfillmentChargeAck = requiresFulfillmentChargeAck && !fulfillmentChargeAcknowledged;
   const pickupLocations = ((storefrontData?.settings as any)?.pickup_locations || []) as Array<any>;
   const hasPickupLocation = Boolean(formData.fulfillmentLocation?.trim());
   const pickupLocationRequired = pickupLocations.length > 0;
+  const hasExplicitFulfillmentMethodChoice = hasChosenDeliveryMethod || formData.deliveryMethod !== 'pickup';
 
   const isFulfillmentComplete = (() => {
-    if (!hasChosenDeliveryMethod) {
+    if (!hasExplicitFulfillmentMethodChoice) {
       return false;
     }
 
@@ -1971,8 +1990,10 @@ export function CheckoutPage() {
   }, [isFulfillmentComplete, openSection]);
 
   useEffect(() => {
-    setFulfillmentChargeAcknowledged(false);
-  }, [formData.deliveryMethod, currentFulfillmentChargeCents]);
+    if (formData.deliveryMethod !== 'delivery' && formData.deliveryMethod !== 'shipping') {
+      setAcknowledgedFulfillmentChargeToken(null);
+    }
+  }, [formData.deliveryMethod]);
 
   if (dataLoading) {
     return (
@@ -2842,7 +2863,7 @@ export function CheckoutPage() {
                     <input
                       type="checkbox"
                       checked={fulfillmentChargeAcknowledged}
-                      onChange={(e) => setFulfillmentChargeAcknowledged(e.target.checked)}
+                      onChange={(e) => setAcknowledgedFulfillmentChargeToken(e.target.checked ? currentFulfillmentChargeToken : null)}
                       className="mt-0.5 h-4 w-4 rounded border-amber-300"
                       style={{ accentColor: primaryColor }}
                     />
@@ -2857,6 +2878,20 @@ export function CheckoutPage() {
                       .
                     </span>
                   </label>
+                </div>
+              )}
+
+              {isDev && (
+                <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                  <div className="font-semibold text-slate-800">Dev: fulfillment status</div>
+                  <div>method={formData.deliveryMethod}</div>
+                  <div>explicitChoice={String(hasExplicitFulfillmentMethodChoice)}</div>
+                  <div>hasDate={String(hasSelectedDeliveryDate)}</div>
+                  <div>hasDeliveryZoneMatch={String(hasDeliveryZoneMatch)}</div>
+                  <div>requiresChargeAck={String(requiresFulfillmentChargeAck)}</div>
+                  <div>chargeCents={currentFulfillmentChargeCents}</div>
+                  <div>acknowledged={String(fulfillmentChargeAcknowledged)}</div>
+                  <div>isComplete={String(isFulfillmentComplete)}</div>
                 </div>
               )}
                 </>
