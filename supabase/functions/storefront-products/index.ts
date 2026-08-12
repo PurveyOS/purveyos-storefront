@@ -104,11 +104,12 @@ Deno.serve(async (req) => {
 
     const productIds = (products ?? []).map((product) => product.id).filter(Boolean)
     const activeDemandByProduct = new Map<string, { qty: number; lbs: number }>()
+    const unreservedPaidNowDemandByProduct = new Map<string, { qty: number; lbs: number }>()
 
     if (productIds.length > 0) {
       const { data: activeOrders, error: activeOrdersError } = await supabase
         .from('orders')
-        .select('order_lines(product_id, quantity, weight_lbs, bin_weight, requested_weight_lbs, is_pre_order, line_type)')
+        .select('payment_status, order_lines(product_id, quantity, weight_lbs, bin_weight, requested_weight_lbs, is_pre_order, line_type, fulfillment_bucket, reserved_at, selected_bins)')
         .eq('tenant_id', tenant.id)
         .in('status', ['pending', 'ready'])
 
@@ -139,6 +140,18 @@ Deno.serve(async (req) => {
               qty: current.qty + quantity,
               lbs: current.lbs + lbs,
             })
+
+            const hasSelectedBins = Array.isArray(line.selected_bins) && line.selected_bins.length > 0
+            if ((order.payment_status ?? null) === 'paid'
+              && (line.fulfillment_bucket ?? '').toUpperCase() === 'NOW'
+              && !line.reserved_at
+              && !hasSelectedBins) {
+              const unreservedCurrent = unreservedPaidNowDemandByProduct.get(productId) ?? { qty: 0, lbs: 0 }
+              unreservedPaidNowDemandByProduct.set(productId, {
+                qty: unreservedCurrent.qty + quantity,
+                lbs: unreservedCurrent.lbs + lbs,
+              })
+            }
           }
         }
       }
@@ -219,10 +232,13 @@ Deno.serve(async (req) => {
     const enrichedProducts = products?.map(p => {
       const subscriptionData = subscriptionMap.get(p.id)
       const activeDemand = activeDemandByProduct.get(p.id) ?? { qty: 0, lbs: 0 }
+      const unreservedPaidNowDemand = unreservedPaidNowDemandByProduct.get(p.id) ?? { qty: 0, lbs: 0 }
       return {
         ...p,
         active_order_reserved_qty: activeDemand.qty,
         active_order_reserved_lbs: activeDemand.lbs,
+        unreserved_paid_now_qty: unreservedPaidNowDemand.qty,
+        unreserved_paid_now_lbs: unreservedPaidNowDemand.lbs,
         isSubscription: !!subscriptionData,
         subscriptionData: subscriptionData || undefined
       }
@@ -241,11 +257,13 @@ Deno.serve(async (req) => {
     let bins = []
     if (includeBins) {
       const { data: binsData, error: binsError } = await supabase
-        .from('package_bins')
-        .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty, reserved_lbs, bin_kind, qty_lbs')
+        .from('package_bin_availability_v')
+        .select('product_id, weight_btn, unit_price_cents, bin_kind, effective_available_qty, effective_available_lbs')
         .eq('tenant_id', tenant.id)
 
-      if (!binsError && binsData) {
+      if (binsError) {
+        console.warn('[storefront-products] Effective package availability fetch warning:', binsError.message)
+      } else if (binsData) {
         bins = binsData
       }
     }

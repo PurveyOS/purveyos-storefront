@@ -258,14 +258,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         // Fetch package bins (for inventory/pricing info)
         // ============================================================================
-        const { data: binsData, error: binsError } = await supabase
-          .from('package_bins')
-          .select('product_id, weight_btn, unit_price_cents, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs')
-          .eq('tenant_id', tenantId);
-
-        if (binsError) {
-          console.warn('Bins fetch warning (non-critical):', binsError);
-        }
+        const binsData = catalogData.bins ?? [];
 
         // ============================================================================
         // Fetch subscription products (for subscription UI)
@@ -402,11 +395,11 @@ export function useStorefrontData(tenantId: string): {
             binsByProduct.get(bin.product_id)!.push({
               weightBtn: bin.weight_btn,
               unitPriceCents: bin.unit_price_cents,
-              qty: bin.qty,
-              reservedQty: bin.reserved_qty || 0,
+              qty: Number(bin.effective_available_qty ?? 0),
+              reservedQty: 0,
               binKind: bin.bin_kind || null,
-              qtyLbs: bin.qty_lbs || null,
-              reservedLbs: bin.reserved_lbs || 0,
+              qtyLbs: bin.effective_available_lbs ?? null,
+              reservedLbs: 0,
             });
           });
         }
@@ -442,89 +435,32 @@ export function useStorefrontData(tenantId: string): {
             : subscriptionFromDb;
           const hasSubscription = Boolean((p as any).isSubscription || subscription);
 
-          // Calculate total inventory from package_bins (fallback to product.qty when no bins)
-          // PHASE 7: Branch inventory aggregation by bin_kind
-          // - Legacy bins (bin_kind=NULL): qty - reserved_qty (discrete packs)
-          // - Bulk bins (bin_kind='bulk_weight'): qty_lbs - reserved_lbs (continuous lbs)
-          const isLbProduct = (p.unit || '').toLowerCase().startsWith('lb');
-          const reservedWeightLbs = Number((p as any).reserved_weight_lbs) || 0;
+          // The catalog returns effective availability, which already accounts for local
+          // and shared reservations. Do not subtract product/order reservations again.
           const activeOrderReservedQty = Math.max(0, Number((p as any).active_order_reserved_qty ?? 0));
           const activeOrderReservedLbs = Math.max(0, Number((p as any).active_order_reserved_lbs ?? 0));
+          const unreservedPaidNowQty = Math.max(0, Number((p as any).unreserved_paid_now_qty ?? 0));
+          const unreservedPaidNowLbs = Math.max(0, Number((p as any).unreserved_paid_now_lbs ?? 0));
 
           const totalInventory = allBins
             ? allBins.reduce((sum, bin) => {
                 if (bin.binKind === 'bulk_weight') {
-                  // Bulk bin: use lbs directly
-                  return sum + Math.max(0, (bin.qtyLbs || 0) - (bin.reservedLbs || 0));
-                } else {
-                  // Legacy bin: use qty (packs)
-                  return sum + Math.max(0, (bin.qty - (bin.reservedQty || 0)) || 0);
+                  return sum + Math.max(0, bin.qtyLbs || 0);
                 }
+                return sum + Math.max(0, bin.qty || 0);
               }, 0)
             : 0;
 
-          // For lb products: also check weight availability after product-level reservations
-          // (e.g., standing orders reserve weight at product level, not bin level)
-          // This must match the edge function's stock check formula:
-          //   available = totalBinWeight - reservedBinWeight - products.reserved_weight_lbs
-          let effectiveInventory: number;
-          if (isLbProduct && allBins && allBins.length > 0 && (reservedWeightLbs > 0 || activeOrderReservedLbs > 0)) {
-            const nonBulkBins = allBins.filter(bin => bin.binKind !== 'bulk_weight');
-            const totalBinWeight = nonBulkBins.reduce((sum, bin) => {
-              return sum + ((bin.weightBtn ?? 0) * (bin.qty ?? 0));
-            }, 0);
-            const reservedBinWeight = nonBulkBins.reduce((sum, bin) => {
-              return sum + ((bin.weightBtn ?? 0) * (bin.reservedQty ?? 0));
-            }, 0);
-            // active_order_reserved_lbs can overlap with package_bins.reserved_qty.
-            // Only subtract the portion not already represented by reserved bins.
-            const unaccountedActiveOrderLbs = Math.max(0, activeOrderReservedLbs - reservedBinWeight);
-            const availableWeight = Math.max(0, totalBinWeight - reservedBinWeight - reservedWeightLbs - unaccountedActiveOrderLbs);
-
-            // Convert available weight back to an approximate package count
-            // so the inventory number is meaningful for the UI (0 = sold out)
-            if (availableWeight <= 0) {
-              effectiveInventory = 0;
-            } else {
-              // Count how many whole packages fit within available weight (FIFO by weight)
-              let weightBudget = availableWeight;
-              let packageCount = 0;
-              for (const bin of nonBulkBins) {
-                const binAvailQty = Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0));
-                for (let i = 0; i < binAvailQty; i++) {
-                  if (weightBudget >= (bin.weightBtn ?? 0)) {
-                    weightBudget -= (bin.weightBtn ?? 0);
-                    packageCount++;
-                  }
-                }
-              }
-              effectiveInventory = packageCount;
-            }
-          } else {
-            const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
-            const physicalInventory = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
-            effectiveInventory = Math.max(0, physicalInventory - (isLbProduct ? activeOrderReservedLbs : activeOrderReservedQty));
-          }
+          const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
+          const visibleInventoryBase = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
+          const effectiveInventory = Math.max(0, visibleInventoryBase - ((p.unit || '').toLowerCase().startsWith('lb') ? unreservedPaidNowLbs : unreservedPaidNowQty));
 
           // Only include bins with available inventory
           // PHASE 7: Filter by bin_kind
-          // For lb products with product-level reservations eating all weight,
-          // mark no bins as available (forces sold-out / pre-order UI)
-          const lbWeightExhausted = isLbProduct
-            && effectiveInventory <= 0
-            && (reservedWeightLbs > 0 || activeOrderReservedLbs > 0);
           const availableBins = allBins
-            ? (lbWeightExhausted
-                ? []
-                : allBins.filter(bin => {
-                    if (bin.binKind === 'bulk_weight') {
-                      // Bulk bin: check lbs available
-                      return (bin.qtyLbs || 0) - (bin.reservedLbs || 0) > 0;
-                    } else {
-                      // Legacy bin: check qty available
-                      return (bin.qty - (bin.reservedQty || 0)) > 0;
-                    }
-                  }))
+            ? allBins.filter(bin => bin.binKind === 'bulk_weight'
+              ? (bin.qtyLbs || 0) > 0
+              : bin.qty > 0)
             : undefined;
 
           return {

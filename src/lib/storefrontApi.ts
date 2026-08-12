@@ -40,6 +40,8 @@ export interface StorefrontProduct {
   reserved_weight_lbs?: number
   active_order_reserved_qty?: number
   active_order_reserved_lbs?: number
+  unreserved_paid_now_qty?: number
+  unreserved_paid_now_lbs?: number
   // Subscription fields
   isSubscription?: boolean
   subscriptionData?: {
