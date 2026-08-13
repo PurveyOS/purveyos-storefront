@@ -709,32 +709,71 @@ export function CheckoutPage() {
     return `${productId}|${safeWeight}`;
   };
 
+  const getCatalogBinAvailability = (bin: any): number => {
+    if (!bin) return 0;
+    if (bin.binKind === 'bulk_weight') {
+      return Math.max(0, Number(bin.qtyLbs ?? 0));
+    }
+    return Math.max(0, Number(bin.qty ?? 0));
+  };
+
   const verifyAndPruneCart = async (): Promise<boolean> => {
     if (!tenant?.id || cart.items.length === 0) return true;
-
-    const productIds = Array.from(new Set(cart.items.map((i: any) => i.productId)));
-
-    const [{ data: latestProducts, error: prodError }, { data: packageBins, error: binError }] = await Promise.all([
-      supabase.from('products').select('id, unit, qty, is_deposit_product').eq('tenant_id', tenant.id).in('id', productIds),
-      supabase.from('package_bins').select('product_id, weight_btn, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs').eq('tenant_id', tenant.id).in('product_id', productIds),
-    ]);
-
-    if (prodError || binError) {
-      console.error('Inventory preflight failed:', { prodError, binError });
+    if (!storefrontData?.products) {
+      console.error('Inventory preflight failed: storefront catalog is unavailable');
       toast.error('Could not verify inventory. Please try again.');
       return false;
     }
 
-    const productsById = new Map((latestProducts || []).map((p: any) => [p.id, p]));
-    const storefrontById = new Map((storefrontData?.products || []).map((p: any) => [p.id, p]));
-    const binsByKey = new Map(
-      (packageBins || []).map((b: any) => [buildBinKey(b.product_id, b.weight_btn), b])
-    );
-    const bulkBinsByProduct = new Map(
-      (packageBins || [])
-        .filter((b: any) => b.bin_kind === 'bulk_weight')
-        .map((b: any) => [b.product_id, b])
-    );
+    const storefrontById = new Map((storefrontData.products || []).map((p: any) => [p.id, p]));
+    const binsByKey = new Map<string, { qty: number; qtyLbs: number; binKind: string | null; weightBtn: number }>();
+    const bulkBinsByProduct = new Map<string, { qtyLbs: number }>();
+
+    for (const product of storefrontData.products || []) {
+      const weightBins = Array.isArray((product as any).weightBins) ? (product as any).weightBins : [];
+      for (const bin of weightBins) {
+        const binKey = buildBinKey(product.id, bin.weightBtn);
+        const current = binsByKey.get(binKey) ?? {
+          qty: 0,
+          qtyLbs: 0,
+          binKind: (bin.binKind as string | null) ?? null,
+          weightBtn: Number(bin.weightBtn ?? 0),
+        };
+
+        current.qty += Math.max(0, Number(bin.qty ?? 0));
+        current.qtyLbs += Math.max(0, Number(bin.qtyLbs ?? 0));
+        current.binKind = (bin.binKind as string | null) ?? current.binKind ?? null;
+        binsByKey.set(binKey, current);
+
+        if ((bin.binKind as string | null) === 'bulk_weight') {
+          const bulkCurrent = bulkBinsByProduct.get(product.id) ?? { qtyLbs: 0 };
+          bulkCurrent.qtyLbs += Math.max(0, Number(bin.qtyLbs ?? 0));
+          bulkBinsByProduct.set(product.id, bulkCurrent);
+        }
+      }
+    }
+
+    const getAvailableForItem = (item: any, storefrontProduct: any) => {
+      const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
+      const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
+      const bin = binKey ? binsByKey.get(binKey) : undefined;
+      const bulkBin = bulkBinsByProduct.get(item.productId);
+      const isPackForYou = item.lineType === 'pack_for_you';
+
+      if (isPackForYou) {
+        return {
+          available: bulkBin ? Math.max(0, Number(bulkBin.qtyLbs ?? 0)) : Math.max(0, Number(storefrontProduct?.inventory ?? 0)),
+          hasBinSelection,
+          missingSelectedBin: false,
+        };
+      }
+
+      return {
+        available: bin ? getCatalogBinAvailability(bin) : Math.max(0, Number(storefrontProduct?.inventory ?? 0)),
+        hasBinSelection,
+        missingSelectedBin: Boolean(hasBinSelection && !bin),
+      };
+    };
 
     const outOfStock: Array<{ productId: string; binWeight?: number; weight?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }> = [];
 
@@ -744,38 +783,31 @@ export function CheckoutPage() {
         return;
       }
 
-      const product = productsById.get(item.productId);
       const storefrontProduct = storefrontById.get(item.productId);
-      const isDeposit = Boolean(product?.is_deposit_product || storefrontProduct?.is_deposit_product);
+      const isDeposit = Boolean(storefrontProduct?.is_deposit_product);
       const isSubscription = Boolean(item?.metadata?.isSubscription || storefrontProduct?.isSubscription);
-      const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
-      const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
-      const bin = binKey ? binsByKey.get(binKey) : undefined;
-      const bulkBin = bulkBinsByProduct.get(item.productId);
       const isPackForYou = item.lineType === 'pack_for_you';
       const requestedWeight = item.requestedWeightLbs ?? item.weight;
-      if (isPackForYou && bulkBin && requestedWeight) {
-        const availableBulk = Math.max(0, (bulkBin.qty_lbs ?? 0) - (bulkBin.reserved_lbs ?? 0));
+      const { available, hasBinSelection, missingSelectedBin } = getAvailableForItem(item, storefrontProduct);
+
+      if (!storefrontProduct) {
+        outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight, requestedWeightLbs: item.requestedWeightLbs, lineType: item.lineType });
+        return;
+      }
+
+      if (isPackForYou && requestedWeight) {
         const requiredBulk = requestedWeight * (item.quantity ?? 1);
-        if (requiredBulk > availableBulk) {
+        if (requiredBulk > available) {
           outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight, requestedWeightLbs: item.requestedWeightLbs, lineType: item.lineType });
         }
         return;
       }
-
-      const reserved = bin?.reserved_qty ?? 0;
-      const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - reserved) : null;
-      const availableFromProduct = typeof product?.qty === 'number'
-        ? product.qty
-        : (typeof storefrontProduct?.inventory === 'number' ? storefrontProduct.inventory : 0);
-      // Fallback to product.qty when bin is missing (pack-for-you / weight entries)
-      const available = availableFromBin !== null ? availableFromBin : availableFromProduct;
       const unitWeight = item.weight ?? item.requestedWeightLbs;
-      const required = (isDeposit || isSubscription)
+      const required = (hasBinSelection || isDeposit || isSubscription)
         ? (item.quantity ?? 1)
         : (unitWeight ? unitWeight * (item.quantity ?? 1) : (item.quantity ?? 1));
 
-      if (hasBinSelection && !bin) {
+      if (missingSelectedBin) {
         outOfStock.push({ productId: item.productId, binWeight: item.binWeight, weight: item.weight, requestedWeightLbs: item.requestedWeightLbs, lineType: item.lineType });
         return;
       }
@@ -788,7 +820,7 @@ export function CheckoutPage() {
     if (outOfStock.length > 0) {
       // Build detailed information about removed items for modal
       const removedItemsInfo = outOfStock.map((item) => {
-        const storefrontProduct = storefrontData?.products?.find((p: any) => p.id === item.productId);
+        const storefrontProduct = storefrontById.get(item.productId);
         const productName = storefrontProduct?.name || 'Item';
         const isEach = ((storefrontProduct?.unit) || '').toLowerCase() === 'ea' || Boolean((storefrontProduct as any)?.variantSize || (storefrontProduct as any)?.variantUnit);
         const variantUnit = (storefrontProduct as any)?.variantUnit;
@@ -803,15 +835,7 @@ export function CheckoutPage() {
           i.lineType === item.lineType
         );
         
-        const hasBinSelection = item.binWeight !== undefined && item.binWeight !== null;
-        const binKey = hasBinSelection ? buildBinKey(item.productId, item.binWeight) : null;
-        const bin = binKey ? binsByKey.get(binKey) : undefined;
-        const availableFromBin = bin ? Math.max(0, (bin.qty ?? 0) - (bin.reservedQty ?? 0)) : null;
-        const product = productsById.get(item.productId);
-        const availableFromProduct = typeof product?.qty === 'number'
-          ? product.qty
-          : (typeof storefrontProduct?.inventory === 'number' ? storefrontProduct.inventory : 0);
-        const available = availableFromBin !== null ? availableFromBin : availableFromProduct;
+        const { available } = getAvailableForItem(item, storefrontProduct);
         const requested = (cartItem as any)?.quantity ?? 1;
 
         return {
