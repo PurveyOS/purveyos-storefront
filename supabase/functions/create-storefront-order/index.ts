@@ -82,6 +82,43 @@ function buildPackageKey(productId: string, unit: string | null | undefined, lin
   return `${productId}|${weightStr}`
 }
 
+function normalizeStorefrontWeightLine(line: OrderLine, unit: string | null | undefined) {
+  const normalizedUnit = (unit || '').toLowerCase()
+  const isWeightProduct = normalizedUnit.startsWith('lb')
+  const hasSelectedPackage = Number(line.binWeight ?? 0) > 0
+  const shouldCanonicalizePreOrderWeight =
+    isWeightProduct &&
+    line.isPreOrder === true &&
+    !hasSelectedPackage &&
+    !(Number(line.requestedWeightLbs ?? 0) > 0) &&
+    Number(line.weightLbs ?? 0) > 0
+
+  const lineType: 'exact_package' | 'pack_for_you' =
+    line.lineType === 'pack_for_you' || shouldCanonicalizePreOrderWeight
+      ? 'pack_for_you'
+      : 'exact_package'
+
+  return {
+    lineType,
+    requestedWeightLbs:
+      lineType === 'pack_for_you'
+        ? (line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? null)
+        : null,
+    weightLbs:
+      lineType === 'pack_for_you'
+        ? null
+        : (line.weightLbs ?? null),
+  }
+}
+
+function hasSelectedBins(selectedBins: unknown) {
+  return Array.isArray(selectedBins) && selectedBins.length > 0
+}
+
+function hasReservationEvidence(line: { reserved_at?: string | null; selected_bins?: unknown }) {
+  return Boolean(line.reserved_at) || hasSelectedBins(line.selected_bins)
+}
+
 async function rollbackFailedStorefrontOrder(params: {
   supabaseAdmin: SupabaseClient<any, 'public', any>
   tenantId: string
@@ -240,7 +277,7 @@ serve(async (req: Request) => {
 
     const { data: activeOrders, error: activeOrdersError } = await supabaseAdmin
       .from('orders')
-      .select('order_lines(product_id, quantity, weight_lbs, bin_weight, requested_weight_lbs, is_pre_order, line_type)')
+      .select('payment_status, order_lines(product_id, quantity, weight_lbs, bin_weight, requested_weight_lbs, is_pre_order, line_type, fulfillment_bucket, reserved_at, selected_bins)')
       .eq('tenant_id', orderRequest.tenantId)
       .in('status', ['pending', 'ready'])
 
@@ -331,6 +368,7 @@ serve(async (req: Request) => {
       for (const activeLine of order.order_lines ?? []) {
         const productId = String(activeLine.product_id ?? '').trim()
         if (!productId || activeLine.is_pre_order === true || activeLine.line_type === 'pack_for_you') continue
+        if (hasReservationEvidence(activeLine)) continue
 
         const quantity = Math.max(0, Number(activeLine.quantity ?? 0))
         const requestedWeightLbs = Number(activeLine.requested_weight_lbs ?? 0)
@@ -414,8 +452,9 @@ serve(async (req: Request) => {
 
       const productRow = productsById.get(line.productId)
       const activeDemand = activeDemandByProduct.get(line.productId) ?? { qty: 0, lbs: 0 }
-      const isPackForYou = line.lineType === 'pack_for_you'
-      const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+      const normalizedLine = normalizeStorefrontWeightLine(line, productRow?.unit ?? null)
+      const isPackForYou = normalizedLine.lineType === 'pack_for_you'
+      const requestedWeight = normalizedLine.requestedWeightLbs ?? normalizedLine.weightLbs ?? line.binWeight ?? 0
       const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
       const bulkBinKey = `${line.productId}|bulk`
       const bulkBin = bulkBinsByProduct.get(line.productId) ?? binsByKey.get(bulkBinKey)
@@ -857,6 +896,7 @@ serve(async (req: Request) => {
     for (const line of orderRequest.lines) {
       // Convert unitPriceCents to dollars for price_per field
       const pricePerDollars = line.unitPriceCents / 100
+      const normalizedLine = normalizeStorefrontWeightLine(line, line.pricePer)
 
       console.log('📦 Processing line:', {
         productName: line.productName,
@@ -869,8 +909,8 @@ serve(async (req: Request) => {
         isPreOrder: line.isPreOrder
       })
 
-      const isPackForYou = line.lineType === 'pack_for_you'
-      const requestedWeight = line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0
+      const isPackForYou = normalizedLine.lineType === 'pack_for_you'
+      const requestedWeight = normalizedLine.requestedWeightLbs ?? normalizedLine.weightLbs ?? line.binWeight ?? 0
       const requestedWeightTotal = requestedWeight * (line.qty ?? 1)
       // Do not pre-reserve bins during storefront checkout.
       // Active pending order demand is enforced by DB triggers, and pre-reserving here
@@ -899,9 +939,9 @@ serve(async (req: Request) => {
           price_per: pricePerDollars,
           line_total_cents: line.lineTotalCents,
           bin_weight: line.binWeight ?? null,
-          weight_lbs: line.requestedWeightLbs ?? line.weightLbs ?? null,
-          requested_weight_lbs: line.requestedWeightLbs ?? null,
-          line_type: line.lineType ?? null,
+          weight_lbs: normalizedLine.weightLbs,
+          requested_weight_lbs: normalizedLine.requestedWeightLbs,
+          line_type: normalizedLine.lineType,
           is_pre_order: line.isPreOrder ?? false,
           fulfillment_bucket: line.isPreOrder ? 'LATER' : 'NOW',
           selected_bins: selectedBinsPayload,

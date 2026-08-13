@@ -303,16 +303,30 @@ export function useCheckout() {
         const quantity: number = item.quantity ?? 1;
         const binWeight: number | null =
           typeof item.binWeight === 'number' ? item.binWeight : null;
-        const weightLbs: number | null =
+        const rawWeightLbs: number | null =
           typeof item.weight === 'number' ? item.weight : null;
-        const requestedWeightLbs: number | null =
-          typeof (item as any).requestedWeightLbs === 'number' ? (item as any).requestedWeightLbs : null;
-        const lineType: OutgoingOrderLine['lineType'] =
-          (item as any).lineType === 'pack_for_you' ? 'pack_for_you' : 'exact_package';
-        
+
         // Pre-order only when explicitly flagged on the cart item
         // (UI sets this when sold out + pre-order is allowed)
         const isPreOrder: boolean = !!item.isPreOrder;
+        const productUnit = String((product as any).unit ?? '').toLowerCase();
+        const isWeightProduct = productUnit.startsWith('lb');
+        const rawRequestedWeightLbs: number | null =
+          typeof (item as any).requestedWeightLbs === 'number' ? (item as any).requestedWeightLbs : null;
+        const shouldCanonicalizePreOrderWeight =
+          isPreOrder &&
+          isWeightProduct &&
+          !binWeight &&
+          rawRequestedWeightLbs == null &&
+          rawWeightLbs != null &&
+          rawWeightLbs > 0;
+        const requestedWeightLbs: number | null =
+          rawRequestedWeightLbs ?? (shouldCanonicalizePreOrderWeight ? rawWeightLbs : null);
+        const lineType: OutgoingOrderLine['lineType'] =
+          (item as any).lineType === 'pack_for_you' || shouldCanonicalizePreOrderWeight
+            ? 'pack_for_you'
+            : 'exact_package';
+        const weightLbs: number | null = lineType === 'pack_for_you' ? null : rawWeightLbs;
 
         const pricingMode: 'weight' | 'fixed' | undefined = (product as any).pricingMode;
         const isDepositProduct = Boolean((product as any).is_deposit_product);

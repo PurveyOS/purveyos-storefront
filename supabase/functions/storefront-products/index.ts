@@ -12,6 +12,14 @@ interface StorefrontRequest {
   include_categories?: boolean
 }
 
+function hasSelectedBins(selectedBins: unknown) {
+  return Array.isArray(selectedBins) && selectedBins.length > 0
+}
+
+function hasReservationEvidence(line: { reserved_at?: string | null; selected_bins?: unknown }) {
+  return Boolean(line.reserved_at) || hasSelectedBins(line.selected_bins)
+}
+
 Deno.serve(async (req) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
@@ -119,21 +127,20 @@ Deno.serve(async (req) => {
         for (const order of activeOrders ?? []) {
           for (const line of order.order_lines ?? []) {
             const productId = String(line.product_id ?? '').trim()
-            if (!productId || line.is_pre_order === true) continue
+            if (!productId || line.is_pre_order === true || line.line_type === 'pack_for_you') continue
+            if (hasReservationEvidence(line)) continue
 
             const quantity = Math.max(0, Number(line.quantity ?? 0))
             const requestedWeightLbs = Number(line.requested_weight_lbs ?? 0)
             const weightLbs = Number(line.weight_lbs ?? 0)
             const binWeight = Number(line.bin_weight ?? 0)
-            const lbs = line.line_type === 'pack_for_you'
-              ? 0
-              : requestedWeightLbs > 0
-                ? requestedWeightLbs * quantity
-                : weightLbs > 0
-                  ? weightLbs
-                  : binWeight > 0
-                    ? binWeight * quantity
-                    : 0
+            const lbs = requestedWeightLbs > 0
+              ? requestedWeightLbs * quantity
+              : weightLbs > 0
+                ? weightLbs
+                : binWeight > 0
+                  ? binWeight * quantity
+                  : 0
 
             const current = activeDemandByProduct.get(productId) ?? { qty: 0, lbs: 0 }
             activeDemandByProduct.set(productId, {
@@ -141,11 +148,9 @@ Deno.serve(async (req) => {
               lbs: current.lbs + lbs,
             })
 
-            const hasSelectedBins = Array.isArray(line.selected_bins) && line.selected_bins.length > 0
             if ((order.payment_status ?? null) === 'paid'
               && (line.fulfillment_bucket ?? '').toUpperCase() === 'NOW'
-              && !line.reserved_at
-              && !hasSelectedBins) {
+              && !hasReservationEvidence(line)) {
               const unreservedCurrent = unreservedPaidNowDemandByProduct.get(productId) ?? { qty: 0, lbs: 0 }
               unreservedPaidNowDemandByProduct.set(productId, {
                 qty: unreservedCurrent.qty + quantity,

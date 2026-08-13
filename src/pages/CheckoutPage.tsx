@@ -1951,6 +1951,7 @@ export function CheckoutPage() {
   const hasPickupLocation = Boolean(formData.fulfillmentLocation?.trim());
   const pickupLocationRequired = pickupLocations.length > 0;
   const hasExplicitFulfillmentMethodChoice = hasChosenDeliveryMethod || formData.deliveryMethod !== 'pickup';
+  const selectedDeliveryMethod = hasExplicitFulfillmentMethodChoice ? formData.deliveryMethod : null;
 
   const isFulfillmentComplete = (() => {
     if (!hasExplicitFulfillmentMethodChoice) {
@@ -2349,11 +2350,11 @@ export function CheckoutPage() {
                         handleInputChange('fulfillmentLocation', '');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                        formData.deliveryMethod === 'pickup'
+                        selectedDeliveryMethod === 'pickup'
                           ? 'border-current shadow-lg'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
-                      style={formData.deliveryMethod === 'pickup' ? {
+                      style={selectedDeliveryMethod === 'pickup' ? {
                         borderColor: primaryColor,
                         backgroundColor: `${primaryColor}08`,
                         boxShadow: `0 0 20px ${primaryColor}40`
@@ -2375,11 +2376,11 @@ export function CheckoutPage() {
                         handleInputChange('deliveryMethod', 'shipping');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                        formData.deliveryMethod === 'shipping'
+                        selectedDeliveryMethod === 'shipping'
                           ? 'border-current shadow-lg'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
-                      style={formData.deliveryMethod === 'shipping' ? {
+                      style={selectedDeliveryMethod === 'shipping' ? {
                         borderColor: primaryColor,
                         backgroundColor: `${primaryColor}08`,
                         boxShadow: `0 0 20px ${primaryColor}40`
@@ -2389,7 +2390,7 @@ export function CheckoutPage() {
                         <div className="text-3xl mb-2">📮</div>
                         <div className="font-semibold text-gray-800">Shipping</div>
                         <div className="text-sm font-medium mt-1" style={{ color: primaryColor }}>
-                          {formData.deliveryMethod === 'shipping' && shippingEstimate?.estimate_cents
+                          {selectedDeliveryMethod === 'shipping' && shippingEstimate?.estimate_cents
                             ? `$${(shippingEstimate.range_high_cents / 100).toFixed(2)}`
                             : 'Enter ZIP for estimate'}
                         </div>
@@ -2407,11 +2408,11 @@ export function CheckoutPage() {
                         handleInputChange('fulfillmentLocation', '');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                        formData.deliveryMethod === 'other'
+                        selectedDeliveryMethod === 'other'
                           ? 'border-current shadow-lg'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
-                      style={formData.deliveryMethod === 'other' ? {
+                      style={selectedDeliveryMethod === 'other' ? {
                         borderColor: primaryColor,
                         backgroundColor: `${primaryColor}08`,
                         boxShadow: `0 0 20px ${primaryColor}40`
@@ -2433,11 +2434,11 @@ export function CheckoutPage() {
                         handleInputChange('deliveryMethod', 'delivery');
                       }}
                       className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                        formData.deliveryMethod === 'delivery'
+                        selectedDeliveryMethod === 'delivery'
                           ? 'border-current shadow-lg'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
-                      style={formData.deliveryMethod === 'delivery' ? {
+                      style={selectedDeliveryMethod === 'delivery' ? {
                         borderColor: primaryColor,
                         backgroundColor: `${primaryColor}08`,
                         boxShadow: `0 0 20px ${primaryColor}40`
@@ -2461,7 +2462,7 @@ export function CheckoutPage() {
                 </div>
 
                 {/* Pickup Location Selector */}
-                {formData.deliveryMethod === 'pickup' && (storefrontData?.settings as any)?.pickup_locations?.length > 0 && (
+                {selectedDeliveryMethod === 'pickup' && (storefrontData?.settings as any)?.pickup_locations?.length > 0 && (
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Select Pickup Location *
