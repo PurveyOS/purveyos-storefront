@@ -439,7 +439,6 @@ export function useStorefrontData(tenantId: string): {
           // and shared reservations. Do not subtract product/order reservations again.
           const activeOrderReservedQty = Math.max(0, Number((p as any).active_order_reserved_qty ?? 0));
           const activeOrderReservedLbs = Math.max(0, Number((p as any).active_order_reserved_lbs ?? 0));
-          const unreservedPaidNowQty = Math.max(0, Number((p as any).unreserved_paid_now_qty ?? 0));
           const unreservedPaidNowLbs = Math.max(0, Number((p as any).unreserved_paid_now_lbs ?? 0));
 
           const totalInventory = allBins
@@ -453,7 +452,7 @@ export function useStorefrontData(tenantId: string): {
 
           const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
           const visibleInventoryBase = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
-          const effectiveInventory = Math.max(0, visibleInventoryBase - ((p.unit || '').toLowerCase().startsWith('lb') ? unreservedPaidNowLbs : unreservedPaidNowQty));
+          const effectiveInventory = Math.max(0, visibleInventoryBase - ((p.unit || '').toLowerCase().startsWith('lb') ? unreservedPaidNowLbs : activeOrderReservedQty));
 
           // Only include bins with available inventory
           // PHASE 7: Filter by bin_kind
