@@ -1922,10 +1922,11 @@ export function CheckoutPage() {
     }
   }, [orderError, checkoutError]);
 
+  const phoneDigits = formData.customerPhone.replace(/\D/g, '');
   const hasValidContactInfo = Boolean(
     formData.customerName.trim() &&
     formData.customerEmail.trim() &&
-    formData.customerPhone.trim()
+    phoneDigits.length >= 10
   );
 
   const hasSelectedDeliveryDate = Boolean(formData.requestedDeliveryDate);
