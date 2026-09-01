@@ -825,6 +825,51 @@ serve(async (req: Request) => {
         }
       }
 
+      // Send confirmation email to customer (non-blocking, don't fail order if notification fails)
+      try {
+        if (orderRequest.customerEmail) {
+          console.log('📧 [Notify] Sending preorder confirmation email to customer:', orderRequest.customerEmail)
+          const notifyResult = await supabaseAdmin.functions.invoke('order-notify', {
+            body: {
+              orderId: preorderOrderId,
+              emailType: 'order_confirmation',
+              triggerSource: 'storefront',
+            },
+          })
+          if (notifyResult.error) {
+            console.error('❌ [Notify] order-notify returned error (non-fatal):', JSON.stringify(notifyResult.error, null, 2))
+          } else {
+            console.log('✓ [Notify] Preorder confirmation email triggered successfully')
+          }
+        }
+      } catch (notifyError) {
+        console.error('❌ [Notify] Failed to send preorder confirmation email (non-fatal):', notifyError)
+      }
+
+      // Notify tenant about new preorder using order-created-notify function
+      try {
+        console.log('📧 [Notify Tenant] Sending new preorder notification to tenant for order:', preorderOrderId)
+        const tenantNotifyResult = await supabaseAdmin.functions.invoke('order-created-notify', {
+          body: {
+            orderId: preorderOrderId,
+            tenantId: orderRequest.tenantId,
+            customerName: orderRequest.customerName,
+            customerEmail: orderRequest.customerEmail,
+            customerPhone: orderRequest.customerPhone || null,
+            totalCents: totalCentsServer,
+            source: 'web',
+            notifyCustomer: false,
+          },
+        })
+        if (tenantNotifyResult.error) {
+          console.error('❌ [Notify Tenant] order-created-notify returned error (non-fatal):', JSON.stringify(tenantNotifyResult.error, null, 2))
+        } else {
+          console.log('✓ [Notify Tenant] Preorder tenant notification triggered successfully')
+        }
+      } catch (tenantNotifyError) {
+        console.error('❌ [Notify Tenant] Failed to send preorder tenant notification (non-fatal):', tenantNotifyError)
+      }
+
       return new Response(
         JSON.stringify({
           success: true,
