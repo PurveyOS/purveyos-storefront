@@ -68,6 +68,20 @@ export interface Product {
     }>;
   };
   
+  // Dedicated preorder allocation state (separate from allow_pre_order sold-out flow)
+  preorder?: {
+    isOpen: boolean;
+    startsAt: string | null;
+    endsAt: string | null;
+    allocationQty: number;
+    unit: 'lb' | 'ea';
+    customerNote: string | null;
+    sourceProductId: string | null;
+    fulfillmentMode: string;
+    expectedReadyDate: string | null;
+    demandQty: number;
+    remainingQty: number;
+  } | null;
   // Deposit fields
   is_deposit_product?: boolean;
   deposit_prod_price_per_lb?: number; // Price per lb for hanging weight on deposit products

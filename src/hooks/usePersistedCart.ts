@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Cart } from '../types/storefront';
-import { trackAddToCart, trackClearCart, trackRemoveFromCart } from '../utils/analytics';
+import { trackAddToCart, trackRemoveFromCart } from '../utils/analytics';
 import toast from 'react-hot-toast';
 
 const CART_STORAGE_KEY = 'purveyos-cart';

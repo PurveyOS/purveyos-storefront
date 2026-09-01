@@ -453,6 +453,9 @@ export function useStorefrontData(tenantId: string): {
           const fallbackInventory = typeof (p as any).qty === 'number' ? (p as any).qty : 0;
           const visibleInventoryBase = allBins && allBins.length > 0 ? totalInventory : fallbackInventory;
           const effectiveInventory = Math.max(0, visibleInventoryBase - ((p.unit || '').toLowerCase().startsWith('lb') ? unreservedPaidNowLbs : activeOrderReservedQty));
+          const preorder = (p as any).preorder ?? null;
+          const preorderRemaining = preorder && preorder.is_open ? Math.max(0, Number(preorder.remaining_qty ?? preorder.remainingQty ?? 0)) : 0;
+          const displayInventory = preorderRemaining > 0 ? Math.max(effectiveInventory, preorderRemaining) : effectiveInventory;
 
           // Only include bins with available inventory
           // PHASE 7: Filter by bin_kind
@@ -473,9 +476,9 @@ export function useStorefrontData(tenantId: string): {
             weightBins: availableBins,
             imageUrl: p.image_url || p.image || '/demo-product.svg', // Prefer image_url (Storage), fallback to image (base64)
             categoryId: p.category || '',
-            available: effectiveInventory > 0 || (p.allow_pre_order === true),
-            inventory: effectiveInventory,
-            allowPreOrder: p.allow_pre_order === true,
+            available: displayInventory > 0 || (p.allow_pre_order === true),
+            inventory: displayInventory,
+            allowPreOrder: p.allow_pre_order === true || preorderRemaining > 0,
             taxBehavior: ((p as any).tax_behavior as 'inherit' | 'taxable' | 'exempt' | undefined) ?? 'inherit',
             isSubscription: hasSubscription,
             subscriptionData: subscription,
@@ -485,6 +488,23 @@ export function useStorefrontData(tenantId: string): {
             reservedWeightLbs: (p as any).reserved_weight_lbs ?? undefined,
             activeOrderReservedQty,
             activeOrderReservedLbs,
+            preorder: (() => {
+              const raw = (p as any).preorder
+              if (!raw) return null
+              return {
+                isOpen: Boolean(raw.is_open),
+                startsAt: raw.starts_at ?? null,
+                endsAt: raw.ends_at ?? null,
+                allocationQty: Number(raw.allocation_qty ?? 0),
+                unit: raw.unit as 'lb' | 'ea',
+                customerNote: raw.customer_note ?? null,
+                sourceProductId: raw.source_product_id ?? null,
+                fulfillmentMode: raw.fulfillment_mode ?? 'later_exact_packages',
+                expectedReadyDate: raw.expected_ready_date ?? null,
+                demandQty: Number(raw.demand_qty ?? 0),
+                remainingQty: Number(raw.remaining_qty ?? 0),
+              }
+            })(),
           };
         });
 

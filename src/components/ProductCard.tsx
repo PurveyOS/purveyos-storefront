@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link } from 'react-router-dom';
 import type { Product } from "../types/product";
 import { WeightBinSelector } from "./WeightBinSelector";
@@ -20,7 +20,7 @@ interface ClassicProductCardProps {
 interface ModernProductCardProps {
   product: Product;
   quantityInCart: number;
-  onAddToCart: (options?: { weight?: number; quantity?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you' }) => void;
+  onAddToCart: (options?: { weight?: number; quantity?: number; requestedWeightLbs?: number; lineType?: 'exact_package' | 'pack_for_you'; isPreOrder?: boolean }) => void;
   onRemoveFromCart: () => void;
   primaryColor?: string;
   accentColor?: string;
@@ -162,11 +162,8 @@ export function ProductCard(props: ProductCardProps) {
   // MODERN TEMPLATE VERSION
   // =========================
   const {
-    quantityInCart,
     onAddToCart,
-    onRemoveFromCart,
     primaryColor = "#0f6fff",
-    accentColor = "#ffcc00",
     onAddBinToCart,
     preOrdersEnabled,
     tenantDefaultOrderMode,
@@ -240,15 +237,18 @@ export function ProductCard(props: ProductCardProps) {
   // PHASE 6: Override order mode for bulk bins - always use pack_for_you if bulk bin exists
   const effectiveOrderMode = hasBulkBin ? 'pack_for_you' : (tenantDefaultOrderMode ?? 'exact_package');
 
+  const preorder = product.preorder ?? null;
+  const preorderAvailable = Boolean(preorder?.isOpen && (preorder.remainingQty ?? 0) > 0);
+
   const isSoldOut =
     product.isSoldOut ||
-    !product.available ||
-    (product.inventory !== undefined && product.inventory <= 0);
+    (!product.available && !preorderAvailable) ||
+    (product.inventory !== undefined && product.inventory <= 0 && !preorderAvailable);
 
   const canPreOrder =
     (preOrdersEnabled !== false) && isSoldOut && product.allowPreOrder;
 
-  const showLowStock = !isSoldOut && isLowStock(product);
+  const showLowStock = !isSoldOut && !preorder && isLowStock(product);
   const formattedRestockDate = formatRestockDate(product.restockDate);
 
   const handleAddFixedToCart = () => {
@@ -272,12 +272,328 @@ export function ProductCard(props: ProductCardProps) {
     setWeightAmount("1");
   };
 
+  const renderWeightAction = () => {
+    if (effectiveOrderMode === 'pack_for_you') {
+      return (
+        <div className="space-y-2">
+          {isSoldOut && !canPreOrder ? (
+            <span className="text-sm text-red-600 font-medium">Out Of Stock</span>
+          ) : (
+            <>
+              {bulkPackageCount !== null && bulkAvgWeight !== null && (
+                <p className="text-xs text-slate-500">
+                  Bulk packages: {bulkPackageCount} • Avg package: {bulkAvgWeight.toFixed(2)} lb
+                </p>
+              )}
+              {legacyBins.length > 0 && (
+                <p className="text-xs text-slate-500">
+                  Avg package: {(() => {
+                    const totalPackages = legacyBins.reduce(
+                      (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
+                      0
+                    );
+                    if (totalPackages <= 0) return '0.00';
+                    const totalWeight = legacyBins.reduce((sum, b) => {
+                      const available = Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0));
+                      const weight = b.weightBtn ?? 0;
+                      return sum + (weight * available);
+                    }, 0);
+                    return (totalWeight / totalPackages).toFixed(2);
+                  })()} lb • {(() =>
+                    legacyBins.reduce((sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)), 0)
+                  )()} packages
+                </p>
+              )}
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
+                  Enter estimated weight (whole lbs)
+                </label>
+                <input
+                  type="number"
+                  min={Math.max(1, product.pack_for_you_min_lbs ?? 1)}
+                  step="1"
+                  value={weightAmount}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^\d]/g, '');
+                    setWeightAmount(val);
+                  }}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                  placeholder="e.g., 5"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  ${price.toFixed(2)} × {parseInt(weightAmount || '0', 10)} lb = ${
+                    (price * parseInt(weightAmount || '0', 10)).toFixed(2)
+                  }
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Final total may vary based on actual package weights.
+                </p>
+              </div>
+              <button
+                onClick={handleAddPackForYou}
+                className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                style={{ backgroundColor: primaryColor }}
+              >
+                Add Estimated Weight
+              </button>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (isSoldOut) {
+      if (canPreOrder) {
+        return (
+          <div className="space-y-2">
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
+                Enter requested weight (lb)
+              </label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={weightAmount}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^\d]/g, '');
+                  setWeightAmount(val);
+                }}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                placeholder="e.g., 10"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                ${price.toFixed(2)} × {parseInt(weightAmount || '0', 10)} lb = ${
+                  (price * parseInt(weightAmount || '0', 10)).toFixed(2)
+                }
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const weight = parseFloat(weightAmount);
+                if (!weight || weight < 0.1) return;
+                onAddToCart({ weight });
+                setWeightAmount('1');
+              }}
+              className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Pre-Order
+            </button>
+          </div>
+        );
+      }
+
+      return <span className="text-sm text-red-600 font-medium">Out Of Stock</span>;
+    }
+
+    if (hasBins && !hasBulkBin) {
+      return (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowBinModal(true)}
+            className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+            style={{ backgroundColor: primaryColor }}
+          >
+            Choose Package Size
+          </button>
+
+          {showBinModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+              onClick={() => setShowBinModal(false)}
+            >
+              <div
+                className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-slate-900">Choose package size</h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowBinModal(false)}
+                    className="text-slate-500 hover:text-slate-700 text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <WeightBinSelector
+                  bins={localBins}
+                  unit={product.unit}
+                  sizeUnit={product.variantUnit}
+                  isEachUnit={isEachUnit}
+                  primaryColor={primaryColor}
+                  productId={product.id}
+                  cart={props.cart}
+                  onSelect={({ weightBtn, unitPriceCents }) => {
+                    if (onAddBinToCart) {
+                      onAddBinToCart(weightBtn, unitPriceCents);
+                    } else {
+                      onAddToCart({ quantity: 1 });
+                    }
+                    setLocalBins((prev) =>
+                      prev.map((bin) =>
+                        bin.weightBtn === weightBtn
+                          ? { ...bin, qty: Math.max(0, bin.qty - 1) }
+                          : bin
+                      )
+                    );
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Enter weight (lb)</label>
+          <input
+            type="number"
+            min="0.1"
+            step="0.1"
+            value={weightAmount}
+            onChange={(e) => setWeightAmount(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
+            placeholder="e.g., 2.5"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            ${price.toFixed(2)} × {weightAmount || 0} lb = ${(price * parseFloat(weightAmount || '0')).toFixed(2)}
+          </p>
+        </div>
+        <button
+          onClick={handleAddWeightInStock}
+          className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+          style={{ backgroundColor: primaryColor }}
+        >
+          Add to Cart
+        </button>
+      </div>
+    );
+  };
+
+  const renderFixedAction = () => {
+    if (hasBins && !hasBulkBin) {
+      return (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowBinModal(true)}
+            className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+            style={{ backgroundColor: primaryColor }}
+          >
+            Choose Package Size
+          </button>
+
+          {showBinModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+              onClick={() => setShowBinModal(false)}
+            >
+              <div
+                className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-slate-900">Choose package size</h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowBinModal(false)}
+                    className="text-slate-500 hover:text-slate-700 text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <WeightBinSelector
+                  bins={localBins}
+                  unit={product.unit}
+                  sizeUnit={product.variantUnit}
+                  isEachUnit={isEachUnit}
+                  primaryColor={primaryColor}
+                  productId={product.id}
+                  cart={props.cart}
+                  onSelect={({ weightBtn, unitPriceCents }) => {
+                    if (onAddBinToCart) {
+                      onAddBinToCart(weightBtn, unitPriceCents);
+                    } else {
+                      onAddToCart({ quantity: 1 });
+                    }
+                    setLocalBins((prev) =>
+                      prev.map((bin) =>
+                        bin.weightBtn === weightBtn
+                          ? { ...bin, qty: Math.max(0, bin.qty - 1) }
+                          : bin
+                      )
+                    );
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (isSoldOut) {
+      if (canPreOrder) {
+        return (
+          <div className="space-y-2">
+            <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
+              This item is sold out, but you can pre-order by quantity.
+            </p>
+            <button
+              onClick={() => onAddToCart({ quantity: 1 })}
+              className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+              style={{ backgroundColor: primaryColor }}
+            >
+              Pre-Order
+            </button>
+          </div>
+        );
+      }
+
+      return <span className="text-sm text-red-600 font-medium">Out Of Stock</span>;
+    }
+
+    return (
+      <div className="space-y-2">
+        <div className="inline-flex items-center rounded-full border border-slate-300 bg-slate-50 px-2 py-1">
+          <button
+            type="button"
+            className="px-2 text-sm"
+            onClick={() => setFixedQty((q) => (q > 1 ? q - 1 : 1))}
+          >
+            -
+          </button>
+          <span className="px-3 text-sm font-medium">{fixedQty}</span>
+          <button
+            type="button"
+            className="px-2 text-sm"
+            onClick={() => setFixedQty((q) => (q < 99 ? q + 1 : 99))}
+          >
+            +
+          </button>
+        </div>
+        <button
+          onClick={handleAddFixedToCart}
+          className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+          style={{ backgroundColor: primaryColor }}
+        >
+          Add to Cart
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div
       className="flex flex-col overflow-hidden rounded-xl bg-white shadow-md hover:shadow-lg transition-shadow duration-200 group border border-slate-200"
       style={{ borderColor: primaryColor + "22" }}
     >
-      {/* IMAGE + BADGES */}
       <Link to={productPath} className="relative block">
         {product.imageUrl && (
           <img
@@ -288,12 +604,35 @@ export function ProductCard(props: ProductCardProps) {
           />
         )}
 
-        {/* Sold Out Overlay */}
-        {isSoldOut && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <span className="text-red-600 text-2xl font-bold drop-shadow-lg">
-              SOLD OUT
+        {preorder && !preorder.isOpen && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/60">
+            <span className="text-slate-600 text-lg font-bold drop-shadow bg-white/90 px-3 py-1 rounded">
+              {preorder.endsAt && new Date(preorder.endsAt) <= new Date()
+                ? 'Preorder Closed'
+                : 'Coming Soon'}
             </span>
+          </div>
+        )}
+
+        {preorder && preorder.isOpen && (
+          <div className="absolute top-2 left-2">
+            <span className="bg-amber-500 text-white px-2 py-1 rounded text-[11px] font-semibold uppercase tracking-wide shadow">
+              Preorder
+            </span>
+          </div>
+        )}
+
+        {preorder && preorder.isOpen && preorder.expectedReadyDate && (
+          <div className="absolute bottom-2 left-2">
+            <span className="bg-white/90 text-slate-700 px-2 py-1 rounded text-[11px] font-medium shadow">
+              Ready {new Date(preorder.expectedReadyDate).toLocaleDateString()}
+            </span>
+          </div>
+        )}
+
+        {!preorder && isSoldOut && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <span className="text-red-600 text-2xl font-bold drop-shadow-lg">SOLD OUT</span>
             {canPreOrder && isWeightBased && (
               <span className="text-slate-700 text-xs bg-white/90 px-2 py-1 rounded text-center max-w-[160px] shadow">
                 Pre-Order Available
@@ -302,8 +641,7 @@ export function ProductCard(props: ProductCardProps) {
           </div>
         )}
 
-        {/* Sold out / preorder badges */}
-        {isSoldOut && formattedRestockDate && (
+        {!preorder && isSoldOut && formattedRestockDate && (
           <div className="absolute top-2 left-2 flex flex-col gap-1">
             <span className="bg-black/60 text-white px-2 py-1 rounded text-[11px]">
               Back: {formattedRestockDate}
@@ -318,17 +656,12 @@ export function ProductCard(props: ProductCardProps) {
             </span>
           </div>
         )}
-
       </Link>
 
-      {/* CONTENT */}
       <div className="flex-1 p-3 sm:p-4 flex flex-col">
         <div className="flex items-start justify-between gap-2 mb-1">
           <Link to={productPath} className="flex-1 min-w-0">
-            <h3
-              className="text-base font-semibold line-clamp-2"
-              style={{ color: primaryColor }}
-            >
+            <h3 className="text-base font-semibold line-clamp-2" style={{ color: primaryColor }}>
               {product.name}
             </h3>
           </Link>
@@ -345,14 +678,10 @@ export function ProductCard(props: ProductCardProps) {
           )}
         </div>
 
-        {sizeLabel && (
-          <p className="text-xs text-slate-500 mb-1">{sizeLabel}</p>
-        )}
+        {sizeLabel && <p className="text-xs text-slate-500 mb-1">{sizeLabel}</p>}
 
         {product.description && (
-          <p className="text-sm text-slate-600 mb-2 line-clamp-2">
-            {product.description}
-          </p>
+          <p className="text-sm text-slate-600 mb-2 line-clamp-2">{product.description}</p>
         )}
 
         {product.is_deposit_product && (
@@ -395,7 +724,6 @@ export function ProductCard(props: ProductCardProps) {
           </div>
         )}
 
-        {/* PRICE DISPLAY */}
         <div className="mb-2">
           {(() => {
             const isEach = (product.unit || '').toLowerCase() === 'ea';
@@ -403,9 +731,7 @@ export function ProductCard(props: ProductCardProps) {
               ? (product.weightBins || []).filter((b) => (b.weightBtn ?? 0) > 0 && (b.qty ?? 0) - (b.reservedQty ?? 0) > 0)
               : [];
             const hasVariantBins = variantBins.length > 0;
-            const variantPrices = hasVariantBins
-              ? variantBins.map((b) => (b.unitPriceCents ?? 0) / 100)
-              : [];
+            const variantPrices = hasVariantBins ? variantBins.map((b) => (b.unitPriceCents ?? 0) / 100) : [];
             const minPrice = hasVariantBins ? Math.min(...variantPrices) : price;
             const maxPrice = hasVariantBins ? Math.max(...variantPrices) : price;
             if (isFixedDepositProduct) {
@@ -438,16 +764,107 @@ export function ProductCard(props: ProductCardProps) {
             );
           })()}
           {showLowStock && product.inventory !== undefined && (
-            <span className="text-xs text-orange-600 font-medium">
-              Only {product.inventory} left
-            </span>
+            <span className="text-xs text-orange-600 font-medium">Only {product.inventory} left</span>
           )}
         </div>
 
-        {/* ACTION AREA */}
         <div className="mt-auto space-y-2">
-          {/* For subscription products, just show the Add to Cart button */}
-          {product.isSubscription && product.subscriptionData ? (
+          {preorder ? (
+            <div className="space-y-2">
+              {!preorder.isOpen ? (
+                <span className="text-sm text-slate-500">
+                  {preorder.endsAt && new Date(preorder.endsAt) <= new Date()
+                    ? 'Preorder window has closed.'
+                    : preorder.startsAt && new Date(preorder.startsAt) > new Date()
+                      ? `Opens ${new Date(preorder.startsAt).toLocaleDateString()}`
+                      : 'Preorder not available.'}
+                </span>
+              ) : preorder.remainingQty <= 0 ? (
+                <span className="text-sm text-red-600 font-medium">Preorder sold out</span>
+              ) : preorder.unit === 'lb' ? (
+                <div className="space-y-2">
+                  {preorder.customerNote && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                      {preorder.customerNote}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    {preorder.remainingQty.toFixed(0)} lb remaining
+                    {preorder.endsAt && ` · Closes ${new Date(preorder.endsAt).toLocaleDateString()}`}
+                  </p>
+                  {preorder.expectedReadyDate && (
+                    <p className="text-xs font-medium text-slate-600">
+                      Available around {new Date(preorder.expectedReadyDate).toLocaleDateString()}
+                    </p>
+                  )}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
+                      Requested pounds (whole lbs)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      max={Math.floor(preorder.remainingQty)}
+                      value={weightAmount}
+                      onChange={(e) => setWeightAmount(e.target.value.replace(/[^\d]/g, ''))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
+                      placeholder="e.g., 5"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      ${price.toFixed(2)} × {parseInt(weightAmount || '0', 10)} lb = ${(price * parseInt(weightAmount || '0', 10)).toFixed(2)}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">Final weight assigned after processing.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const w = parseInt(weightAmount, 10);
+                      if (!w || w <= 0) return;
+                      onAddToCart({ requestedWeightLbs: w, lineType: 'pack_for_you', isPreOrder: true });
+                      setWeightAmount('1');
+                    }}
+                    className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Preorder
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {preorder.customerNote && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                      {preorder.customerNote}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    {Math.floor(preorder.remainingQty)} remaining
+                    {preorder.endsAt && ` · Closes ${new Date(preorder.endsAt).toLocaleDateString()}`}
+                  </p>
+                  {preorder.expectedReadyDate && (
+                    <p className="text-xs font-medium text-slate-600">
+                      Available around {new Date(preorder.expectedReadyDate).toLocaleDateString()}
+                    </p>
+                  )}
+                  <div className="inline-flex items-center rounded-full border border-slate-300 bg-slate-50 px-2 py-1">
+                    <button type="button" className="px-2 text-sm" onClick={() => setFixedQty((q) => (q > 1 ? q - 1 : 1))}>-</button>
+                    <span className="px-3 text-sm font-medium">{fixedQty}</span>
+                    <button type="button" className="px-2 text-sm" onClick={() => setFixedQty((q) => Math.min(q + 1, Math.floor(preorder.remainingQty)))}>+</button>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (fixedQty <= 0) return;
+                      onAddToCart({ quantity: fixedQty, isPreOrder: true });
+                      setFixedQty(1);
+                    }}
+                    className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    Preorder
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : product.isSubscription && product.subscriptionData ? (
             <button
               onClick={() => onAddToCart()}
               className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
@@ -457,405 +874,24 @@ export function ProductCard(props: ProductCardProps) {
             </button>
           ) : (
             <>
-{/* ========================= */}
-{/* WEIGHT-BASED (lb) PRODUCTS */}
-{/* ========================= */}
-{isWeightBased && isPoundUnit && (
-  <>
-    {effectiveOrderMode === 'pack_for_you' ? (
-      <div className="space-y-2">
-        {isSoldOut && !canPreOrder ? (
-          <span className="text-sm text-red-600 font-medium">Out Of Stock</span>
-        ) : (
-          <>
-            {bulkPackageCount !== null && bulkAvgWeight !== null && (
-              <p className="text-xs text-slate-500">
-                Bulk packages: {bulkPackageCount} • Avg package: {bulkAvgWeight.toFixed(2)} lb
-              </p>
-            )}
-            {legacyBins.length > 0 && (
-              <p className="text-xs text-slate-500">
-                Avg package: {(() => {
-                  const totalPackages = legacyBins.reduce(
-                    (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
-                    0
-                  );
-                  if (totalPackages <= 0) return '0.00';
-                  const totalWeight = legacyBins.reduce((sum, b) => {
-                    const available = Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0));
-                    const weight = b.weightBtn ?? 0;
-                    return sum + (weight * available);
-                  }, 0);
-                  return (totalWeight / totalPackages).toFixed(2);
-                })()} lb • {(() => {
-                  return legacyBins.reduce(
-                    (sum, b) => sum + Math.max(0, (b.qty ?? 0) - (b.reservedQty ?? 0)),
-                    0
-                  );
-                })()} packages
-              </p>
-            )}
-            <div>
-              <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
-                Enter estimated weight (whole lbs)
-              </label>
-              <input
-                type="number"
-                min={Math.max(1, product.pack_for_you_min_lbs ?? 1)}
-                step="1"
-                value={weightAmount}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/[^\d]/g, "");
-                  setWeightAmount(val);
-                }}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
-                placeholder="e.g., 5"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                ${price.toFixed(2)} × {parseInt(weightAmount || "0", 10)} lb = $
-                {(price * parseInt(weightAmount || "0", 10)).toFixed(2)}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Final total may vary based on actual package weights.
-              </p>
-            </div>
-            <button
-              onClick={handleAddPackForYou}
-              className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-              style={{ backgroundColor: primaryColor }}
-            >
-              Add Estimated Weight
-            </button>
-          </>
-        )}
-      </div>
-    ) : isSoldOut ? (
-      canPreOrder ? (
-        // SOLD OUT + PREORDER → weight input as default
-        <div className="space-y-2">
-          <div>
-            <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1">
-              Enter requested weight (lb)
-            </label>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={weightAmount}
-              onChange={(e) => {
-                // Only allow whole numbers
-                const val = e.target.value.replace(/[^\d]/g, "");
-                setWeightAmount(val);
-              }}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
-              placeholder="e.g., 10"
-            />
-            <p className="text-xs text-slate-500 mt-1">
-              ${price.toFixed(2)} × {parseInt(weightAmount || "0", 10)} lb = $
-              {(price * parseInt(weightAmount || "0", 10)).toFixed(2)}
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              const weight = parseFloat(weightAmount);
-              if (!weight || weight < 0.1) return;
-              onAddToCart({ weight });
-              setWeightAmount("1");
-            }}
-            className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-            style={{ backgroundColor: primaryColor }}
-          >
-            Pre-Order
-          </button>
-        </div>
-      ) : (
-        <span className="text-sm text-red-600 font-medium">
-          Out Of Stock
-        </span>
-      )
-    ) : (hasBins && !hasBulkBin) ? (
-      // IN STOCK + LEGACY BINS (not bulk) → "Choose Package Size" button + modal
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={() => setShowBinModal(true)}
-          className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-          style={{ backgroundColor: primaryColor }}
-        >
-          Choose Package Size
-        </button>
-
-        {showBinModal && (
-          <div 
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-            onClick={() => setShowBinModal(false)}
-          >
-            <div 
-              className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-semibold text-slate-900">
-                  Choose package size
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => setShowBinModal(false)}
-                  className="text-slate-500 hover:text-slate-700 text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-              <WeightBinSelector
-                bins={localBins}
-                unit={product.unit}
-                sizeUnit={product.variantUnit}
-                isEachUnit={isEachUnit}
-                primaryColor={primaryColor}
-                productId={product.id}
-                productIds={product.variantProductIds}
-                cart={cart}
-                onSelect={({ weightBtn, unitPriceCents }) => {
-                  if (onAddBinToCart) {
-                    onAddBinToCart(weightBtn, unitPriceCents);
-                  } else {
-                    onAddToCart({ quantity: 1 });
-                  }
-                  
-                  // Decrement the local bin quantity to prevent overselling
-                  setLocalBins(prev => 
-                    prev.map(bin => 
-                      bin.weightBtn === weightBtn 
-                        ? { ...bin, qty: Math.max(0, bin.qty - 1) }
-                        : bin
-                    )
-                  );
-                  // Modal stays open - user clicks X or outside to close
-                }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    ) : (
-      // IN STOCK, NO BINS → manual weight entry
-      <div className="space-y-2">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Enter weight (lb)
-          </label>
-          <input
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={weightAmount}
-            onChange={(e) => setWeightAmount(e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50"
-            placeholder="e.g., 2.5"
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            ${price.toFixed(2)} × {weightAmount || 0} lb = $
-            {(price * parseFloat(weightAmount || "0")).toFixed(2)}
-          </p>
-        </div>
-        <button
-          onClick={handleAddWeightInStock}
-          className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-          style={{ backgroundColor: primaryColor }}
-        >
-          Add to Cart
-        </button>
-      </div>
-    )}
-  </>
-)}
-
-          {/* ========================= */}
-          {/* FIXED-PRICE (ea) PRODUCTS */}
-          {/* ========================= */}
-          {isFixedPrice && isEachUnit && (
-            <>
-              {(hasBins && !hasBulkBin) ? (
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowBinModal(true)}
-                    className="w-full px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    Choose Package Size
-                  </button>
-
-                  {showBinModal && (
-                    <div 
-                      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-                      onClick={() => setShowBinModal(false)}
-                    >
-                      <div 
-                        className="bg-white rounded-xl shadow-lg max-w-sm w-full mx-4 p-4 max-h-[80vh] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-slate-900">
-                            Choose package size
-                          </h4>
-                          <button
-                            type="button"
-                            onClick={() => setShowBinModal(false)}
-                            className="text-slate-500 hover:text-slate-700 text-sm"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <WeightBinSelector
-                          bins={localBins}
-                          unit={product.unit}
-                          sizeUnit={product.variantUnit}
-                          isEachUnit={isEachUnit}
-                          primaryColor={primaryColor}
-                          productId={product.id}
-                          productIds={product.variantProductIds}
-                          cart={cart}
-                          onSelect={({ weightBtn, unitPriceCents }) => {
-                            if (onAddBinToCart) {
-                              onAddBinToCart(weightBtn, unitPriceCents);
-                            } else {
-                              onAddToCart({ quantity: 1 });
-                            }
-
-                            // Decrement the local bin quantity to prevent overselling
-                            setLocalBins(prev => 
-                              prev.map(bin => 
-                                bin.weightBtn === weightBtn 
-                                  ? { ...bin, qty: Math.max(0, bin.qty - 1) }
-                                  : bin
-                              )
-                            );
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : isSoldOut ? (
-                canPreOrder ? (
-                  <div className="space-y-2">
-                    <p className="text-xs text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
-                      This item is sold out, but you can pre-order by quantity.
-                    </p>
-                    <button
-                      onClick={() => onAddToCart({ quantity: 1 })}
-                      className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-                      style={{ backgroundColor: primaryColor }}
-                    >
-                      Pre-Order
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-sm text-red-600 font-medium">
-                    Out Of Stock
-                  </span>
-                )
-              ) : (
-                <div className="space-y-2">
-                  <div className="inline-flex items-center rounded-full border border-slate-300 bg-slate-50 px-2 py-1">
-                    <button
-                      type="button"
-                      className="px-2 text-sm"
-                      onClick={() =>
-                        setFixedQty((q) => (q > 1 ? q - 1 : 1))
-                      }
-                    >
-                      -
-                    </button>
-                    <span className="px-3 text-sm font-medium">{fixedQty}</span>
-                    <button
-                      type="button"
-                      className="px-2 text-sm"
-                      onClick={() =>
-                        setFixedQty((q) => (q < 99 ? q + 1 : 99))
-                      }
-                    >
-                      +
-                    </button>
-                  </div>
-                  <button
-                    onClick={handleAddFixedToCart}
-                    className="w-full mt-1 px-3 py-2 text-white text-sm font-medium rounded-lg shadow transition"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    Add to Cart
-                  </button>
-                </div>
-              )}
-
-              {/* Quantity controls for fixed items already in cart */}
-              {!isSoldOut && quantityInCart > 0 && (
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={onRemoveFromCart}
-                    className="w-8 h-8 text-white rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M20 12H4"
-                      />
-                    </svg>
-                  </button>
-                  <span className="text-sm font-medium text-slate-900 min-w-[20px] text-center">
-                    {quantityInCart}
-                  </span>
-                  <button
-                    onClick={() => onAddToCart({ quantity: 1 })}
-                    className="w-8 h-8 text-white rounded-full flex items-center justify-center"
-                    style={{ backgroundColor: accentColor }}
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+              {isWeightBased && isPoundUnit && renderWeightAction()}
+              {isFixedPrice && isEachUnit && renderFixedAction()}
             </>
           )}
         </div>
       </div>
 
-      {/* DESCRIPTION MODAL */}
       {showDescriptionModal && (
-        <div 
+        <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={() => setShowDescriptionModal(false)}
         >
-          <div 
+          <div
             className="bg-white rounded-xl shadow-lg max-w-md w-full mx-4 p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-900 flex-1 pr-4">
-                {product.name}
-              </h3>
+              <h3 className="text-lg font-semibold text-slate-900 flex-1 pr-4">{product.name}</h3>
               <button
                 type="button"
                 onClick={() => setShowDescriptionModal(false)}
@@ -864,9 +900,7 @@ export function ProductCard(props: ProductCardProps) {
                 ✕
               </button>
             </div>
-            <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
-              {product.description}
-            </div>
+            <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{product.description}</div>
           </div>
         </div>
       )}

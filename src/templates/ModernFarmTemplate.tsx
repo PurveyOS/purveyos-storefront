@@ -307,14 +307,16 @@ const filteredProducts = categoryFiltered.sort((a, b) => {
               const weight = options?.weight;
               const requestedWeightLbs = options?.requestedWeightLbs;
               const quantity = options?.quantity ?? 1;
+              // Honor explicit isPreOrder from preorder section of ProductCard
+              const resolvedIsPreOrder = options?.isPreOrder ?? isPreOrder;
 
               // For weight-based products, pass weight; for quantity-based, just pass quantity
               if (requestedWeightLbs && requestedWeightLbs > 0) {
-                onAddToCart(product.id, 1, { requestedWeightLbs, lineType: 'pack_for_you' });
+                onAddToCart(product.id, 1, { requestedWeightLbs, lineType: 'pack_for_you', isPreOrder: options?.isPreOrder ?? false });
               } else if (weight && weight > 0) {
-                onAddToCart(product.id, 1, { weight, isPreOrder });
+                onAddToCart(product.id, 1, { weight, isPreOrder: resolvedIsPreOrder });
               } else {
-                onAddToCart(product.id, quantity, { isPreOrder });
+                onAddToCart(product.id, quantity, { isPreOrder: resolvedIsPreOrder });
               }
             }}
             onRemoveFromCart={() => onRemoveFromCart(product.id)}

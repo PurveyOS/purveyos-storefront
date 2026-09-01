@@ -25,6 +25,34 @@ export function friendlyOrderError(raw: string | null | undefined): string {
     return raw;
   }
 
+  if (msg.includes('preorder_mixed_cart')) {
+    return 'Preorder items must be checked out separately from in-stock items.';
+  }
+  if (msg.includes('preorder_not_enabled') || msg.includes('preorder_not_configured')) {
+    return 'This preorder is not currently available.';
+  }
+  if (msg.includes('preorder_not_open')) {
+    return 'This preorder has not opened yet. Please check back when ordering begins.';
+  }
+  if (msg.includes('preorder_closed')) {
+    return 'The preorder window for this item has ended.';
+  }
+  if (msg.includes('preorder_sold_out')) {
+    return 'The requested quantity is no longer available for preorder. Please refresh and try again.';
+  }
+  if (msg.includes('preorder_invalid_quantity')) {
+    return 'Please enter a valid preorder quantity.';
+  }
+  if (msg.includes('preorder_duplicate_product_line')) {
+    return 'Each preorder product can only appear once per order.';
+  }
+  if (msg.includes('preorder_invalid_weight_line')) {
+    return 'Invalid preorder weight. Please enter a whole-pound amount and try again.';
+  }
+  if (msg.includes('preorder_selected_bins_not_allowed')) {
+    return 'Preorder items cannot have packages selected at checkout.';
+  }
+
   if (isInventoryOrderError(raw)) {
     return 'One or more items in your cart are no longer available. Please go back and update your cart.';
   }

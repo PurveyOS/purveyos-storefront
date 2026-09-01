@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle } from 'react';
+import { forwardRef, useImperativeHandle } from 'react';
 import { CardElement, useElements, useStripe } from '@stripe/react-stripe-js';
 
 export interface StripeCardFormHandle {

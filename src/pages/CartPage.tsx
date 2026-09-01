@@ -225,7 +225,7 @@ export function CartPage() {
                               <span className="w-6 text-center font-medium text-sm">{quantity}</span>
                               
                               <button
-                                onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight, requestedWeightLbs, lineType })}
+                                onClick={() => addToCart(product.id, 1, { binWeight, unitPriceCents, weight, requestedWeightLbs, lineType: lineType as 'exact_package' | 'pack_for_you' | undefined })}
                                 className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 transition-colors"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

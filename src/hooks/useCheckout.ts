@@ -77,63 +77,6 @@ function isProductTaxable(product: any, chargeTaxOnOnline: boolean): boolean {
   return chargeTaxOnOnline;
 }
 
-interface TotalsResult {
-  subtotalCents: number;
-  taxCents: number;
-  totalCents: number;
-}
-
-function calculateTotalsFromCents(
-  lineTotalsCents: number[],
-  taxConfig?: TenantTaxConfig,
-  discountCents: number = 0
-): TotalsResult {
-  // Subtotal is always the sum of line items BEFORE discount
-  const subtotalCents = lineTotalsCents.reduce(
-    (sum, cents) => sum + (cents || 0),
-    0
-  );
-
-  const rate = taxConfig?.taxRate ?? 0;
-  const chargeTax =
-    taxConfig?.chargeTaxOnOnline !== undefined
-      ? taxConfig.chargeTaxOnOnline
-      : true;
-
-  if (!chargeTax || rate <= 0) {
-    // No tax: total = subtotal - discount
-    return {
-      subtotalCents,
-      taxCents: 0,
-      totalCents: Math.max(0, subtotalCents - discountCents),
-    };
-  }
-
-  const taxIncluded = taxConfig?.taxIncluded ?? false;
-
-  if (taxIncluded) {
-    // Prices already include tax: back out the net subtotal.
-    const gross = subtotalCents;
-    const net = Math.round(gross / (1 + rate));
-    const taxCents = gross - net;
-
-    return {
-      subtotalCents: net,
-      taxCents,
-      totalCents: Math.max(0, gross - discountCents),
-    };
-  } else {
-    // Prices are before tax: calculate tax on (subtotal - discount), then add to subtotal
-    const subtotalAfterDiscount = Math.max(0, subtotalCents - discountCents);
-    const taxCents = Math.round(subtotalAfterDiscount * rate);
-    return {
-      subtotalCents,
-      taxCents,
-      totalCents: subtotalAfterDiscount + taxCents,
-    };
-  }
-}
-
 interface OutgoingOrderLine {
   productId: string;
   productName: string;
@@ -446,7 +389,7 @@ export function useCheckout() {
             productId: subscriptionFromCart.metadata?.subscriptionProductId ?? subscriptionFromCart.productId,
             subscriptionProductId: subscriptionFromCart.metadata?.subscriptionProductId,
             quantity: subscriptionFromCart.quantity ?? 1,
-            substitutions: subscriptionFromCart.metadata?.substitutionSelections,
+            substitutions: (subscriptionFromCart.metadata as any)?.substitutionSelections,
             duration: subscriptionFromCart.metadata?.subscriptionDurationIntervals,
           }
         : undefined;
@@ -468,6 +411,7 @@ export function useCheckout() {
         paymentMethod: checkoutData.paymentMethod,
         paymentNowChoice: checkoutData.paymentNowChoice,
         fulfillmentLocation: checkoutData.fulfillmentLocation,
+        checkoutAttemptId: crypto.randomUUID(),
 
         // Canonical line structure
         lines,

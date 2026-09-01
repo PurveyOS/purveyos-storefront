@@ -163,6 +163,89 @@ Deno.serve(async (req) => {
     }
 
     // ============================================================================
+    // STEP 2.3: Fetch preorder settings and compute live allocation availability
+    // ============================================================================
+    const preorderByProduct = new Map<string, object>()
+    if (productIds.length > 0) {
+      const { data: preorderSettings } = await supabase
+        .from('product_preorder_settings')
+        .select('product_id, enabled, starts_at, ends_at, allocation_qty, unit, customer_note, source_product_id, fulfillment_mode, expected_ready_date')
+        .eq('tenant_id', tenant.id)
+        .in('product_id', productIds)
+
+      if (preorderSettings && preorderSettings.length > 0) {
+        const preorderProductIds = (preorderSettings as any[]).map((s) => s.product_id)
+
+        // Fetch qualifying orders with preorder lines in a single query.
+        // Demand is computed in-memory to avoid N+1 RPC calls.
+        const { data: preorderOrders } = await supabase
+          .from('orders')
+          .select('payment_status, payment_method, preorder_expires_at, order_lines(product_id, quantity, requested_weight_lbs, is_pre_order)')
+          .eq('tenant_id', tenant.id)
+          .in('status', ['pending', 'ready', 'completed'])
+
+        const demandByProduct = new Map<string, number>()
+        const nowMs = Date.now()
+
+        for (const order of (preorderOrders ?? []) as any[]) {
+          if (['failed', 'refunded'].includes(order.payment_status ?? '')) continue
+
+          // Skip abandoned unpaid card holds so they release allocation without a cleanup job.
+          const isExpiredCardHold =
+            order.preorder_expires_at &&
+            new Date(order.preorder_expires_at).getTime() <= nowMs &&
+            (!order.payment_status || order.payment_status === 'pending') &&
+            (order.payment_method ?? '').toLowerCase() === 'card'
+          if (isExpiredCardHold) continue
+
+          for (const line of (order.order_lines ?? []) as any[]) {
+            if (!line.is_pre_order) continue
+            const pid = String(line.product_id ?? '').trim()
+            if (!pid || !preorderProductIds.includes(pid)) continue
+
+            const s = (preorderSettings as any[]).find((x) => x.product_id === pid)
+            if (!s) continue
+
+            const cur = demandByProduct.get(pid) ?? 0
+            demandByProduct.set(
+              pid,
+              cur + (s.unit === 'lb'
+                ? Math.max(0, Number(line.requested_weight_lbs ?? 0))
+                : Math.max(0, Number(line.quantity ?? 0)))
+            )
+          }
+        }
+
+        const nowDate = new Date()
+        for (const s of preorderSettings as any[]) {
+          const demand = demandByProduct.get(s.product_id) ?? 0
+          const remaining = Math.max(0, Number(s.allocation_qty) - demand)
+          const startsAt = s.starts_at ? new Date(s.starts_at) : null
+          const endsAt = s.ends_at ? new Date(s.ends_at) : null
+          const isOpen = Boolean(s.enabled) &&
+            (startsAt === null || nowDate >= startsAt) &&
+            (endsAt === null || nowDate < endsAt) &&
+            remaining > 0
+
+          preorderByProduct.set(s.product_id, {
+            enabled: Boolean(s.enabled),
+            is_open: isOpen,
+            starts_at: s.starts_at ?? null,
+            ends_at: s.ends_at ?? null,
+            allocation_qty: Number(s.allocation_qty),
+            unit: s.unit,
+            customer_note: s.customer_note ?? null,
+            source_product_id: s.source_product_id ?? null,
+            fulfillment_mode: s.fulfillment_mode ?? 'later_exact_packages',
+            expected_ready_date: s.expected_ready_date ?? null,
+            demand_qty: demand,
+            remaining_qty: remaining,
+          })
+        }
+      }
+    }
+
+    // ============================================================================
     // STEP 2.5: Fetch subscription data for products
     // ============================================================================
     const subscriptionFetchStart = Date.now()
@@ -245,7 +328,8 @@ Deno.serve(async (req) => {
         unreserved_paid_now_qty: unreservedPaidNowDemand.qty,
         unreserved_paid_now_lbs: unreservedPaidNowDemand.lbs,
         isSubscription: !!subscriptionData,
-        subscriptionData: subscriptionData || undefined
+        subscriptionData: subscriptionData || undefined,
+        preorder: preorderByProduct.get(p.id) ?? null,
       }
     }) || []
 

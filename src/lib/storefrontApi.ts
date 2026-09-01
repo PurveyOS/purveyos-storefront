@@ -42,6 +42,21 @@ export interface StorefrontProduct {
   active_order_reserved_lbs?: number
   unreserved_paid_now_qty?: number
   unreserved_paid_now_lbs?: number
+  // Preorder allocation state (dedicated preorder products only)
+  preorder?: {
+    enabled: boolean
+    is_open: boolean
+    starts_at: string | null
+    ends_at: string | null
+    allocation_qty: number
+    unit: 'lb' | 'ea'
+    customer_note: string | null
+    source_product_id: string | null
+    fulfillment_mode: string
+    expected_ready_date: string | null
+    demand_qty: number
+    remaining_qty: number
+  } | null
   // Subscription fields
   isSubscription?: boolean
   subscriptionData?: {

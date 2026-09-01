@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useCart } from '../context/CartContext';
 import { WeightBinSelector } from '../components/WeightBinSelector';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
@@ -86,10 +87,12 @@ export function ProductPage() {
     );
   }
 
+  const preorder = product.preorder ?? null;
+  const preorderAvailable = Boolean(preorder?.isOpen && preorder.remainingQty > 0);
   const isSoldOut =
     product.isSoldOut ||
-    !product.available ||
-    (product.inventory !== undefined && product.inventory <= 0);
+    (!product.available && !preorderAvailable) ||
+    (product.inventory !== undefined && product.inventory <= 0 && !preorderAvailable);
   const canPreOrder = isSoldOut && product.allowPreOrder;
   const formattedRestockDate = formatRestockDate(product.restockDate);
   const relatedProducts = storefrontData.products
@@ -111,6 +114,7 @@ export function ProductPage() {
   const depositBalance = depositFinalTotal > 0
     ? Math.max(0, depositFinalTotal - product.pricePer)
     : 0;
+  const cartItemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleAddToCart = () => {
     if (isWeightBased) {
@@ -126,6 +130,7 @@ export function ProductPage() {
           lineType: 'pack_for_you',
           isPreOrder: canPreOrder,
         });
+        toast.success(`Added ${parsedAmount} lb of ${product.name} to cart`);
         return;
       }
 
@@ -133,6 +138,7 @@ export function ProductPage() {
         weight: parsedAmount,
         isPreOrder: canPreOrder,
       });
+      toast.success(`Added ${parsedAmount} lb of ${product.name} to cart`);
       return;
     }
 
@@ -143,6 +149,7 @@ export function ProductPage() {
     addToCart(product.id, fixedQuantity, {
       isPreOrder: canPreOrder,
     });
+    toast.success(`Added ${fixedQuantity} × ${product.name} to cart`);
   };
 
   return (
@@ -158,10 +165,15 @@ export function ProductPage() {
             </Link>
             <Link
               to="/cart"
-              className="inline-flex items-center px-4 py-2 rounded-lg text-white transition-opacity hover:opacity-90"
+              className="relative inline-flex items-center px-4 py-2 rounded-lg text-white transition-opacity hover:opacity-90"
               style={{ backgroundColor: primaryColor }}
             >
               View Cart
+              {cartItemCount > 0 && (
+                <span className="ml-2 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-white text-xs font-bold" style={{ color: primaryColor }}>
+                  {cartItemCount}
+                </span>
+              )}
             </Link>
           </div>
 
@@ -188,7 +200,19 @@ export function ProductPage() {
                       {product.categoryId}
                     </span>
                   )}
-                  {isSoldOut ? (
+                  {preorder ? (
+                    preorder.isOpen ? (
+                      <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-700">
+                        Preorder Open
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700">
+                        {preorder.endsAt && new Date(preorder.endsAt) <= new Date()
+                          ? 'Preorder Closed'
+                          : 'Coming Soon'}
+                      </span>
+                    )
+                  ) : isSoldOut ? (
                     <span className="px-3 py-1 rounded-full bg-red-100 text-red-700">
                       {canPreOrder ? 'Available for pre-order' : 'Sold out'}
                     </span>
@@ -265,14 +289,29 @@ export function ProductPage() {
                 <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-gray-500">Availability</p>
                   <p className="mt-2 text-sm font-medium text-gray-900">
-                    {isSoldOut
-                      ? canPreOrder
-                        ? 'Currently sold out, but customers can still pre-order.'
-                        : 'Currently out of stock.'
-                      : product.inventory !== undefined
-                        ? `${product.inventory} available`
-                        : 'In stock'}
+                    {preorder
+                      ? preorder.isOpen
+                        ? `${preorder.unit === 'lb'
+                            ? `${preorder.remainingQty.toFixed(0)} lb remaining`
+                            : `${Math.floor(preorder.remainingQty)} remaining`}${preorder.endsAt ? ` · Closes ${new Date(preorder.endsAt).toLocaleDateString()}` : ''}`
+                        : preorder.endsAt && new Date(preorder.endsAt) <= new Date()
+                          ? 'Preorder window closed.'
+                          : preorder.startsAt
+                            ? `Opens ${new Date(preorder.startsAt).toLocaleDateString()}`
+                            : 'Not available yet.'
+                      : isSoldOut
+                        ? canPreOrder
+                          ? 'Currently sold out, but customers can still pre-order.'
+                          : 'Currently out of stock.'
+                        : product.inventory !== undefined
+                          ? `${product.inventory} available`
+                          : 'In stock'}
                   </p>
+                  {preorder?.expectedReadyDate && (
+                    <p className="mt-1 text-sm text-gray-600">
+                      Available around {new Date(preorder.expectedReadyDate).toLocaleDateString()}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-2xl bg-gray-50 border border-gray-200 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-gray-500">Ordering</p>
@@ -310,19 +349,111 @@ export function ProductPage() {
 
               <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Add to cart</h2>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    {preorder ? 'Preorder' : 'Add to cart'}
+                  </h2>
                   <p className="mt-1 text-sm text-gray-600">
-                    {isWeightBased
-                      ? effectiveOrderMode === 'pack_for_you'
-                        ? 'Choose how many pounds you want and we will pack the closest available weight.'
-                        : hasBins && !isSoldOut
-                          ? 'Choose an exact package from the available inventory.'
-                          : 'Choose how many pounds you want to add to your cart.'
-                      : 'Choose a quantity and add this product to your cart.'}
+                    {preorder
+                      ? (preorder.customerNote ?? 'Reserve your portion before processing. Final weights assigned after USDA processing.')
+                      : isWeightBased
+                        ? effectiveOrderMode === 'pack_for_you'
+                          ? 'Choose how many pounds you want and we will pack the closest available weight.'
+                          : hasBins && !isSoldOut
+                            ? 'Choose an exact package from the available inventory.'
+                            : 'Choose how many pounds you want to add to your cart.'
+                        : 'Choose a quantity and add this product to your cart.'}
                   </p>
                 </div>
 
-                {isWeightBased && effectiveOrderMode !== 'pack_for_you' && !isSoldOut && hasBins ? (
+                {/* Preorder add-to-cart */}
+                {preorder && (
+                  preorder.isOpen && preorder.remainingQty > 0 ? (
+                    preorder.unit === 'lb' ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor="preorderWeightAmount" className="text-sm font-medium text-gray-700">
+                            Requested pounds (whole lbs)
+                          </label>
+                          <div className="mt-1 flex gap-3 items-center">
+                            <input
+                              id="preorderWeightAmount"
+                              type="number"
+                              min="1"
+                              step="1"
+                              max={Math.floor(preorder.remainingQty)}
+                              value={weightAmount}
+                              onChange={(e) => setWeightAmount(e.target.value.replace(/[^\d]/g, ''))}
+                              className="w-32 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                            />
+                            <span className="text-sm text-gray-500">lb</span>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">
+                            ${product.pricePer.toFixed(2)} × {parseInt(weightAmount || '0', 10)} lb = ${(product.pricePer * parseInt(weightAmount || '0', 10)).toFixed(2)}
+                          </p>
+                          <p className="mt-0.5 text-xs text-gray-400">Final weight assigned after USDA processing.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const w = parseInt(weightAmount, 10);
+                            if (!w || w <= 0) return;
+                            addToCart(product.id, 1, { requestedWeightLbs: w, lineType: 'pack_for_you', isPreOrder: true });
+                            toast.success(`Added ${w} lb preorder of ${product.name} to cart`);
+                            setWeightAmount('1');
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium text-white transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          Preorder
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor="preorderQty" className="text-sm font-medium text-gray-700">
+                            Quantity ({Math.floor(preorder.remainingQty)} remaining)
+                          </label>
+                          <input
+                            id="preorderQty"
+                            type="number"
+                            min="1"
+                            step="1"
+                            max={Math.floor(preorder.remainingQty)}
+                            value={fixedQuantity}
+                            onChange={(e) => setFixedQuantity(Math.max(1, Number(e.target.value) || 1))}
+                            className="mt-1 w-28 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-200"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!fixedQuantity || fixedQuantity <= 0) return;
+                            addToCart(product.id, fixedQuantity, { isPreOrder: true });
+                            toast.success(`Added ${fixedQuantity} × ${product.name} preorder to cart`);
+                            setFixedQuantity(1);
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg px-5 py-3 font-medium text-white transition-opacity hover:opacity-90"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          Preorder
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-sm font-medium text-red-600">
+                      {!preorder.isOpen
+                        ? preorder.endsAt && new Date(preorder.endsAt) <= new Date()
+                          ? 'Preorder window has closed.'
+                          : 'Preorder not yet open.'
+                        : 'Preorder allocation sold out.'}
+                    </p>
+                  )
+                )}
+
+                {/* Normal inventory add-to-cart (non-preorder products only) */}
+                {!preorder && (
+                  <>
+                  {isWeightBased && effectiveOrderMode !== 'pack_for_you' && !isSoldOut && hasBins ? (
                   <div className="space-y-2">
                     <button
                       type="button"
@@ -360,6 +491,7 @@ export function ProductPage() {
                             cart={cart}
                             onSelect={({ weightBtn, unitPriceCents }) => {
                               addToCart(product.id, 1, { binWeight: weightBtn, unitPriceCents });
+                              toast.success(`Added ${weightBtn} lb package of ${product.name} to cart`);
                               setShowBinModal(false);
                             }}
                           />
@@ -419,6 +551,8 @@ export function ProductPage() {
                     Go to Cart
                   </Link>
                 </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

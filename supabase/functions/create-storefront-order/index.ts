@@ -45,6 +45,7 @@ interface OrderRequest {
   fulfillmentLocation?: string
   paymentMethod: 'venmo' | 'zelle' | 'cashapp' | 'card' | 'cash' | 'pay_later'
   paymentNowChoice?: 'pay_now' | 'pay_at_pickup'
+  checkoutAttemptId?: string
   lines: OrderLine[]
   subtotalCents: number
   taxCents: number
@@ -199,6 +200,15 @@ serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const preorderLines = orderRequest.lines.filter((line) => line.isPreOrder === true)
+    const regularLines = orderRequest.lines.filter((line) => line.isPreOrder !== true)
+    if (preorderLines.length > 0 && regularLines.length > 0) {
+      return new Response(
+        JSON.stringify({ error: 'preorder_mixed_cart' }),
+        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -633,6 +643,197 @@ serve(async (req: Request) => {
       }
 
       console.log('✅ Initial shortages resolved after cache recheck — proceeding with order')
+    }
+
+    if (preorderLines.length > 0) {
+      const checkoutAttemptId = (orderRequest.checkoutAttemptId || '').trim() || crypto.randomUUID()
+      const preorderBody = {
+        tenant_id: orderRequest.tenantId,
+        checkout_attempt_id: checkoutAttemptId,
+        customer_name: orderRequest.customerName || null,
+        customer_email: orderRequest.customerEmail || null,
+        customer_phone: orderRequest.customerPhone || null,
+        note: [
+          orderRequest.deliveryMethod ? `fulfillment: ${orderRequest.deliveryMethod}` : null,
+          orderRequest.fulfillmentLocation ? `location: ${orderRequest.fulfillmentLocation}` : null,
+          orderRequest.deliveryAddress ? `address: ${orderRequest.deliveryAddress}` : null,
+          orderRequest.requestedDeliveryDate ? `requested delivery date: ${orderRequest.requestedDeliveryDate}` : null,
+          orderRequest.deliveryNotes ? `notes: ${orderRequest.deliveryNotes}` : null,
+        ].filter(Boolean).join(' | ') || null,
+        fulfillment_method: orderRequest.deliveryMethod || null,
+        subtotal_cents: subtotalCentsServer,
+        tax_cents: taxCentsServer,
+        shipping_cents: shippingChargeCentsServer,
+        delivery_cents: deliveryChargeCentsServer,
+        online_payment_fee_cents: onlinePaymentFeeCentsServer,
+        total_cents: totalCentsServer,
+        discount_cents: discountCentsServer,
+        payment_method: orderRequest.paymentMethod,
+        payment_status: 'pending',
+      }
+
+      const preorderRpcLines = orderRequest.lines.map((line) => ({
+        product_id: line.productId,
+        product_name: line.productName,
+        quantity: line.qty ?? 1,
+        unit_price_cents: line.unitPriceCents ?? 0,
+        line_total_cents: line.lineTotalCents ?? 0,
+        requested_weight_lbs:
+          line.lineType === 'pack_for_you'
+            ? (line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? null)
+            : null,
+        line_type: line.lineType === 'pack_for_you' ? 'pack_for_you' : 'exact_package',
+      }))
+
+      const { data: preorderResult, error: preorderRpcError } = await supabaseAdmin.rpc(
+        'create_storefront_preorder_order',
+        {
+          p_order: preorderBody,
+          p_lines: preorderRpcLines,
+        }
+      )
+
+      if (preorderRpcError) {
+        console.error('Error creating preorder order via RPC:', preorderRpcError)
+        const message = preorderRpcError.message || 'preorder_checkout_failed'
+        return new Response(
+          JSON.stringify({ error: message }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const preorderOrderId = preorderResult?.order_id ?? preorderResult?.id
+      if (!preorderOrderId) {
+        return new Response(
+          JSON.stringify({ error: 'preorder_order_not_created' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      let chargedStripePaymentIntentId: string | null = orderRequest.stripePaymentIntentId ?? null
+      const shouldChargeCardNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
+
+      if (shouldChargeCardNow && !chargedStripePaymentIntentId) {
+        const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
+        if (!stripeSecretKey) {
+          return new Response(JSON.stringify({ error: 'payment_processing_not_configured' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        const connectedAccountId = typeof tenantTaxConfig?.stripe_account_id === 'string'
+          ? tenantTaxConfig.stripe_account_id
+          : ''
+        if (!connectedAccountId) {
+          return new Response(JSON.stringify({ error: 'stripe_account_not_connected' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        const paymentMethodId = (orderRequest.paymentMethodId || '').trim()
+        const confirmationToken = (orderRequest.confirmationToken || '').trim()
+        if (!paymentMethodId && !confirmationToken) {
+          return new Response(JSON.stringify({ error: 'card_payment_method_required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        try {
+          const stripe = new Stripe(stripeSecretKey, {
+            apiVersion: '2023-10-16',
+            httpClient: Stripe.createFetchHttpClient(),
+          })
+
+          const paymentIntentParams: Record<string, any> = {
+            amount: Math.max(0, totalCentsServer),
+            currency: 'usd',
+            payment_method_types: ['card'],
+            confirm: true,
+            return_url: `${req.headers.get('origin') || 'https://app.purveyos.com'}/checkout/success`,
+            metadata: {
+              tenantId: orderRequest.tenantId,
+              customerEmail: orderRequest.customerEmail,
+              source: 'storefront_preorder',
+              orderId: preorderOrderId,
+            },
+          }
+
+          if (paymentMethodId) {
+            paymentIntentParams.payment_method = paymentMethodId
+          } else {
+            paymentIntentParams.confirmation_token = confirmationToken
+          }
+
+          const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams, {
+            stripeAccount: connectedAccountId,
+          })
+
+          if (paymentIntent.status === 'succeeded') {
+            chargedStripePaymentIntentId = paymentIntent.id
+            const { data: markPaidData, error: markPaidError } = await supabaseAdmin.rpc(
+              'mark_storefront_preorder_card_paid',
+              {
+                p_order_id: preorderOrderId,
+                p_stripe_payment_intent_id: paymentIntent.id,
+              }
+            )
+
+            if (markPaidError || markPaidData === false) {
+              console.error('Failed to mark preorder order paid:', markPaidError ?? 'rpc returned false')
+              await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
+                p_order_id: preorderOrderId,
+                p_payment_status: 'failed',
+              })
+              return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
+                status: 402,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              })
+            }
+          } else if (paymentIntent.status === 'requires_action') {
+            await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
+              p_order_id: preorderOrderId,
+              p_payment_status: 'failed',
+            })
+            return new Response(JSON.stringify({ error: 'card_authentication_required' }), {
+              status: 402,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+          } else {
+            console.error('Card payment did not succeed for preorder:', paymentIntent.status)
+            await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
+              p_order_id: preorderOrderId,
+              p_payment_status: 'failed',
+            })
+            return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
+              status: 402,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+          }
+        } catch (stripeError) {
+          console.error('Error charging Stripe card payment for preorder:', stripeError)
+          await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
+            p_order_id: preorderOrderId,
+            p_payment_status: 'failed',
+          })
+          return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
+            status: 402,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          order_id: preorderOrderId,
+          payment_status: 'pending',
+          preorder_expires_at: preorderResult?.preorder_expires_at ?? null,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     // Charge card payments before creating order records so checkout cannot succeed without a Stripe charge.

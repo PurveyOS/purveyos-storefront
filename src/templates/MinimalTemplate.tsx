@@ -189,6 +189,26 @@ export function MinimalTemplate({
 
                     {/* Inventory Badge - Top Right */}
                     {(() => {
+                      const preorder = product.preorder ?? null;
+                      if (preorder) {
+                        if (!preorder.isOpen) {
+                          return (
+                            <div className="absolute top-2 right-2">
+                              <span className="text-xs font-medium px-2 py-1 rounded-full bg-white/90 text-gray-800 shadow-sm">
+                                {preorder.endsAt && new Date(preorder.endsAt) <= new Date() ? 'Preorder Closed' : 'Coming Soon'}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="absolute top-2 right-2">
+                            <span className="text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-full bg-amber-500 text-white shadow-sm">
+                              Preorder
+                            </span>
+                          </div>
+                        );
+                      }
+
                       const isSoldOut = product.isSoldOut || !product.available || (product.inventory !== undefined && product.inventory <= 0);
                       const isWeight = product.unit?.toLowerCase()?.startsWith('lb');
                       
@@ -302,7 +322,98 @@ export function MinimalTemplate({
                     )}
 
                     {/* Weight-based: bins or custom weight - Hide for subscriptions */}
-                    {!product.isSubscription && (() => {
+                    {!product.isSubscription && product.preorder && (() => {
+                      const preorder = product.preorder!;
+                      const weightValue = weightInputs[product.id] ?? '1';
+                      const qtyValue = qtyInputs[product.id] ?? 1;
+
+                      if (!preorder.isOpen || preorder.remainingQty <= 0) {
+                        return (
+                          <p className="text-sm font-medium text-red-600">
+                            {!preorder.isOpen
+                              ? preorder.endsAt && new Date(preorder.endsAt) <= new Date()
+                                ? 'Preorder window has closed.'
+                                : 'Preorder not yet open.'
+                              : 'Preorder allocation sold out.'}
+                          </p>
+                        );
+                      }
+
+                      if (preorder.unit === 'lb') {
+                        return (
+                          <div className="space-y-2">
+                            {preorder.customerNote && (
+                              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">{preorder.customerNote}</p>
+                            )}
+                            <p className="text-xs text-gray-500">
+                              {preorder.remainingQty.toFixed(0)} lb remaining
+                              {preorder.endsAt && ` · Closes ${new Date(preorder.endsAt).toLocaleDateString()}`}
+                              {preorder.expectedReadyDate && ` · Ready ${new Date(preorder.expectedReadyDate).toLocaleDateString()}`}
+                            </p>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="number"
+                                step="1"
+                                min="1"
+                                max={Math.floor(preorder.remainingQty)}
+                                value={weightValue}
+                                onChange={(e) => setWeightInputs((prev) => ({ ...prev, [product.id]: e.target.value.replace(/[^\d]/g, '') }))}
+                                className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                placeholder="lbs"
+                              />
+                              <button
+                                onClick={() => {
+                                  const w = parseInt(weightValue, 10);
+                                  if (!w || w <= 0) return;
+                                  onAddToCart(product.id, 1, { requestedWeightLbs: w, lineType: 'pack_for_you', isPreOrder: true });
+                                  setWeightInputs((prev) => ({ ...prev, [product.id]: '1' }));
+                                }}
+                                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white transition-colors"
+                              >
+                                Preorder
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-2">
+                          {preorder.customerNote && (
+                            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">{preorder.customerNote}</p>
+                          )}
+                          <p className="text-xs text-gray-500">
+                            {Math.floor(preorder.remainingQty)} remaining
+                            {preorder.endsAt && ` · Closes ${new Date(preorder.endsAt).toLocaleDateString()}`}
+                            {preorder.expectedReadyDate && ` · Ready ${new Date(preorder.expectedReadyDate).toLocaleDateString()}`}
+                          </p>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min="1"
+                              max={Math.floor(preorder.remainingQty)}
+                              value={qtyValue}
+                              onChange={(e) => setQtyInputs((prev) => ({ ...prev, [product.id]: parseInt(e.target.value || '1', 10) }))}
+                              onFocus={(e) => e.currentTarget.select()}
+                              className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                            />
+                            <button
+                              onClick={() => {
+                                const q = qtyValue > 0 ? qtyValue : 1;
+                                onAddToCart(product.id, q, { isPreOrder: true });
+                                setQtyInputs((prev) => ({ ...prev, [product.id]: 1 }));
+                              }}
+                              className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white transition-colors"
+                            >
+                              Preorder
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Weight-based: bins or custom weight - Hide for subscriptions */}
+                    {!product.isSubscription && !product.preorder && (() => {
                       const effectiveOrderMode = getEffectiveOrderMode(product);
                       const isWeight = product.unit?.toLowerCase()?.startsWith('lb');
                       // Account for bins already in the cart when showing availability

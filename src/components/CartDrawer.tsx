@@ -78,7 +78,7 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
   // Pre-packaged bin item
   if (item.binWeight && item.unitPriceCents) {
     const unitPrice = item.unitPriceCents / 100;
-    const isEach = (item.product?.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any)?.variantSize || (item.product as any)?.variantUnit);
+    const isEach = (product.unit || '').toLowerCase() === 'ea' || Boolean((product as any)?.variantSize || (product as any)?.variantUnit);
     return (isEach ? unitPrice : (item.binWeight * unitPrice)) * item.quantity;
   }
 
@@ -109,8 +109,8 @@ export function CartDrawer({ cart, products, primaryColor = '#0f6fff', accentCol
                             Qty: {item.quantity}
                             {item.weight && ` (${item.weight} lbs)`}
                             {item.lineType === 'pack_for_you' && item.requestedWeightLbs && ` (${item.requestedWeightLbs} lbs requested)`}
-                            {item.binWeight && ((item.product?.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any)?.variantSize || (item.product as any)?.variantUnit)
-                              ? ` (${item.binWeight} ${(item.product as any)?.variantUnit || 'ea'})`
+                            {item.binWeight && ((product?.unit || '').toLowerCase() === 'ea' || Boolean((product as any)?.variantSize || (product as any)?.variantUnit)
+                              ? ` (${item.binWeight} ${(product as any)?.variantUnit || 'ea'})`
                               : ` (${item.binWeight} lb pkg)`)}
                           </p>
                         </div>

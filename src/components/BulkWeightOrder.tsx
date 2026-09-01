@@ -1,7 +1,7 @@
 // File: c:\dev\purveyos-storefront\src\components\BulkWeightOrder.tsx
 // NEW COMPONENT for storefront bulk product ordering
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
 
 interface BulkWeightOrderProps {
