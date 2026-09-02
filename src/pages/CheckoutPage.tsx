@@ -3282,7 +3282,8 @@ export function CheckoutPage() {
                       isPreOrder: true,
                     });
                   } else if (removedItem.lineType === 'pack_for_you' && removedItem.requestedWeightLbs) {
-                    addToCart(productId, quantity, {
+                    // Preorder weight lines must always be quantity 1 (server enforces this).
+                    addToCart(productId, 1, {
                       requestedWeightLbs: removedItem.requestedWeightLbs,
                       lineType: 'pack_for_you',
                       isPreOrder: true,

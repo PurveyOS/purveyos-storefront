@@ -212,6 +212,9 @@ export function CartPage() {
                           
                           {/* Quantity controls and price - top right on mobile */}
                           <div className="flex flex-col items-end gap-2">
+                            {lineType === 'pack_for_you' && isPreOrder ? (
+                              <span className="text-xs text-gray-500">Requested weight (final weight assigned later)</span>
+                            ) : (
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={() => removeFromCart(product.id, { binWeight, weight, requestedWeightLbs, lineType: lineType as any })}
@@ -233,6 +236,15 @@ export function CartPage() {
                                 </svg>
                               </button>
                             </div>
+                            )}
+                            {lineType === 'pack_for_you' && isPreOrder && (
+                              <button
+                                onClick={() => removeFromCart(product.id, { binWeight, weight, requestedWeightLbs, lineType: lineType as any })}
+                                className="text-xs text-red-600 hover:text-red-700 underline"
+                              >
+                                Remove
+                              </button>
+                            )}
                             
                             <div className="text-base font-semibold whitespace-nowrap" style={{ color: primaryColor }}>
                               ${itemTotal.toFixed(2)}

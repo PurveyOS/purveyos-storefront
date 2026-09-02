@@ -86,6 +86,10 @@ export function usePersistedCart() {
       );
       
       if (existingItem) {
+        // Preorder weight (pack_for_you) lines represent a single request for a
+        // fixed number of pounds; the server rejects quantity > 1 for these.
+        // Never merge-increment quantity for them.
+        const isLockedPreorderWeightLine = existingItem.isPreOrder && existingItem.lineType === 'pack_for_you';
         const updated = {
           ...prev,
           items: prev.items.map(item =>
@@ -94,7 +98,7 @@ export function usePersistedCart() {
             item.weight === options?.weight &&
             item.requestedWeightLbs === options?.requestedWeightLbs &&
             item.lineType === options?.lineType
-              ? { ...item, quantity: item.quantity + quantity }
+              ? { ...item, quantity: isLockedPreorderWeightLine ? item.quantity : item.quantity + quantity }
               : item
           ),
         };
