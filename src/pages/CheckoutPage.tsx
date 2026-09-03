@@ -12,6 +12,7 @@ import { ONLINE_PAYMENT_FEE_LABEL, addOnlinePaymentFee, getOnlinePaymentFeeCents
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { friendlyOrderError, isInventoryOrderError } from '../utils/orderErrors';
 import { supabase } from '../lib/supabaseClient';
+import { buildShippingWeightPayload } from '../lib/shippingWeight';
 import toast from 'react-hot-toast';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
@@ -112,16 +113,11 @@ export function CheckoutPage() {
       dry_ice_lbs: number;
     }>;
     breakdown?: {
-      carrier_cents: number;
-      carrier_with_markup_cents: number;
-      dry_ice_lbs: number;
-      dry_ice_cost_cents: number;
-      box_cost_cents: number;
-      materials_total_cents: number;
+      cold: {
+        dry_ice_cost_cents: number;
+      } | null;
+      ambient: object | null;
       markup_percent: number;
-      num_packages?: number;
-      has_cold?: boolean;
-      has_ambient?: boolean;
     };
   } | null>(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
@@ -1269,12 +1265,7 @@ export function CheckoutPage() {
     setEstimateError(null);
 
     try {
-      // Estimate cart weight from items
-      const cartWeightLbs = cartItems.reduce((sum, item) => {
-        const weight = (item as any).weight ?? (item as any).binWeight ?? (item as any).requestedWeightLbs ?? 0;
-        const qty = item.quantity ?? 1;
-        return sum + (weight * qty);
-      }, 0) || 10; // fallback 10 lbs if no weight data
+      const shippingWeights = buildShippingWeightPayload(cartItems, storefrontData?.products ?? []);
 
       const { data, error } = await supabase.functions.invoke('estimate-shipping', {
         body: {
@@ -1283,12 +1274,8 @@ export function CheckoutPage() {
           dest_city: address.city,
           dest_state: address.state,
           dest_zip: address.zip,
-          cart_weight_lbs: cartWeightLbs,
-          product_weights: cartItems.map((item: any) => ({
-            product_id: item.productId,
-            weight_lbs: Number(item.weight ?? item.binWeight ?? item.requestedWeightLbs ?? 0),
-            qty: item.quantity ?? 1,
-          })),
+          cart_weight_lbs: shippingWeights.cartWeightLbs,
+          product_weights: shippingWeights.productWeights,
         },
       });
 
@@ -1942,6 +1929,7 @@ export function CheckoutPage() {
     settings: onlinePaymentFeeSettings,
   });
   const checkoutDisplayTotalCents = addOnlinePaymentFee(checkoutBaseTotalCents, checkoutOnlinePaymentFeeCents);
+  const shippingWeightsDebug = buildShippingWeightPayload(cartItems, storefrontData?.products ?? []);
 
   const shippingEstimateDebug = formData.deliveryMethod === 'shipping' ? {
     request: {
@@ -1950,16 +1938,8 @@ export function CheckoutPage() {
       dest_city: shippingAddress.city || null,
       dest_state: shippingAddress.state || null,
       dest_zip: shippingAddress.zip || null,
-      cart_weight_lbs: cartItems.reduce((sum, item: any) => {
-        const weight = item.weight ?? item.binWeight ?? item.requestedWeightLbs ?? 0;
-        const qty = item.quantity ?? 1;
-        return sum + (weight * qty);
-      }, 0) || 10,
-      product_weights: cartItems.map((item: any) => ({
-        product_id: item.productId,
-        weight_lbs: Number(item.weight ?? item.binWeight ?? item.requestedWeightLbs ?? 0),
-        qty: item.quantity ?? 1,
-      })),
+      cart_weight_lbs: shippingWeightsDebug.cartWeightLbs,
+      product_weights: shippingWeightsDebug.productWeights,
     },
     response: shippingEstimate,
     error: estimateError,
@@ -2344,12 +2324,12 @@ export function CheckoutPage() {
                                 {shippingEstimate.service_label} · ~{shippingEstimate.transit_days} business days in transit
                               </p>
                             )}
-                            {Number(shippingEstimate.breakdown?.dry_ice_cost_cents ?? 0) > 0 && (
+                            {Number(shippingEstimate.breakdown?.cold?.dry_ice_cost_cents ?? 0) > 0 && (
                               <p className="text-[10px] text-gray-500 mt-0.5">
                                 Includes carrier fee, insulated packaging, and dry ice to keep your frozen items safe in transit.
                               </p>
                             )}
-                            {shippingEstimate.breakdown?.has_ambient && !shippingEstimate.breakdown?.has_cold && (
+                            {shippingEstimate.breakdown?.ambient && !shippingEstimate.breakdown?.cold && (
                               <p className="text-[10px] text-gray-500 mt-0.5">
                                 Includes carrier fee and standard packaging.
                               </p>
