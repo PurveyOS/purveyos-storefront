@@ -12,7 +12,7 @@
 // 5) Single source of truth for catalog logic
 // ============================================================================
 
-import { supabase } from './supabaseClient'
+import { publicSupabase } from './supabaseClient'
 
 export interface StorefrontProduct {
   id: string
@@ -180,7 +180,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
 
   try {
     // Fetch products
-    const { data: products, error: productsError } = await supabase
+    const { data: products, error: productsError } = await publicSupabase
       .from('products')
       .select('id, name, pricePer, unit, image, category, qty, description, tax_behavior, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total')
       .eq('tenant_id', tenantId)
@@ -192,7 +192,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
     }
 
     // Fetch subscription products
-    const { data: subscriptionProducts, error: subscriptionError } = await supabase
+    const { data: subscriptionProducts, error: subscriptionError } = await publicSupabase
       .from('subscription_products')
       .select('id, product_id, price_per_interval, interval_type, duration_type, duration_intervals, season_start_date, season_end_date, min_interval')
       .eq('tenant_id', tenantId)
@@ -200,7 +200,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
 
     // Fetch subscription box items
     // Fetch ALL box items (both regular contents and substitution options)
-    const { data: subscriptionBoxItems } = await supabase
+    const { data: subscriptionBoxItems } = await publicSupabase
       .from('subscription_box_items')
       .select('subscription_product_id, product_id, substitution_group, default_quantity, substitution_group_units_allowed, is_optional, is_substitution_option')
       .in('subscription_product_id', subscriptionProducts?.map((sp: any) => sp.id) || [])

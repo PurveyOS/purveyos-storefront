@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { useCallback, useState, useEffect } from 'react';
+import { publicSupabase } from '../lib/supabaseClient';
 import { fetchStorefrontCatalog, fetchStorefrontProductsDirectRLS } from '../lib/storefrontApi';
 import type { StorefrontData } from '../types/storefront';
 import type { Product } from '../types/product';
@@ -152,10 +152,13 @@ export function useStorefrontData(tenantId: string): {
   data: StorefrontData | null;
   loading: boolean;
   error: string | null;
+  retry: () => void;
 } {
   const [data, setData] = useState<StorefrontData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [requestVersion, setRequestVersion] = useState(0);
+  const retry = useCallback(() => setRequestVersion(version => version + 1), []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -164,7 +167,7 @@ export function useStorefrontData(tenantId: string): {
 
       try {
         // If Supabase is not configured, fall back to mock data
-        if (!supabase) {
+        if (!publicSupabase) {
           console.log('Supabase not configured, using mock data');
           // Simulate network delay
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -220,25 +223,26 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         // Fetch settings (still use supabase directly since it's scoped by tenant_id)
         // ============================================================================
-        const { data: settingsData, error: settingsError } = await supabase
+        const { data: settingsData, error: settingsError } = await publicSupabase
           .from('storefront_settings')
           .select('*')
           .eq('tenant_id', tenantId)
           .maybeSingle();
 
         if (settingsError) {
-          if ((settingsError as any).code === 'PGRST116') {
-            console.warn('No storefront_settings row found; using defaults.');
-          } else {
-            console.error('Settings error:', settingsError);
-            throw settingsError;
-          }
+          console.error('Storefront settings request failed:', settingsError);
+          throw new Error('Storefront configuration could not be loaded.');
+        }
+
+        if (!settingsData) {
+          console.error('No storefront_settings row was returned for tenant:', tenantId);
+          throw new Error('Storefront configuration is missing or inaccessible.');
         }
 
         // ============================================================================
         // Fetch tenant policy + default order mode
         // ============================================================================
-        const { data: tenantPolicyData, error: tenantPolicyError } = await supabase
+        const { data: tenantPolicyData, error: tenantPolicyError } = await publicSupabase
           .from('tenants')
           .select('storefront_payment_policy, storefront_default_order_mode, qr_venmo_url, qr_zelle_url, qr_zelle_image_data_url, qr_cashapp_url, qr_cashapp_image_data_url, notification_settings, email, phone')
           .eq('id', tenantId)
@@ -248,7 +252,7 @@ export function useStorefrontData(tenantId: string): {
           console.warn('Tenant policy fetch warning (non-critical):', tenantPolicyError);
         }
 
-        const { data: onlinePaymentFeeData, error: onlinePaymentFeeError } = await supabase
+        const { data: onlinePaymentFeeData, error: onlinePaymentFeeError } = await publicSupabase
           .rpc('get_storefront_online_payment_fee_settings', { p_tenant_id: tenantId });
 
         if (onlinePaymentFeeError) {
@@ -263,7 +267,7 @@ export function useStorefrontData(tenantId: string): {
         // ============================================================================
         // Fetch subscription products (for subscription UI)
         // ============================================================================
-        const { data: subscriptionsData, error: subscriptionsError } = await supabase
+        const { data: subscriptionsData, error: subscriptionsError } = await publicSupabase
           .from('subscription_products')
           .select('id, product_id, price_per_interval, interval_type, duration_type, duration_intervals, season_start_date, season_end_date, min_interval, is_active')
           .eq('tenant_id', tenantId)
@@ -291,7 +295,7 @@ export function useStorefrontData(tenantId: string): {
           zelle_instructions?: string | null;
         };
 
-        const settings = settingsData ? {
+        const settings = {
           delivery_allowed_weekdays: Array.isArray((settingsData as any).delivery_allowed_weekdays)
             ? (settingsData as any).delivery_allowed_weekdays
                 .map((value: any) => Number(value))
@@ -381,7 +385,7 @@ export function useStorefrontData(tenantId: string): {
                 ctaLink: s.cta_link,
               }))
             : []
-        } : MOCK_SETTINGS;
+        };
 
         // ============================================================================
         // Group bins by product_id (for inventory/pricing)
@@ -552,11 +556,12 @@ export function useStorefrontData(tenantId: string): {
     if (tenantId) {
       loadData();
     } else {
-      setLoading(false);
-      setError('No tenant ID provided');
+      setData(null);
+      setLoading(true);
+      setError(null);
     }
-  }, [tenantId]);
+  }, [tenantId, requestVersion]);
 
-  return { data, loading, error };
+  return { data, loading, error, retry };
 }
 

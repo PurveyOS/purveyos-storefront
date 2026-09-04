@@ -11,7 +11,8 @@ import { CartValidationModal } from '../components/CartValidationModal';
 import { ONLINE_PAYMENT_FEE_LABEL, addOnlinePaymentFee, getOnlinePaymentFeeCents } from '../lib/onlinePaymentFee';
 import { trackBeginCheckout, trackPurchase } from '../utils/analytics';
 import { friendlyOrderError, isInventoryOrderError } from '../utils/orderErrors';
-import { supabase } from '../lib/supabaseClient';
+import { publicSupabase, supabase } from '../lib/supabaseClient';
+import { StorefrontConfigurationError } from '../components/StorefrontConfigurationError';
 import { buildShippingWeightPayload } from '../lib/shippingWeight';
 import toast from 'react-hot-toast';
 import { Elements } from '@stripe/react-stripe-js';
@@ -58,7 +59,7 @@ export function CheckoutPage() {
 
   const navigate = useNavigate();
   const { tenant } = useTenantFromDomain();
-  const { data: storefrontData, loading: dataLoading } = useStorefrontData(tenant?.id || '');
+  const { data: storefrontData, loading: dataLoading, error: storefrontError, retry: retryStorefront } = useStorefrontData(tenant?.id || '');
   const { cart, addToCart, clearCart, updateCartTotal, removeItems } = useCart();
   const { createOrder, loading: checkoutLoading, error: checkoutError } = useCheckout();
 
@@ -266,7 +267,7 @@ export function CheckoutPage() {
       
       setLoadingSubscriptionProducts(true);
       try {
-        const { data, error } = await supabase
+        const { data, error } = await publicSupabase
           .from('subscription_products')
           .select('id, name, description, price_per_interval, interval_type, is_active')
           .eq('tenant_id', tenant.id)
@@ -360,13 +361,7 @@ export function CheckoutPage() {
       }
       setDiscountsLoading(true);
       try {
-        // Ensure we have a session before querying
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('[Discount] Session:', session ? 'authenticated' : 'anonymous');
-        
-        console.log('[Discount] Fetching from Supabase with RLS bypass attempt...');
-        // Try querying directly without RLS first to see if data exists
-        const { data, error } = await supabase
+        const { data, error } = await publicSupabase
           .from('tenant_discounts')
           .select('*')
           .eq('tenant_id', tenant.id)
@@ -376,13 +371,6 @@ export function CheckoutPage() {
         
         if (error) {
           console.error('[Discount] Supabase error:', error);
-          // Try alternative: query all active discounts without tenant filter (for debugging)
-          console.log('[Discount] Trying alternative query without tenant filter...');
-          const { data: allData, error: allError } = await supabase
-            .from('tenant_discounts')
-            .select('*')
-            .eq('is_active', true);
-          console.log('[Discount] Alternative query result:', { allData, allError });
         } else if (data && data.length > 0) {
           console.log('[Discount] Setting discounts:', data);
           setDiscounts(data as Discount[]);
@@ -1625,6 +1613,7 @@ export function CheckoutPage() {
   const storefrontPaymentPolicy = (storefrontData?.settings as any)?.storefront_payment_policy ?? 'pay_now';
   const payLaterAllowed = payLaterOptions.length > 0 && !hasDepositProductInCart;
   const payAtPickupAllowed = storefrontPaymentPolicy === 'both' && !hasDepositProductInCart;
+  const hasAvailablePaymentMethod = payLaterAllowed || cardPaymentAvailable || externalPaymentOptions.length > 0;
   const firstExternalPaymentMethod = externalPaymentOptions[0]?.method;
   const selectedExternalPayment = externalPaymentOptions.find(option => option.method === formData.paymentMethod);
 
@@ -1780,6 +1769,10 @@ export function CheckoutPage() {
         </div>
       </div>
     );
+  }
+
+  if (storefrontError || !storefrontData) {
+    return <StorefrontConfigurationError message={storefrontError} onRetry={retryStorefront} />;
   }
 
   const checkoutFailureMessage = orderError || (dismissedCheckoutError ? null : checkoutError);
@@ -2751,6 +2744,19 @@ export function CheckoutPage() {
                       </div>
                     </button>
                   ))}
+
+                  {!hasAvailablePaymentMethod && (
+                    <div className="col-span-2 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+                      <p>Payment methods could not be loaded. Please refresh checkout and try again.</p>
+                      <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="mt-3 rounded-md border border-red-300 bg-white px-3 py-2 font-semibold hover:bg-red-100"
+                      >
+                        Refresh checkout
+                      </button>
+                    </div>
+                  )}
 
                 </div>
 

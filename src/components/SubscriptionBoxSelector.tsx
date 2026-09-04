@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { publicSupabase } from '../lib/supabaseClient';
 import toast from 'react-hot-toast';
 
 interface BoxItem {
@@ -40,7 +40,7 @@ export function SubscriptionBoxSelector({
     const loadBoxItems = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        const { data, error } = await publicSupabase
           .from('subscription_box_items')
           .select(
             'id, subscription_product_id, product_id, substitution_group, is_substitution_option, substitution_group_units_allowed, default_quantity, is_optional, display_order'

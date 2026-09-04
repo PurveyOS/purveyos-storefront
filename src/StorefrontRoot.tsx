@@ -7,10 +7,11 @@ import { TemplateSwitcher } from './components/TemplateSwitcher';
 import { trackEvent, setAnalyticsEnabled } from './utils/analytics';
 import { canUseAnalytics, canUseAdvancedThemes, canUsePreOrders, getAllowedTemplates } from './utils/subscription';
 import { Toaster } from 'react-hot-toast';
+import { StorefrontConfigurationError } from './components/StorefrontConfigurationError';
 
 export function StorefrontRoot() {
   const { tenant, loading: tenantLoading } = useTenantFromDomain();
-  const { data: storefrontData, loading: dataLoading, error } = useStorefrontData(tenant?.id || '');
+  const { data: storefrontData, loading: dataLoading, error, retry } = useStorefrontData(tenant?.id || '');
   const [currentTemplate, setCurrentTemplate] = useState('modern');
   const [pendingDepositAdd, setPendingDepositAdd] = useState<{
     kind: 'cart' | 'bin';
@@ -70,16 +71,7 @@ export function StorefrontRoot() {
 
   // Error state
   if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            <h2 className="font-bold">Error loading storefront</h2>
-            <p>{error}</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <StorefrontConfigurationError message={error} onRetry={retry} />;
   }
 
   // No tenant found
@@ -100,18 +92,7 @@ export function StorefrontRoot() {
 
   // No data loaded
   if (!storefrontData) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-800 mb-4">
-            Storefront Unavailable
-          </h1>
-          <p className="text-gray-600">
-            Unable to load storefront data for {tenant.id}.
-          </p>
-        </div>
-      </div>
-    );
+    return <StorefrontConfigurationError onRetry={retry} />;
   }
 
   // Get and render the selected template

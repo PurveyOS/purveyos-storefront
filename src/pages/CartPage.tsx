@@ -5,10 +5,11 @@ import { useStorefrontData } from '../hooks/useStorefrontData';
 import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { formatRestockDate } from '../utils/inventory';
 import { trackBeginCheckout, trackEvent } from '../utils/analytics';
+import { StorefrontConfigurationError } from '../components/StorefrontConfigurationError';
 
 export function CartPage() {
   const { tenant } = useTenantFromDomain();
-  const { data: storefrontData } = useStorefrontData(tenant?.id || '');
+  const { data: storefrontData, loading, error, retry } = useStorefrontData(tenant?.id || '');
   const { cart, addToCart, removeFromCart, clearCart } = useCart();
 
   useEffect(() => {
@@ -19,7 +20,7 @@ export function CartPage() {
 
   const primaryColor = storefrontData?.settings.primaryColor || '#0f6fff';
 
-  if (!storefrontData) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div 
@@ -28,6 +29,10 @@ export function CartPage() {
         ></div>
       </div>
     );
+  }
+
+  if (error || !storefrontData) {
+    return <StorefrontConfigurationError message={error} onRetry={retry} />;
   }
 
   const cartItems = cart.items.map((item: any) => {

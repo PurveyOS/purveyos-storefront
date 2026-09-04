@@ -11,6 +11,7 @@ console.log('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Set' : '❌ Missin
 // Allow app to run without Supabase for development/testing
 // In production, you MUST set these environment variables in Cloudflare Pages
 let supabaseInstance: ReturnType<typeof createClient> | null = null;
+let publicSupabaseInstance: ReturnType<typeof createClient> | null = null;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('⚠️ Supabase environment variables not configured.');
@@ -25,9 +26,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
       detectSessionInUrl: true
     }
   });
+  publicSupabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storageKey: 'purveyos-public-anon'
+    }
+  });
 }
 
 export const supabase = supabaseInstance as any;
+export const publicSupabase = publicSupabaseInstance as any;
 
 // Create a configured Supabase client (regular client works now)
 export function createTenantAwareClient(tenantId: string) {

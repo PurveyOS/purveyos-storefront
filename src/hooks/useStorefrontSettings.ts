@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
+import { publicSupabase } from '../lib/supabaseClient'
 
 export interface StorefrontSettings {
   primaryColor: string
@@ -32,7 +32,7 @@ export function useStorefrontSettings(tenantId: string | null) {
       try {
         setLoading(true)
         
-        const { data, error: err } = await supabase
+        const { data, error: err } = await publicSupabase
           .from('storefront_settings')
           .select('*')
           .eq('tenant_id', tenantId)
@@ -53,15 +53,7 @@ export function useStorefrontSettings(tenantId: string | null) {
       } catch (err) {
         console.error('Error fetching storefront settings:', err)
         setError(err instanceof Error ? err : new Error('Failed to fetch settings'))
-        // Set defaults on error
-        setSettings({
-          primaryColor: '#0f6fff',
-          accentColor: '#06b6d4',
-          template_id: 'minimal',
-          farm_name: '',
-          hero_heading: '',
-          hero_subtitle: '',
-        })
+        setSettings(null)
       } finally {
         setLoading(false)
       }

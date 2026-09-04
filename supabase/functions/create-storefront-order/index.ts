@@ -120,6 +120,14 @@ function hasReservationEvidence(line: { reserved_at?: string | null; selected_bi
   return Boolean(line.reserved_at) || hasSelectedBins(line.selected_bins)
 }
 
+function shouldUseDedicatedPreorderFlow(lines: OrderLine[]) {
+  return lines.length > 0 && lines.every((line) => line.isPreOrder === true)
+}
+
+function shouldReserveCurrentInventory(line: OrderLine) {
+  return line.isPreOrder !== true
+}
+
 async function rollbackFailedStorefrontOrder(params: {
   supabaseAdmin: SupabaseClient<any, 'public', any>
   tenantId: string
@@ -204,13 +212,6 @@ serve(async (req: Request) => {
     }
 
     const preorderLines = orderRequest.lines.filter((line) => line.isPreOrder === true)
-    const regularLines = orderRequest.lines.filter((line) => line.isPreOrder !== true)
-    if (preorderLines.length > 0 && regularLines.length > 0) {
-      return new Response(
-        JSON.stringify({ error: 'preorder_mixed_cart' }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
 
     // IDEMPOTENCY CHECK: Use stripe_payment_intent_id as stable key
     if (orderRequest.stripePaymentIntentId) {
@@ -645,7 +646,9 @@ serve(async (req: Request) => {
       console.log('✅ Initial shortages resolved after cache recheck — proceeding with order')
     }
 
-    if (preorderLines.length > 0) {
+    // Pure preorder carts use the allocation RPC. Mixed carts continue through the
+    // standard order path, which stores in-stock lines as NOW and preorder lines as LATER.
+    if (shouldUseDedicatedPreorderFlow(orderRequest.lines)) {
       const checkoutAttemptId = (orderRequest.checkoutAttemptId || '').trim() || crypto.randomUUID()
       const preorderBody = {
         tenant_id: orderRequest.tenantId,
@@ -1230,7 +1233,7 @@ serve(async (req: Request) => {
         throw lineError
       }
 
-      if (isPackForYou && requestedWeightTotal > 0) {
+      if (shouldReserveCurrentInventory(line) && isPackForYou && requestedWeightTotal > 0) {
         const { error: productReservationError } = await supabaseAdmin
           .from('product_reservations')
           .insert({

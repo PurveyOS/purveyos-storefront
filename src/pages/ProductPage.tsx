@@ -7,11 +7,12 @@ import { useTenantFromDomain } from '../hooks/useTenantFromDomain';
 import { useStorefrontData } from '../hooks/useStorefrontData';
 import { trackProductView } from '../utils/analytics';
 import { formatRestockDate } from '../utils/inventory';
+import { StorefrontConfigurationError } from '../components/StorefrontConfigurationError';
 
 export function ProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const { tenant } = useTenantFromDomain();
-  const { data: storefrontData, loading, error } = useStorefrontData(tenant?.id || '');
+  const { data: storefrontData, loading, error, retry } = useStorefrontData(tenant?.id || '');
   const { addToCart, cart } = useCart();
   const [fixedQuantity, setFixedQuantity] = useState<number>(1);
   const [weightAmount, setWeightAmount] = useState<string>('1');
@@ -46,23 +47,7 @@ export function ProductPage() {
   }
 
   if (error || !storefrontData) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="max-w-xl w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center space-y-4">
-          <h1 className="text-2xl font-semibold text-gray-900">Product unavailable</h1>
-          <p className="text-gray-600">
-            We couldn&apos;t load this product right now.
-          </p>
-          <Link
-            to="/"
-            className="inline-flex items-center px-4 py-2 text-white rounded-lg transition-opacity hover:opacity-90"
-            style={{ backgroundColor: primaryColor }}
-          >
-            Back to Store
-          </Link>
-        </div>
-      </div>
-    );
+    return <StorefrontConfigurationError message={error} onRetry={retry} />;
   }
 
   const product = storefrontData.products.find((item) => item.id === productId);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabaseClient"; // 👈 adjust path if yours is different
+import { publicSupabase } from "../lib/supabaseClient";
 
 // Minimal shape that matches how the rest of your app uses `tenant`
 export interface Tenant {
@@ -35,14 +35,14 @@ export function useTenantFromDomain(): UseTenantResult {
   const [error, setError] = useState<string | null>(null);
   
   useEffect(() => {
-    if (!supabase) {
+    if (!publicSupabase) {
       console.error('useTenantFromDomain: Supabase client not available');
       setError('Database not configured');
       setLoading(false);
       return;
     }
     
-    const client = supabase;
+    const client = publicSupabase;
     let cancelled = false;
 
     async function resolveTenant() {
@@ -103,6 +103,10 @@ export function useTenantFromDomain(): UseTenantResult {
         } else if (!data) {
           console.warn("⚠ No tenant found for slug:", slug);
           setError("Storefront not configured for this domain.");
+          setTenant(null);
+        } else if (!data.storefront_enabled) {
+          console.warn("Storefront is disabled for tenant:", slug);
+          setError("This storefront is currently unavailable.");
           setTenant(null);
         } else {
           console.log("✅ Resolved tenant:", data);
