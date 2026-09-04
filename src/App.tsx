@@ -8,6 +8,7 @@ import { CheckoutCancelPage } from './pages/CheckoutCancelPage'
 import { CustomerLogin } from './pages/CustomerLogin'
 import { CustomerPortal } from './pages/CustomerPortal'
 import { CustomerProfileSetup } from './pages/CustomerProfileSetup'
+import { PasswordReset } from './pages/PasswordReset'
 import { SubscriptionManagement } from './pages/SubscriptionManagement'
 import { CartProvider } from './context/CartContext'
 import './App.css'
@@ -36,6 +37,7 @@ function App() {
           <Route path="/checkout/cancel" element={<CheckoutCancelPage />} />
           <Route path="/login" element={<CustomerLogin />} />
           <Route path="/account/setup" element={<CustomerProfileSetup />} />
+          <Route path="/account/reset-password" element={<PasswordReset />} />
           <Route path="/account" element={<CustomerPortal />} />
           <Route path="/subscription/:id" element={<SubscriptionManagement />} />
         </Routes>

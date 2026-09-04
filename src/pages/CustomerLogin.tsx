@@ -14,7 +14,9 @@ export function CustomerLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(
+    () => new URLSearchParams(window.location.search).get('forgot-password') === 'true'
+  );
   const [resetEmail, setResetEmail] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);

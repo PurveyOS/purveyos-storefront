@@ -13,18 +13,46 @@ export function PasswordReset() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const [hasRecoverySession, setHasRecoverySession] = useState(false);
 
   useEffect(() => {
-    // Check if user has a valid session from password reset link
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError('Password reset link has expired or is invalid. Please request a new one.');
+      const queryParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const urlError = queryParams.get('error_code') || hashParams.get('error_code');
+
+      if (urlError) {
+        window.history.replaceState(null, '', window.location.pathname);
+        setError('This password reset link is invalid or has expired. Please request a new one.');
+        setSessionChecked(true);
+        return;
       }
-      setSessionChecked(true);
+
+      if (!supabase) {
+        setError('Password reset is temporarily unavailable. Please try again later.');
+        setSessionChecked(true);
+        return;
+      }
+
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) throw sessionError;
+
+        if (session) {
+          window.history.replaceState(null, '', window.location.pathname);
+          setHasRecoverySession(true);
+        } else {
+          setError('This password reset link is invalid or has expired. Please request a new one.');
+        }
+      } catch {
+        setError('We could not verify this password reset link. Please request a new one.');
+      } finally {
+        setSessionChecked(true);
+      }
     };
 
-    checkSession();
+    void checkSession();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +78,7 @@ export function PasswordReset() {
 
       if (error) throw error;
 
+      await supabase.auth.signOut();
       setSuccess(true);
       setPassword('');
       setConfirmPassword('');
@@ -108,7 +137,7 @@ export function PasswordReset() {
             </div>
           )}
 
-          {!success && (
+          {!success && hasRecoverySession && (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* New Password */}
               <div>
@@ -188,6 +217,16 @@ export function PasswordReset() {
                 Back to Login
               </button>
             </form>
+          )}
+
+          {!success && !hasRecoverySession && (
+            <button
+              type="button"
+              onClick={() => navigate('/login?forgot-password=true')}
+              className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition"
+            >
+              Request a New Reset Link
+            </button>
           )}
         </div>
       </div>
