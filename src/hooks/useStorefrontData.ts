@@ -438,6 +438,7 @@ export function useStorefrontData(tenantId: string): {
             ? { ...subscriptionFromCatalog, ...subscriptionFromDb }
             : subscriptionFromDb;
           const hasSubscription = Boolean((p as any).isSubscription || subscription);
+          const rawTaxRate = Array.isArray(p.tax_rate) ? p.tax_rate[0] : p.tax_rate;
 
           // The catalog returns effective availability, which already accounts for local
           // and shared reservations. Do not subtract product/order reservations again.
@@ -484,6 +485,15 @@ export function useStorefrontData(tenantId: string): {
             inventory: displayInventory,
             allowPreOrder: p.allow_pre_order === true || preorderRemaining > 0,
             taxBehavior: ((p as any).tax_behavior as 'inherit' | 'taxable' | 'exempt' | undefined) ?? 'inherit',
+            taxRateId: p.tax_rate_id ?? null,
+            taxRate: rawTaxRate
+              ? {
+                  id: rawTaxRate.id,
+                  name: rawTaxRate.name,
+                  rateBasisPoints: Number(rawTaxRate.rate_basis_points ?? 0),
+                  isActive: Boolean(rawTaxRate.is_active),
+                }
+              : null,
             isSubscription: hasSubscription,
             subscriptionData: subscription,
             is_deposit_product: p.is_deposit_product === true,

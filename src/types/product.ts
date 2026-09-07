@@ -35,7 +35,14 @@ export interface Product {
   
   // Product notes
   specialNotes?: string; // Special instructions or notes from farmer (e.g., "Frozen only", "Call ahead")
-  taxBehavior?: 'inherit' | 'taxable' | 'exempt'; // Product-level tax override
+  taxBehavior?: 'inherit' | 'taxable' | 'exempt'; // Legacy product-level tax override
+  taxRateId?: string | null;
+  taxRate?: {
+    id: string;
+    name: string;
+    rateBasisPoints: number;
+    isActive: boolean;
+  } | null;
   
   // Inventory management
   reminderThreshold?: number; // Notify owner when inventory falls below this amount

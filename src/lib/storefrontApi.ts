@@ -27,6 +27,13 @@ export interface StorefrontProduct {
   qty?: number
   description?: string
   tax_behavior?: 'inherit' | 'taxable' | 'exempt'
+  tax_rate_id?: string | null
+  tax_rate?: {
+    id: string
+    name: string
+    rate_basis_points: number
+    is_active: boolean
+  } | null
   allow_pre_order?: boolean
   is_deposit_product?: boolean
   deposit_prod_price_per_lb?: number
@@ -182,7 +189,7 @@ export async function fetchStorefrontProductsDirectRLS(tenantId: string): Promis
     // Fetch products
     const { data: products, error: productsError } = await publicSupabase
       .from('products')
-      .select('id, name, pricePer, unit, image, category, qty, description, tax_behavior, allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total')
+      .select('id, name, pricePer, unit, image, category, qty, description, tax_behavior, tax_rate_id, tax_rate:tax_rates!products_tenant_tax_rate_fk(id, name, rate_basis_points, is_active), allow_pre_order, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total')
       .eq('tenant_id', tenantId)
       .eq('is_online', true)
       .order('name')

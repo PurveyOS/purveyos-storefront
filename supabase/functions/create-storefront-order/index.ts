@@ -4,6 +4,21 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.95.0'
 // @ts-ignore: Deno deploy provides these remote modules at runtime
 import Stripe from 'https://esm.sh/stripe@14.8.0?target=deno'
+import { calculateMixedRateTax } from '../_shared/taxRates.ts'
+import { buildPreorderRpcLines } from '../_shared/preorderTaxSnapshots.ts'
+import { calculateBasePlatformFeeCents } from '../_shared/platform-fee.ts'
+import { validateOrderRequestShape } from '../_shared/orderRequestValidation.ts'
+import { computeTrustedLinePrice, linePriceMatchesTrusted } from '../_shared/trustedLinePricing.ts'
+import {
+  buildOrderLinePersistenceFields,
+  buildOrderPersistenceFields,
+  findExistingCheckoutAttempt,
+} from '../_shared/storefrontOrderPersistence.ts'
+import {
+  resolveCardPayment,
+  type StripeLike,
+  type StripePaymentIntentLike,
+} from '../_shared/cardPaymentOrchestration.ts'
 
 // Minimal Deno env typing for TypeScript tooling
 declare const Deno: { env: { get(key: string): string | undefined } }
@@ -170,9 +185,12 @@ serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let supabaseAdmin: SupabaseClient<any, 'public', any> | null = null
+  let chargedStripePaymentIntentId: string | null = null
+
   try {
     // Create Supabase client with service role key (bypasses RLS)
-    const supabaseAdmin = createClient(
+    supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
@@ -200,14 +218,46 @@ serve(async (req: Request) => {
     }
 
     const orderRequest: OrderRequest = await req.json()
-    console.log('Creating storefront order:', orderRequest)
-    console.log('🔍 Subscription payload received:', JSON.stringify(orderRequest.subscription, null, 2))
+    console.log('Creating storefront order for tenant:', orderRequest.tenantId, 'lines:', orderRequest.lines?.length ?? 0)
 
     // Validate request
     if (!orderRequest.tenantId || !orderRequest.customerEmail || !orderRequest.lines.length) {
       return new Response(
         JSON.stringify({ error: 'Missing required fields' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const shapeError = validateOrderRequestShape(orderRequest as any)
+    if (shapeError) {
+      console.warn('Rejected invalid storefront order request:', shapeError)
+      return new Response(
+        JSON.stringify({ error: 'invalid_request', details: shapeError }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Stable per-checkout identifier used for Stripe idempotency, PaymentIntent
+    // metadata verification, and preorder line keys. Generated once so both
+    // the preorder and standard checkout paths share the same value.
+    const checkoutAttemptId = (orderRequest.checkoutAttemptId || '').trim() || crypto.randomUUID()
+    orderRequest.checkoutAttemptId = checkoutAttemptId
+
+    const existingAttemptOrder = await findExistingCheckoutAttempt(
+      supabaseAdmin,
+      orderRequest.tenantId,
+      checkoutAttemptId,
+    )
+    if (existingAttemptOrder) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          idempotent: true,
+          orderId: existingAttemptOrder.id,
+          order_id: existingAttemptOrder.id,
+          payment_status: existingAttemptOrder.payment_status,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
@@ -246,7 +296,7 @@ serve(async (req: Request) => {
 
     const { data: tenantTaxConfig, error: tenantTaxError } = await supabaseAdmin
       .from('tenants')
-      .select('tax_rate, tax_included, charge_tax_on_online, stripe_account_id')
+      .select('tax_included, charge_tax_on_online, stripe_account_id, plan')
       .eq('id', orderRequest.tenantId)
       .single()
 
@@ -260,7 +310,7 @@ serve(async (req: Request) => {
 
     const { data: products, error: productsError } = await supabaseAdmin
       .from('products')
-      .select('id, unit, qty, tax_behavior, is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total, reserved_weight_lbs')
+      .select('id, unit, qty, "pricePer", tax_rate_id, tax_rate:tax_rates!products_tenant_tax_rate_fk(id, name, rate_basis_points, is_active), is_deposit_product, deposit_prod_price_per_lb, deposit_fixed_total, reserved_weight_lbs')
       .eq('tenant_id', orderRequest.tenantId)
       .in('id', productIds)
 
@@ -272,9 +322,16 @@ serve(async (req: Request) => {
       })
     }
 
+    if ((products ?? []).length !== productIds.length) {
+      return new Response(JSON.stringify({ error: 'One or more products do not belong to this store' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { data: bins, error: binsError } = await supabaseAdmin
       .from('package_bins')
-      .select('product_id, package_key, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs, weight_btn')
+      .select('product_id, package_key, qty, reserved_qty, bin_kind, qty_lbs, reserved_lbs, weight_btn, unit_price_cents')
       .eq('tenant_id', orderRequest.tenantId)
       .in('product_id', productIds)
 
@@ -304,7 +361,19 @@ serve(async (req: Request) => {
       id: string;
       unit?: string | null;
       qty?: number | null;
-      tax_behavior?: 'inherit' | 'taxable' | 'exempt' | null;
+      pricePer?: number | string | null;
+      tax_rate_id?: string | null;
+      tax_rate?: {
+        id: string;
+        name: string;
+        rate_basis_points: number;
+        is_active: boolean;
+      } | Array<{
+        id: string;
+        name: string;
+        rate_basis_points: number;
+        is_active: boolean;
+      }> | null;
       allow_pre_order?: boolean | null;
       pricing_mode?: string | null;
       is_deposit_product?: boolean | null;
@@ -320,43 +389,139 @@ serve(async (req: Request) => {
       qty_lbs?: number | null;
       reserved_lbs?: number | null;
       weight_btn?: number | null;
+      unit_price_cents?: number | null;
       product_id?: string | null;
     }
 
     const productsById = new Map<string, ProductRow>((products ?? []).map((p: ProductRow) => [p.id, p]))
-
-    const subtotalCentsServer = orderRequest.lines.reduce(
-      (sum, line) => sum + Math.max(0, Number(line.lineTotalCents ?? 0)),
-      0
-    )
-    const discountCentsServer = Math.max(0, Number(orderRequest.discountCents ?? 0))
     const shippingChargeCentsServer = Math.max(0, Number(orderRequest.shippingChargeCents ?? 0))
     const deliveryChargeCentsServer = Math.max(0, Number(orderRequest.deliveryChargeCents ?? 0))
-    const onlinePaymentFeeCentsServer = Math.max(0, Number(orderRequest.onlinePaymentFeeCents ?? 0))
-    const subtotalAfterDiscountCentsServer = Math.max(0, subtotalCentsServer - discountCentsServer)
+    const { data: paymentFeeSettings, error: paymentFeeSettingsError } = await supabaseAdmin
+      .rpc('get_storefront_online_payment_fee_settings', { p_tenant_id: orderRequest.tenantId })
+    if (paymentFeeSettingsError) {
+      console.error('Unable to load tenant payment fee settings', paymentFeeSettingsError)
+      return new Response(JSON.stringify({ error: 'payment_fee_settings_unavailable' }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    let onlinePaymentFeeCentsServer = 0
+
+    // Never trust client-provided line prices. Recompute every non-deposit,
+    // non-subscription line from authoritative products.pricePer / package_bins
+    // pricing before tax or totals are calculated. Deposit and subscription
+    // pricing use separate, already-server-driven models.
+    if (!orderRequest.subscription?.enabled) {
+      const binsByProductForPricing = new Map<string, { packageKey: string; weightBtn: number; unitPriceCents: number }[]>()
+      for (const bin of (bins ?? []) as PackageBinRow[]) {
+        if (!bin.product_id || bin.bin_kind === 'bulk_weight') continue
+        const list = binsByProductForPricing.get(bin.product_id) ?? []
+        list.push({
+          packageKey: bin.package_key,
+          weightBtn: Number(bin.weight_btn ?? 0),
+          unitPriceCents: Number(bin.unit_price_cents ?? 0),
+        })
+        binsByProductForPricing.set(bin.product_id, list)
+      }
+
+      for (const line of orderRequest.lines) {
+        const product = productsById.get(line.productId)
+        if (!product) {
+          return new Response(JSON.stringify({ error: 'product_not_found_for_tenant' }), {
+            status: 409,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        const trustedPricePerCents = Math.max(0, Math.round(Number(product.pricePer ?? 0) * 100))
+        const trusted = computeTrustedLinePrice(
+          { productId: line.productId, qty: line.qty, binWeight: line.binWeight, weightLbs: line.weightLbs, requestedWeightLbs: line.requestedWeightLbs },
+          { id: product.id, unit: product.unit, pricePerCents: trustedPricePerCents },
+          binsByProductForPricing.get(line.productId) ?? [],
+        )
+        if (product.is_deposit_product) {
+          const quantity = Math.max(1, Math.round(Number(line.qty ?? 1)))
+          const fixedDepositCents = Math.max(0, Math.round(Number(product.deposit_fixed_total ?? 0) * 100))
+          const depositWeight = Number(line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? 0)
+          const perLbDepositCents = Math.max(0, Math.round(Number(product.deposit_prod_price_per_lb ?? 0) * 100))
+          const depositTotalCents = fixedDepositCents > 0
+            ? fixedDepositCents * quantity
+            : perLbDepositCents > 0 && depositWeight > 0
+              ? Math.round(perLbDepositCents * depositWeight * quantity)
+              : trusted.lineTotalCents
+          trusted.lineTotalCents = depositTotalCents
+          trusted.unitPriceCents = fixedDepositCents > 0 ? fixedDepositCents : perLbDepositCents || trusted.unitPriceCents
+        }
+
+        if (!linePriceMatchesTrusted(Number(line.lineTotalCents ?? 0), trusted.lineTotalCents)) {
+          console.warn('Rejected storefront order: line price does not match authoritative pricing', {
+            productId: line.productId,
+            clientLineTotalCents: line.lineTotalCents,
+            trustedLineTotalCents: trusted.lineTotalCents,
+          })
+          return new Response(JSON.stringify({ error: 'line_price_mismatch' }), {
+            status: 409,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        // Use the server-computed values from here on, not the client's.
+        line.unitPriceCents = trusted.unitPriceCents
+        line.lineTotalCents = trusted.lineTotalCents
+      }
+    }
 
     const tenantChargeTax = tenantTaxConfig?.charge_tax_on_online !== false
     const tenantTaxIncluded = tenantTaxConfig?.tax_included === true
-    const tenantTaxRate = Number(tenantTaxConfig?.tax_rate ?? 0)
-
-    const taxableSubtotalCentsServer = orderRequest.lines.reduce((sum, line) => {
-      const product = productsById.get(line.productId)
-      const behavior = (product?.tax_behavior ?? 'exempt') as 'inherit' | 'taxable' | 'exempt'
-      const lineTotal = Math.max(0, Number(line.lineTotalCents ?? 0))
-      const taxable = behavior === 'taxable' || (behavior === 'inherit' && tenantChargeTax)
-      return taxable ? (sum + lineTotal) : sum
-    }, 0)
-
-    let taxCentsServer = 0
-    if (tenantChargeTax && !tenantTaxIncluded && tenantTaxRate > 0) {
-      const discountRatio = subtotalCentsServer > 0
-        ? Math.min(1, subtotalAfterDiscountCentsServer / subtotalCentsServer)
-        : 0
-      const taxableAfterDiscountCents = Math.max(0, Math.round(taxableSubtotalCentsServer * discountRatio))
-      taxCentsServer = Math.round(taxableAfterDiscountCents * tenantTaxRate)
+    const taxResult = calculateMixedRateTax({
+      lines: orderRequest.lines.map((line, index) => {
+        const product = productsById.get(line.productId)!
+        const joinedRate = Array.isArray(product.tax_rate) ? product.tax_rate[0] : product.tax_rate
+        if (product.tax_rate_id && (!joinedRate || !joinedRate.is_active)) {
+          throw new Error(`Product ${line.productId} has an unavailable or archived assigned tax rate.`)
+        }
+        return {
+          key: String(index),
+          subtotalCents: Number(line.lineTotalCents ?? 0),
+          taxRate: tenantChargeTax && product.tax_rate_id && joinedRate
+            ? {
+                id: joinedRate.id,
+                name: joinedRate.name,
+                rateBasisPoints: Number(joinedRate.rate_basis_points ?? 0),
+              }
+            : null,
+        }
+      }),
+      discountCents: Number(orderRequest.discountCents ?? 0),
+      pricesIncludeTax: tenantTaxIncluded,
+    })
+    const subtotalCentsServer = taxResult.subtotalCents
+    const discountCentsServer = taxResult.discountCents
+    const taxCentsServer = taxResult.taxCents
+    const feePercent = Math.max(0, Math.min(100, Number(paymentFeeSettings?.fee_percent ?? 0)))
+    const paymentFeeApplies = orderRequest.paymentMethod === 'card'
+      && orderRequest.paymentNowChoice !== 'pay_at_pickup'
+      && paymentFeeSettings?.enabled === true
+    onlinePaymentFeeCentsServer = paymentFeeApplies
+      ? Math.round((Math.max(0, taxResult.totalCents + shippingChargeCentsServer + deliveryChargeCentsServer) * (feePercent / 100)))
+      : 0
+    if (!Number.isFinite(onlinePaymentFeeCentsServer) || onlinePaymentFeeCentsServer < 0) {
+      return new Response(JSON.stringify({ error: 'invalid_payment_fee_configuration' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
-
-    const totalCentsServer = subtotalAfterDiscountCentsServer + taxCentsServer + shippingChargeCentsServer + deliveryChargeCentsServer + onlinePaymentFeeCentsServer
+    const totalCentsServer = taxResult.totalCents + shippingChargeCentsServer + deliveryChargeCentsServer + onlinePaymentFeeCentsServer
+    if (
+      orderRequest.subtotalCents !== subtotalCentsServer
+      || orderRequest.taxCents !== taxCentsServer
+      || orderRequest.totalCents !== totalCentsServer
+    ) {
+      return new Response(JSON.stringify({ error: 'checkout_totals_stale_refresh_required' }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
     if (estimatedTotalCents === null && isWeightEstimate) {
       estimatedTotalCents = totalCentsServer
     }
@@ -435,7 +600,6 @@ serve(async (req: Request) => {
     const depositAmount = hasDepositProduct
       ? ((orderRequest.depositChargeCents ?? totalCentsServer) / 100)
       : null
-    const depositPaidAt = hasDepositProduct && orderRequest.stripePaymentIntentId ? new Date().toISOString() : null
     const depositPricePerLb = depositProducts.find((p: ProductRow) => p.deposit_prod_price_per_lb !== null && p.deposit_prod_price_per_lb !== undefined)?.deposit_prod_price_per_lb
     // Delivery/shipping are paid at checkout; balance_due should represent product/tax remaining.
     const baseOrderTotalExcludingFulfillmentCents = Math.max(0, totalCentsServer - shippingChargeCentsServer - deliveryChargeCentsServer)
@@ -649,7 +813,6 @@ serve(async (req: Request) => {
     // Pure preorder carts use the allocation RPC. Mixed carts continue through the
     // standard order path, which stores in-stock lines as NOW and preorder lines as LATER.
     if (shouldUseDedicatedPreorderFlow(orderRequest.lines)) {
-      const checkoutAttemptId = (orderRequest.checkoutAttemptId || '').trim() || crypto.randomUUID()
       const preorderBody = {
         tenant_id: orderRequest.tenantId,
         checkout_attempt_id: checkoutAttemptId,
@@ -675,18 +838,7 @@ serve(async (req: Request) => {
         payment_status: 'pending',
       }
 
-      const preorderRpcLines = orderRequest.lines.map((line) => ({
-        product_id: line.productId,
-        product_name: line.productName,
-        quantity: line.qty ?? 1,
-        unit_price_cents: line.unitPriceCents ?? 0,
-        line_total_cents: line.lineTotalCents ?? 0,
-        requested_weight_lbs:
-          line.lineType === 'pack_for_you'
-            ? (line.requestedWeightLbs ?? line.weightLbs ?? line.binWeight ?? null)
-            : null,
-        line_type: line.lineType === 'pack_for_you' ? 'pack_for_you' : 'exact_package',
-      }))
+      const preorderRpcLines = buildPreorderRpcLines(checkoutAttemptId, orderRequest.lines, taxResult.lines)
 
       const { data: preorderResult, error: preorderRpcError } = await supabaseAdmin.rpc(
         'create_storefront_preorder_order',
@@ -713,10 +865,12 @@ serve(async (req: Request) => {
         )
       }
 
-      let chargedStripePaymentIntentId: string | null = orderRequest.stripePaymentIntentId ?? null
+      // A client-supplied stripePaymentIntentId is never trusted at face value here either —
+      // it goes through the same verify-or-create orchestration as the standard checkout path.
+      let preorderPlatformFeeCentsServer = 0
       const shouldChargeCardNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
 
-      if (shouldChargeCardNow && !chargedStripePaymentIntentId) {
+      if (shouldChargeCardNow) {
         const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
         if (!stripeSecretKey) {
           return new Response(JSON.stringify({ error: 'payment_processing_not_configured' }), {
@@ -728,95 +882,71 @@ serve(async (req: Request) => {
         const connectedAccountId = typeof tenantTaxConfig?.stripe_account_id === 'string'
           ? tenantTaxConfig.stripe_account_id
           : ''
-        if (!connectedAccountId) {
-          return new Response(JSON.stringify({ error: 'stripe_account_not_connected' }), {
-            status: 400,
+
+        const merchandiseSubtotalAfterDiscountCents = Math.max(0, subtotalCentsServer - discountCentsServer)
+        preorderPlatformFeeCentsServer = calculateBasePlatformFeeCents(merchandiseSubtotalAfterDiscountCents, tenantTaxConfig?.plan)
+        const chargeAmountCents = Math.max(0, totalCentsServer) + preorderPlatformFeeCentsServer
+
+        const stripe = new Stripe(stripeSecretKey, {
+          apiVersion: '2023-10-16',
+          httpClient: Stripe.createFetchHttpClient(),
+        })
+        const stripeAdapter: StripeLike = {
+          retrievePaymentIntent: (id, acct) => stripe.paymentIntents.retrieve(id, { stripeAccount: acct }) as unknown as Promise<StripePaymentIntentLike>,
+          createPaymentIntent: (params, acct, idempotencyKey) =>
+            stripe.paymentIntents.create(params, { stripeAccount: acct, idempotencyKey }) as unknown as Promise<StripePaymentIntentLike>,
+        }
+        const orderLookup = {
+          async findOrderByPaymentIntentId(paymentIntentId: string) {
+            const { data } = await supabaseAdmin!
+              .from('orders')
+              .select('id, tenant_id')
+              .eq('stripe_payment_intent_id', paymentIntentId)
+              .maybeSingle()
+            return data ? { orderId: data.id, tenantId: data.tenant_id } : null
+          },
+        }
+        const returnUrl = Deno.env.get('STOREFRONT_CHECKOUT_RETURN_URL') || 'https://app.purveyos.com/checkout/success'
+
+        const cardResult = await resolveCardPayment({
+          stripe: stripeAdapter,
+          orderLookup,
+          connectedAccountId,
+          tenantId: orderRequest.tenantId,
+          checkoutAttemptId,
+          chargeAmountCents,
+          suppliedPaymentIntentId: orderRequest.stripePaymentIntentId ?? null,
+          paymentMethodId: orderRequest.paymentMethodId,
+          confirmationToken: orderRequest.confirmationToken,
+          returnUrl,
+          applicationFeeAmountCents: preorderPlatformFeeCentsServer,
+          metadata: { source: 'storefront_preorder', orderId: preorderOrderId },
+        })
+
+        if (!cardResult.ok) {
+          console.error('Preorder card payment could not be verified or completed:', cardResult.error)
+          await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
+            p_order_id: preorderOrderId,
+            p_payment_status: 'failed',
+          })
+          return new Response(JSON.stringify({ error: cardResult.error }), {
+            status: cardResult.status,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           })
         }
 
-        const paymentMethodId = (orderRequest.paymentMethodId || '').trim()
-        const confirmationToken = (orderRequest.confirmationToken || '').trim()
-        if (!paymentMethodId && !confirmationToken) {
-          return new Response(JSON.stringify({ error: 'card_payment_method_required' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
+        chargedStripePaymentIntentId = cardResult.paymentIntentId
 
-        try {
-          const stripe = new Stripe(stripeSecretKey, {
-            apiVersion: '2023-10-16',
-            httpClient: Stripe.createFetchHttpClient(),
-          })
-
-          const paymentIntentParams: Record<string, any> = {
-            amount: Math.max(0, totalCentsServer),
-            currency: 'usd',
-            payment_method_types: ['card'],
-            confirm: true,
-            return_url: `${req.headers.get('origin') || 'https://app.purveyos.com'}/checkout/success`,
-            metadata: {
-              tenantId: orderRequest.tenantId,
-              customerEmail: orderRequest.customerEmail,
-              source: 'storefront_preorder',
-              orderId: preorderOrderId,
-            },
+        const { data: markPaidData, error: markPaidError } = await supabaseAdmin.rpc(
+          'mark_storefront_preorder_card_paid',
+          {
+            p_order_id: preorderOrderId,
+            p_stripe_payment_intent_id: chargedStripePaymentIntentId,
           }
+        )
 
-          if (paymentMethodId) {
-            paymentIntentParams.payment_method = paymentMethodId
-          } else {
-            paymentIntentParams.confirmation_token = confirmationToken
-          }
-
-          const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams, {
-            stripeAccount: connectedAccountId,
-          })
-
-          if (paymentIntent.status === 'succeeded') {
-            chargedStripePaymentIntentId = paymentIntent.id
-            const { data: markPaidData, error: markPaidError } = await supabaseAdmin.rpc(
-              'mark_storefront_preorder_card_paid',
-              {
-                p_order_id: preorderOrderId,
-                p_stripe_payment_intent_id: paymentIntent.id,
-              }
-            )
-
-            if (markPaidError || markPaidData === false) {
-              console.error('Failed to mark preorder order paid:', markPaidError ?? 'rpc returned false')
-              await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
-                p_order_id: preorderOrderId,
-                p_payment_status: 'failed',
-              })
-              return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
-                status: 402,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              })
-            }
-          } else if (paymentIntent.status === 'requires_action') {
-            await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
-              p_order_id: preorderOrderId,
-              p_payment_status: 'failed',
-            })
-            return new Response(JSON.stringify({ error: 'card_authentication_required' }), {
-              status: 402,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            })
-          } else {
-            console.error('Card payment did not succeed for preorder:', paymentIntent.status)
-            await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
-              p_order_id: preorderOrderId,
-              p_payment_status: 'failed',
-            })
-            return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
-              status: 402,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            })
-          }
-        } catch (stripeError) {
-          console.error('Error charging Stripe card payment for preorder:', stripeError)
+        if (markPaidError || markPaidData === false) {
+          console.error('Failed to mark preorder order paid:', markPaidError ?? 'rpc returned false')
           await supabaseAdmin.rpc('cancel_storefront_preorder_order', {
             p_order_id: preorderOrderId,
             p_payment_status: 'failed',
@@ -831,7 +961,7 @@ serve(async (req: Request) => {
       // Send confirmation email to customer (non-blocking, don't fail order if notification fails)
       try {
         if (orderRequest.customerEmail) {
-          console.log('📧 [Notify] Sending preorder confirmation email to customer:', orderRequest.customerEmail)
+          console.log('📧 [Notify] Sending preorder confirmation email for order:', preorderOrderId)
           const notifyResult = await supabaseAdmin.functions.invoke('order-notify', {
             body: {
               orderId: preorderOrderId,
@@ -877,7 +1007,7 @@ serve(async (req: Request) => {
         JSON.stringify({
           success: true,
           order_id: preorderOrderId,
-          payment_status: 'pending',
+          payment_status: chargedStripePaymentIntentId ? 'paid' : 'pending',
           preorder_expires_at: preorderResult?.preorder_expires_at ?? null,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -885,9 +1015,11 @@ serve(async (req: Request) => {
     }
 
     // Charge card payments before creating order records so checkout cannot succeed without a Stripe charge.
-    let chargedStripePaymentIntentId: string | null = orderRequest.stripePaymentIntentId ?? null
+    // A client-supplied stripePaymentIntentId is NEVER trusted at face value — it is
+    // retrieved from Stripe and fully verified before anything is marked paid.
+    let platformFeeCentsServer = 0
     const shouldChargeCardNow = orderRequest.paymentMethod === 'card' && orderRequest.paymentNowChoice !== 'pay_at_pickup'
-    if (shouldChargeCardNow && !chargedStripePaymentIntentId) {
+    if (shouldChargeCardNow) {
       const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY')
       if (!stripeSecretKey) {
         return new Response(JSON.stringify({ error: 'payment_processing_not_configured' }), {
@@ -899,84 +1031,65 @@ serve(async (req: Request) => {
       const connectedAccountId = typeof tenantTaxConfig?.stripe_account_id === 'string'
         ? tenantTaxConfig.stripe_account_id
         : ''
-      if (!connectedAccountId) {
-        return new Response(JSON.stringify({ error: 'stripe_account_not_connected' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
 
-      const paymentMethodId = (orderRequest.paymentMethodId || '').trim()
-      const confirmationToken = (orderRequest.confirmationToken || '').trim()
-      if (!paymentMethodId && !confirmationToken) {
-        return new Response(JSON.stringify({ error: 'card_payment_method_required' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
+      // Base-plan Stripe transactions carry the 1.75% PurveyOS platform fee on the
+      // post-discount merchandise subtotal only (never tax/shipping/delivery/fee itself).
+      const merchandiseSubtotalAfterDiscountCents = Math.max(0, subtotalCentsServer - discountCentsServer)
+      platformFeeCentsServer = calculateBasePlatformFeeCents(merchandiseSubtotalAfterDiscountCents, tenantTaxConfig?.plan)
 
-      const chargeAmountCents = hasDepositProduct
-        ? Math.max(0, Math.round(Number((orderRequest.depositChargeCents ?? totalCentsServer) + onlinePaymentFeeCentsServer)))
+      // Fix: only add the online payment fee once. When depositChargeCents is absent,
+      // totalCentsServer already includes onlinePaymentFeeCentsServer.
+      const baseChargeAmountCents = hasDepositProduct
+        ? Math.max(0, Math.round(Number(orderRequest.depositChargeCents ?? (totalCentsServer - onlinePaymentFeeCentsServer)))) + onlinePaymentFeeCentsServer
         : totalCentsServer
+      const chargeAmountCents = baseChargeAmountCents + platformFeeCentsServer
 
-      if (!Number.isFinite(chargeAmountCents) || chargeAmountCents <= 0) {
-        return new Response(JSON.stringify({ error: 'invalid_charge_amount' }), {
-          status: 400,
+      const stripe = new Stripe(stripeSecretKey, {
+        apiVersion: '2023-10-16',
+        httpClient: Stripe.createFetchHttpClient(),
+      })
+      const stripeAdapter: StripeLike = {
+        retrievePaymentIntent: (id, acct) => stripe.paymentIntents.retrieve(id, { stripeAccount: acct }) as unknown as Promise<StripePaymentIntentLike>,
+        createPaymentIntent: (params, acct, idempotencyKey) =>
+          stripe.paymentIntents.create(params, { stripeAccount: acct, idempotencyKey }) as unknown as Promise<StripePaymentIntentLike>,
+      }
+      const orderLookup = {
+        async findOrderByPaymentIntentId(paymentIntentId: string) {
+          const { data } = await supabaseAdmin!
+            .from('orders')
+            .select('id, tenant_id')
+            .eq('stripe_payment_intent_id', paymentIntentId)
+            .maybeSingle()
+          return data ? { orderId: data.id, tenantId: data.tenant_id } : null
+        },
+      }
+
+      const returnUrl = Deno.env.get('STOREFRONT_CHECKOUT_RETURN_URL') || 'https://app.purveyos.com/checkout/success'
+      const cardResult = await resolveCardPayment({
+        stripe: stripeAdapter,
+        orderLookup,
+        connectedAccountId,
+        tenantId: orderRequest.tenantId,
+        checkoutAttemptId,
+        chargeAmountCents,
+        suppliedPaymentIntentId: orderRequest.stripePaymentIntentId ?? null,
+        paymentMethodId: orderRequest.paymentMethodId,
+        confirmationToken: orderRequest.confirmationToken,
+        returnUrl,
+        applicationFeeAmountCents: platformFeeCentsServer,
+        metadata: { source: 'storefront' },
+      })
+
+      if (!cardResult.ok) {
+        console.error('Card payment could not be verified or completed:', cardResult.error)
+        return new Response(JSON.stringify({ error: cardResult.error }), {
+          status: cardResult.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
 
-      try {
-        const stripe = new Stripe(stripeSecretKey, {
-          apiVersion: '2023-10-16',
-          httpClient: Stripe.createFetchHttpClient(),
-        })
-
-        const paymentIntentParams: Record<string, any> = {
-          amount: chargeAmountCents,
-          currency: 'usd',
-          payment_method_types: ['card'],
-          confirm: true,
-          return_url: `${req.headers.get('origin') || 'https://app.purveyos.com'}/checkout/success`,
-          metadata: {
-            tenantId: orderRequest.tenantId,
-            customerEmail: orderRequest.customerEmail,
-            source: 'storefront',
-          },
-        }
-
-        if (paymentMethodId) {
-          paymentIntentParams.payment_method = paymentMethodId
-        } else {
-          paymentIntentParams.confirmation_token = confirmationToken
-        }
-
-        const paymentIntent = await stripe.paymentIntents.create(paymentIntentParams, {
-          stripeAccount: connectedAccountId,
-        })
-
-        if (paymentIntent.status === 'succeeded') {
-          chargedStripePaymentIntentId = paymentIntent.id
-          orderRequest.stripePaymentIntentId = paymentIntent.id
-        } else if (paymentIntent.status === 'requires_action') {
-          return new Response(JSON.stringify({ error: 'card_authentication_required' }), {
-            status: 402,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        } else {
-          console.error('Card payment did not succeed:', paymentIntent.status)
-          return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
-            status: 402,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          })
-        }
-      } catch (stripeError) {
-        console.error('Error charging Stripe card payment:', stripeError)
-        return new Response(JSON.stringify({ error: 'card_payment_failed' }), {
-          status: 402,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
+      chargedStripePaymentIntentId = cardResult.paymentIntentId
+      orderRequest.stripePaymentIntentId = cardResult.paymentIntentId
     }
 
     // Start a transaction by using multiple operations
@@ -987,6 +1100,12 @@ serve(async (req: Request) => {
       orderRequest.deliveryMethod === 'delivery' && typeof orderRequest.requestedDeliveryDate === 'string'
         ? orderRequest.requestedDeliveryDate.trim()
         : null
+    const persistenceFields = buildOrderPersistenceFields({
+      checkoutAttemptId,
+      hasDepositProduct,
+      paymentMethod: orderRequest.paymentMethod,
+      chargedStripePaymentIntentId,
+    })
 
     if (orderRequest.deliveryMethod === 'delivery' && normalizedRequestedDeliveryDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedRequestedDeliveryDate)) {
       return new Response(
@@ -1031,6 +1150,7 @@ serve(async (req: Request) => {
       .insert({
         id: orderId,
         tenant_id: orderRequest.tenantId,
+        ...persistenceFields,
         user_id: userId, // Link to authenticated user if logged in
         customer_name: orderRequest.customerName,
         customer_email: orderRequest.customerEmail,
@@ -1058,7 +1178,6 @@ serve(async (req: Request) => {
         ...(hasDepositProduct
           ? {
               deposit_amount: depositAmount,
-              deposit_paid_at: depositPaidAt,
               balance_due: balanceDue,
               hanging_weight_lbs: null,
               price_per_lb: depositPricePerLb !== undefined && depositPricePerLb !== null ? Number(depositPricePerLb) : null,
@@ -1066,8 +1185,6 @@ serve(async (req: Request) => {
           : {}),
         source: 'storefront',
         status: 'pending',
-        payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
-        stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -1142,10 +1259,11 @@ serve(async (req: Request) => {
     }
 
     // 2. Create order lines and reserve inventory only (never decrement here)
-    for (const line of orderRequest.lines) {
+    for (const [lineIndex, line] of orderRequest.lines.entries()) {
       // Convert unitPriceCents to dollars for price_per field
       const pricePerDollars = line.unitPriceCents / 100
       const normalizedLine = normalizeStorefrontWeightLine(line, line.pricePer)
+      const taxSnapshot = taxResult.lines[lineIndex]
 
       console.log('📦 Processing line:', {
         productName: line.productName,
@@ -1181,6 +1299,7 @@ serve(async (req: Request) => {
           id: orderLineId,
           order_id: orderId,
           tenant_id: orderRequest.tenantId,
+          ...buildOrderLinePersistenceFields(checkoutAttemptId, lineIndex, taxSnapshot),
           product_id: line.productId,
           product_name: line.productName,
           quantity: line.qty,
@@ -1327,13 +1446,13 @@ serve(async (req: Request) => {
               ? subscriptionProduct.season_end_date
               : null,
             deliveries_fulfilled: 0,  // Changed from 1 to 0 (not fulfilled yet, just ordered)
-            payment_status: orderRequest.stripePaymentIntentId ? 'paid' : 'pending',
-            total_paid_cents: orderRequest.stripePaymentIntentId
+            payment_status: chargedStripePaymentIntentId ? 'paid' : 'pending',
+            total_paid_cents: chargedStripePaymentIntentId
               ? (hasDepositProduct
-                ? ((orderRequest.depositChargeCents ?? totalCentsServer) + onlinePaymentFeeCentsServer)
-                : totalCentsServer)
+                ? ((orderRequest.depositChargeCents ?? (totalCentsServer - onlinePaymentFeeCentsServer)) + onlinePaymentFeeCentsServer + platformFeeCentsServer)
+                : totalCentsServer + platformFeeCentsServer)
               : 0,
-            stripe_payment_intent_id: orderRequest.stripePaymentIntentId || null,  // Link for idempotency + tracking
+            stripe_payment_intent_id: chargedStripePaymentIntentId || null,  // Link for idempotency + tracking
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
@@ -1457,7 +1576,7 @@ serve(async (req: Request) => {
     // Send confirmation email to customer (non-blocking, don't fail order if notification fails)
     try {
       if (orderRequest.customerEmail) {
-        console.log('📧 [Notify] Sending order confirmation email to customer:', orderRequest.customerEmail);
+        console.log('📧 [Notify] Sending order confirmation email for order:', orderId);
         console.log('📧 [Notify] Invoking order-notify function with body:', { orderId, emailType: 'order_confirmation', triggerSource: 'storefront' })
         const notifyResult = await supabaseAdmin.functions.invoke('order-notify', {
           body: {
@@ -1517,11 +1636,10 @@ serve(async (req: Request) => {
       }
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
     console.error('Error in create-storefront-order function:', error)
     return new Response(
       JSON.stringify({
-        error: message,
+        error: 'order_processing_failed',
       }),
       {
         status: 500,

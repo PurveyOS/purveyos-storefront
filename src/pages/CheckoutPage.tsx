@@ -17,6 +17,9 @@ import { buildShippingWeightPayload } from '../lib/shippingWeight';
 import toast from 'react-hot-toast';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
+import { calculateMixedRateTax } from '../services/taxRates';
+import type { CartItem } from '../types/storefront';
+import type { Product } from '../types/product';
 
 const platformStripeKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
 
@@ -51,6 +54,29 @@ function buildQrImageFromValue(value: string | null | undefined): string | null 
   if (!raw) return null;
   if (looksLikeImageSource(raw)) return raw;
   return `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(raw)}`;
+}
+
+function getCheckoutLineSubtotalCents(item: CartItem & { product: Product }): number {
+  const product = item.product;
+  const quantity = item.quantity ?? 1;
+  const binWeight = Number(item.binWeight ?? 0);
+  const unitPriceCents = Number(item.unitPriceCents ?? 0);
+  const requestedWeightLbs = Number(item.requestedWeightLbs ?? 0);
+  const weight = Number(item.weight ?? 0);
+  const subscriptionPrice = Number(item.metadata?.subscriptionTotalPrice ?? 0);
+  const depositFixedTotal = Number(product?.deposit_fixed_total ?? 0);
+
+  if (product?.is_deposit_product && depositFixedTotal > 0) {
+    return Math.round(depositFixedTotal * quantity * 100);
+  }
+  if (binWeight > 0 && unitPriceCents > 0) {
+    const isEach = String(product?.unit ?? '').toLowerCase() === 'ea' || Boolean(product?.variantSize || product?.variantUnit);
+    return Math.round((isEach ? unitPriceCents : binWeight * unitPriceCents) * quantity);
+  }
+  if (requestedWeightLbs > 0) return Math.round(product.pricePer * requestedWeightLbs * quantity * 100);
+  if (weight > 0) return Math.round(product.pricePer * weight * quantity * 100);
+  if (subscriptionPrice > 0) return Math.round(subscriptionPrice * quantity * 100);
+  return Math.round(product.pricePer * quantity * 100);
 }
 
 export function CheckoutPage() {
@@ -1872,33 +1898,8 @@ export function CheckoutPage() {
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 
   // Calculate actual cart total based on items
-  const cartTotal = cartItems.reduce((sum, item) => {
-    if (!item?.product) return sum;
-    
-    const weight = (item as any).weight;
-    const requestedWeightLbs = (item as any).requestedWeightLbs;
-    const binWeight = (item as any).binWeight;
-    const unitPriceCents = (item as any).unitPriceCents;
-    const metaPrice: number | undefined = (item as any).metadata?.subscriptionTotalPrice;
-    const quantity = item.quantity;
-    
-    let itemTotal = 0;
-    
-    if (binWeight && unitPriceCents) {
-      const isEach = (item.product.unit || '').toLowerCase() === 'ea' || Boolean((item.product as any).variantSize || (item.product as any).variantUnit);
-      itemTotal = (isEach ? (unitPriceCents / 100) : (binWeight * (unitPriceCents / 100))) * quantity;
-    } else if (requestedWeightLbs && requestedWeightLbs > 0) {
-      itemTotal = item.product.pricePer * requestedWeightLbs * quantity;
-    } else if (weight && weight > 0) {
-      itemTotal = item.product.pricePer * weight * quantity;
-    } else if (metaPrice && metaPrice > 0) {
-      itemTotal = metaPrice * quantity;
-    } else {
-      itemTotal = item.product.pricePer * quantity;
-    }
-    
-    return sum + itemTotal;
-  }, 0);
+  const cartTotalCents = cartItems.reduce((sum, item) => sum + getCheckoutLineSubtotalCents(item), 0);
+  const cartTotal = cartTotalCents / 100;
 
   const onlinePaymentFeeSettings = storefrontData?.settings.onlinePaymentFeeSettings;
   const checkoutShippingChargeCents = formData.deliveryMethod === 'shipping'
@@ -1910,11 +1911,23 @@ export function CheckoutPage() {
   const checkoutDeliveryChargeCents = formData.deliveryMethod === 'delivery' && deliveryGeoResult?.matched_zone
     ? deliveryGeoResult.matched_zone.charge_cents
     : 0;
-  const checkoutSubtotalAfterDiscountCents = Math.max(0, Math.round(cartTotal * 100) - discountCents);
-  const checkoutTaxCents = tenant?.charge_tax_on_online === false || tenant?.tax_included
-    ? 0
-    : Math.round(checkoutSubtotalAfterDiscountCents * (tenant?.tax_rate ?? 0));
-  const checkoutBaseTotalCents = checkoutSubtotalAfterDiscountCents + checkoutTaxCents + checkoutShippingChargeCents + checkoutDeliveryChargeCents;
+  const checkoutTaxResult = calculateMixedRateTax({
+    lines: cartItems.map((item, index) => ({
+      key: String(index),
+      subtotalCents: getCheckoutLineSubtotalCents(item),
+      taxRate: tenant?.charge_tax_on_online !== false && item.product.taxRate
+        ? {
+            id: item.product.taxRate.id,
+            name: item.product.taxRate.name,
+            rateBasisPoints: item.product.taxRate.rateBasisPoints,
+          }
+        : null,
+    })),
+    discountCents,
+    pricesIncludeTax: Boolean(tenant?.tax_included),
+  });
+  const checkoutTaxCents = checkoutTaxResult.taxCents;
+  const checkoutBaseTotalCents = checkoutTaxResult.totalCents + checkoutShippingChargeCents + checkoutDeliveryChargeCents;
   const checkoutOnlinePaymentFeeCents = getOnlinePaymentFeeCents({
     paymentMethod: formData.paymentMethod,
     paymentNowChoice: formData.paymentNowChoice,
@@ -3050,6 +3063,7 @@ export function CheckoutPage() {
                       displayText = `${item.quantity} × $${item.product.pricePer.toFixed(2)}`;
                       itemTotal = item.product.pricePer * item.quantity;
                     }
+                    itemTotal = getCheckoutLineSubtotalCents(item) / 100;
                     
                     return (
                       <div key={`${item.productId}-${binWeight ?? weight ?? requestedWeightLbs ?? lineType ?? 'std'}`} className="flex justify-between items-center py-2 border-b">
@@ -3155,13 +3169,21 @@ export function CheckoutPage() {
                     <div className="flex justify-between text-gray-600">
                       <span>Tax:</span>
                       <span>
-                        {tenant?.charge_tax_on_online === false
+                        {tenant?.charge_tax_on_online === false || checkoutTaxCents === 0
                           ? '$0.00'
                           : tenant?.tax_included
-                          ? 'Included in price'
+                          ? `$${(checkoutTaxCents / 100).toFixed(2)} included`
                           : `$${(checkoutTaxCents / 100).toFixed(2)}`}
                       </span>
                     </div>
+                    {checkoutTaxResult.breakdown.map((group) => (
+                      <div key={group.taxRateId} className="flex justify-between text-xs text-gray-500">
+                        <span>{group.taxRateName} ({(group.taxRateBasisPoints / 100).toFixed(2)}%):</span>
+                        <span>
+                          ${(group.taxCents / 100).toFixed(2)}{tenant?.tax_included ? ' included' : ''}
+                        </span>
+                      </div>
+                    ))}
 
                     {checkoutOnlinePaymentFeeCents > 0 && (
                       <div className="flex justify-between text-gray-600">

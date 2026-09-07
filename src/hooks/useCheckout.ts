@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import type { Cart } from '../types/storefront';
 import type { Product } from '../types/product';
+import { calculateMixedRateTax } from '../services/taxRates';
 
 export interface GroupChoice {
   productId: string;
@@ -66,15 +67,6 @@ export interface TenantTaxConfig {
   taxRate?: number;              // e.g. 0.0825 for 8.25%
   taxIncluded?: boolean;         // true if prices already include tax
   chargeTaxOnOnline?: boolean;   // allow disabling tax for online orders
-}
-
-type ProductTaxBehavior = 'inherit' | 'taxable' | 'exempt';
-
-function isProductTaxable(product: any, chargeTaxOnOnline: boolean): boolean {
-  const behavior = ((product?.taxBehavior ?? product?.tax_behavior ?? 'exempt') as ProductTaxBehavior);
-  if (behavior === 'taxable') return true;
-  if (behavior === 'exempt') return false;
-  return chargeTaxOnOnline;
 }
 
 interface OutgoingOrderLine {
@@ -338,29 +330,31 @@ export function useCheckout() {
 
       console.log('💰 [createOrder] Calculating totals:', { discountCents, shippingChargeCents, deliveryChargeCents, taxConfig });
 
-      const subtotalCents = lines.reduce((sum, line) => sum + (line.lineTotalCents || 0), 0);
       const chargeTax = taxConfig?.chargeTaxOnOnline !== false;
       const taxIncluded = taxConfig?.taxIncluded ?? false;
-      const taxRate = taxConfig?.taxRate ?? 0;
       const productById = new Map(products.map((product) => [product.id, product]));
-      const taxableSubtotalCents = lines.reduce((sum, line) => {
-        const product = productById.get(line.productId);
-        if (!isProductTaxable(product, chargeTax)) return sum;
-        return sum + (line.lineTotalCents || 0);
-      }, 0);
-
-      let taxCents = 0;
-      if (chargeTax && !taxIncluded && taxRate > 0) {
-        const subtotalAfterDiscountCents = Math.max(0, subtotalCents - discountCents);
-        const discountRatio = subtotalCents > 0
-          ? Math.min(1, subtotalAfterDiscountCents / subtotalCents)
-          : 0;
-        const taxableAfterDiscountCents = Math.max(0, Math.round(taxableSubtotalCents * discountRatio));
-        taxCents = Math.round(taxableAfterDiscountCents * taxRate);
-      }
+      const taxResult = calculateMixedRateTax({
+        lines: lines.map((line, index) => {
+          const product = productById.get(line.productId);
+          return {
+            key: String(index),
+            subtotalCents: line.lineTotalCents,
+            taxRate: chargeTax && product?.taxRate
+              ? {
+                  id: product.taxRate.id,
+                  name: product.taxRate.name,
+                  rateBasisPoints: product.taxRate.rateBasisPoints,
+                }
+              : null,
+          };
+        }),
+        discountCents,
+        pricesIncludeTax: taxIncluded,
+      });
+      const { subtotalCents, taxCents } = taxResult;
 
       // Add shipping/delivery charge to the final total
-      const totalCents = Math.max(0, subtotalCents - discountCents) + taxCents + shippingChargeCents + deliveryChargeCents + onlinePaymentFeeCents;
+      const totalCents = taxResult.totalCents + shippingChargeCents + deliveryChargeCents + onlinePaymentFeeCents;
 
       const depositChargeCents = checkoutData.depositChargeCents ?? cart.items.reduce((sum, item: any) => {
         const product = products.find((p) => p.id === item.productId) as any;
