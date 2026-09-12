@@ -59,6 +59,7 @@ export interface CheckoutResult {
   paymentPolicy?: string;
   paymentStatus?: string;
   authAmountCents?: number | null;
+  paymentAmountCents?: number;
   success: boolean;
   error?: string;
 }
@@ -518,6 +519,7 @@ export function useCheckout() {
         orderId,
         clientSecret: (data as any)?.client_secret ?? (data as any)?.clientSecret ?? null,
         needsStripeConfirmation: (data as any)?.needs_stripe_confirmation ?? (data as any)?.needsStripeConfirmation ?? false,
+        paymentAmountCents: (data as any)?.paymentAmountCents,
         paymentPolicy: (data as any)?.payment_policy,
         paymentStatus: (data as any)?.payment_status,
         authAmountCents: (data as any)?.auth_amount_cents ?? null,

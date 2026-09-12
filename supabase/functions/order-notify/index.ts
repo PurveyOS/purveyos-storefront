@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  canSendNotificationForOrderState,
+  isInternalServiceRequest,
+  onlineFeeLabel,
+} from "../_shared/orderNotifyAuthorization.ts";
 // deno-lint-ignore no-explicit-any
 declare const Deno: any;
 
@@ -47,6 +52,11 @@ interface OrderLine {
   weight_lbs?: number;
   unit_price_cents?: number;
   line_total_cents?: number;
+  tax_rate_id?: string | null;
+  tax_rate_name?: string | null;
+  tax_rate_basis_points?: number | null;
+  taxable_amount_cents?: number;
+  tax_cents?: number;
   fulfillment_bucket?: string;
   selected_bins?: any;
   reserved_at?: string;
@@ -70,6 +80,26 @@ function lineText(l: OrderLine): string {
   const weight = l.weight_lbs ? ` (${l.weight_lbs} lb req)` : '';
   const total = l.line_total_cents != null ? ` — ${money(l.line_total_cents)}` : '';
   return `• ${qty} x ${name}${weight}${total}`;
+}
+
+function taxBreakdownText(lines: OrderLine[]): string {
+  const groups = new Map<string, { name: string; basisPoints: number; taxableCents: number; taxCents: number }>();
+  for (const line of lines) {
+    if (!line.tax_rate_id || !line.tax_rate_basis_points) continue;
+    const current = groups.get(line.tax_rate_id) ?? {
+      name: line.tax_rate_name || 'Tax',
+      basisPoints: line.tax_rate_basis_points,
+      taxableCents: 0,
+      taxCents: 0,
+    };
+    current.taxableCents += Number(line.taxable_amount_cents ?? 0);
+    current.taxCents += Number(line.tax_cents ?? 0);
+    groups.set(line.tax_rate_id, current);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => `${group.name} (${(group.basisPoints / 100).toFixed(2)}%): ${money(group.taxCents)} on ${money(group.taxableCents)}`)
+    .join('\n');
 }
 
 /**
@@ -120,7 +150,8 @@ async function sendEmail(to: string, subject: string, body: string): Promise<any
 }
 
 /**
- * Send SMS via Twilio (stub)
+ * Send SMS via Twilio. Only reports ok:true when Twilio's API actually
+ * accepts the message (a real sid is returned); never assumed from env presence.
  */
 async function sendSms(to: string, body: string): Promise<any> {
   const sid = Deno.env.get('TWILIO_ACCOUNT_SID');
@@ -130,8 +161,29 @@ async function sendSms(to: string, body: string): Promise<any> {
     console.log('⚠️ Twilio vars missing; skipping SMS send');
     return { skipped: true };
   }
-  console.log(`✓ SMS sent to ${to}: ${body.substring(0, 50)}...`);
-  return { ok: true };
+
+  try {
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${btoa(`${sid}:${auth}`)}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ To: to, From: from, Body: body }).toString(),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.sid || payload.status === 'failed' || payload.status === 'undelivered') {
+      console.error('❌ Twilio did not accept the message:', payload?.error_message || response.status);
+      return { error: payload?.error_message || `Twilio status ${response.status}`, ok: false };
+    }
+
+    console.log(`✓ SMS accepted by Twilio for ${to}: sid=${payload.sid}`);
+    return { ok: true, providerSid: payload.sid };
+  } catch (error) {
+    console.error('❌ SMS send failed:', error);
+    return { error: String(error), ok: false };
+  }
 }
 
 serve(async (req: Request) => {
@@ -157,6 +209,28 @@ serve(async (req: Request) => {
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) throw new Error('Supabase admin env vars missing');
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
+    // AUTHORIZATION: require either an internal service-role caller (other
+    // edge functions invoking this via supabaseAdmin.functions.invoke) or an
+    // authenticated tenant staff member.
+    const authHeader = req.headers.get('Authorization');
+    const isInternalCall = isInternalServiceRequest(authHeader, SERVICE_ROLE_KEY);
+    let staffTenantId: string | null = null;
+
+    if (!isInternalCall) {
+      const jwt = (authHeader || '').replace('Bearer ', '');
+      const { data: { user }, error: authError } = jwt
+        ? await admin.auth.getUser(jwt)
+        : { data: { user: null }, error: null };
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: corsHeaders });
+      }
+      const { data: profile } = await admin.from('profiles').select('tenant_id').eq('id', user.id).maybeSingle();
+      if (!profile?.tenant_id) {
+        return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: corsHeaders });
+      }
+      staffTenantId = profile.tenant_id;
+    }
+
     // Fetch order - use minimal fields
     console.log('📦 Loading order:', body.orderId);
     let order: OrderData | null = null;
@@ -181,7 +255,34 @@ serve(async (req: Request) => {
       throw err;
     }
 
-    console.log('✓ Order loaded:', { id: order.id, customer_email: order.customer_email || 'N/A' });
+    console.log('✓ Order loaded:', { id: order.id, hasEmail: Boolean(order.customer_email) });
+
+    // Confirm the order belongs to the authenticated tenant (skipped for
+    // trusted internal service calls, which already know the tenant).
+    if (staffTenantId && order.tenant_id !== staffTenantId) {
+      return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403, headers: corsHeaders });
+    }
+
+    // Only send the notification if the order's *stored* state actually
+    // matches what this notification type claims (never trust the caller).
+    const stateCheck = canSendNotificationForOrderState(body.emailType, order);
+    if (!stateCheck.ok) {
+      console.warn('⚠️ Refusing to send notification: order state does not match', { emailType: body.emailType, error: stateCheck.error });
+      return new Response(JSON.stringify({ error: stateCheck.error }), { status: 409, headers: corsHeaders });
+    }
+
+    // Idempotency: skip if this notification type was already sent for this order.
+    const { data: priorNotifications } = await admin
+      .from('notifications_log')
+      .select('id')
+      .eq('order_id', order.id)
+      .eq('email_type', body.emailType)
+      .eq('status', 'sent')
+      .limit(1);
+    if (priorNotifications && priorNotifications.length > 0) {
+      console.log('⚠️ Notification already sent for this order/type; skipping (idempotent)');
+      return new Response(JSON.stringify({ skipped: true, reason: 'already_notified' }), { headers: corsHeaders });
+    }
 
     // Fetch order_lines - use minimal fields
     console.log('📋 Fetching order_lines for:', body.orderId);
@@ -231,6 +332,7 @@ serve(async (req: Request) => {
     const pickupHours = notificationSettings.pickup_hours || 'during business hours';
     const specialInstructions = notificationSettings.special_instructions || '';
     const storefrontUrl = notificationSettings.storefront_url || '';
+    const taxBreakdown = taxBreakdownText(allLines);
 
     let subject = '';
     let emailBody = '';
@@ -266,7 +368,8 @@ ${specialInstructions ? `\n${specialInstructions}\n` : ''}
 Totals:
 Subtotal: ${money(order.subtotal_cents)}
 Tax: ${money(order.tax_cents)}
-${(order.online_payment_fee_cents || 0) > 0 ? `Online convenience fee: ${money(order.online_payment_fee_cents)}
+${taxBreakdown ? `${taxBreakdown}\n` : ''}
+${(order.online_payment_fee_cents || 0) > 0 ? `${onlineFeeLabel(tenant?.plan)}: ${money(order.online_payment_fee_cents)}
 ` : ''}Total: ${money(order.total_cents)}
 
 ${storefrontUrl ? `Manage your order: ${storefrontUrl}\n` : ''}

@@ -319,6 +319,7 @@ export function CheckoutPage() {
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string>();
+  const [placedOrderTotalCents, setPlacedOrderTotalCents] = useState(0);
   const [needsStripeConfirmation, setNeedsStripeConfirmation] = useState(false);
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
   const [dismissedCheckoutError, setDismissedCheckoutError] = useState(false);
@@ -1534,6 +1535,7 @@ export function CheckoutPage() {
       console.log('✅ [ORDER] Order created successfully:', result.orderId);
       setOrderError(null);
       setOrderId(result.orderId);
+      setPlacedOrderTotalCents(result.paymentAmountCents ?? checkoutDisplayTotalCents);
 
       if (result.needsStripeConfirmation) {
         if (!stripePromise || !result.clientSecret) {
@@ -1853,6 +1855,59 @@ export function CheckoutPage() {
             <p className="text-sm text-gray-500 mb-6">
               Order ID: {orderId}
             </p>
+          )}
+          {selectedExternalPayment && (
+            <div className="mb-6 border border-amber-300 bg-amber-50 p-4 text-left">
+              <p className="mb-2 text-sm font-semibold text-amber-900">
+                Pay ${(placedOrderTotalCents / 100).toFixed(2)} with {selectedExternalPayment.label}
+              </p>
+              <p className="mb-3 text-sm text-amber-800">
+                Include your order ID with the payment so the store can match it to your order.
+              </p>
+              {selectedExternalPayment.qrUrl && (
+                <img
+                  src={selectedExternalPayment.qrUrl}
+                  alt={`${selectedExternalPayment.label} QR code`}
+                  className="mb-3 h-40 w-40 border border-amber-200 bg-white object-contain p-2"
+                />
+              )}
+              {selectedExternalPayment.paymentLink && (
+                <a
+                  href={selectedExternalPayment.paymentLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mb-3 inline-block border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Open {selectedExternalPayment.label} payment link
+                </a>
+              )}
+              {selectedExternalPayment.copyFields.length > 0 && (
+                <div className="space-y-2">
+                  {selectedExternalPayment.copyFields.map((field) => (
+                    <div key={`${selectedExternalPayment.method}-${field.label}`}>
+                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">
+                        {field.label}
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={field.value}
+                          className="min-w-0 flex-1 border border-amber-200 bg-white px-3 py-2 text-sm text-gray-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => copyPaymentValue(field.value, field.label)}
+                          className="border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <div className="space-y-3">
             <button
@@ -2832,59 +2887,11 @@ export function CheckoutPage() {
                 {selectedExternalPayment && (
                   <div className="rounded-md p-4 mb-4 border border-amber-300 bg-amber-50">
                     <p className="text-sm font-semibold text-amber-900 mb-2">
-                      Pay with {selectedExternalPayment.label}
+                      {selectedExternalPayment.label} payment
                     </p>
-                    <p className="text-sm text-amber-800 mb-3">
-                      Send payment now, then place your order. The store will verify the payment before marking the order paid.
+                    <p className="text-sm text-amber-800">
+                      Place your order first. The payment amount and account details will appear after your order is confirmed.
                     </p>
-                    {selectedExternalPayment.qrUrl && (
-                      <img
-                        src={selectedExternalPayment.qrUrl}
-                        alt={`${selectedExternalPayment.label} QR code`}
-                        className="mb-3 h-40 w-40 rounded-lg border border-amber-200 bg-white object-contain p-2"
-                      />
-                    )}
-                    {selectedExternalPayment.paymentLink && (
-                      <a
-                        href={selectedExternalPayment.paymentLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mb-3 inline-block rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                      >
-                        Open {selectedExternalPayment.label} payment link
-                      </a>
-                    )}
-                    {selectedExternalPayment.copyFields.length > 0 && (
-                      <div className="space-y-2">
-                        {selectedExternalPayment.copyFields.map((field) => (
-                          <div key={`${selectedExternalPayment.method}-${field.label}`}>
-                            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-900">
-                              {field.label}
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                readOnly
-                                value={field.value}
-                                className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-800"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => copyPaymentValue(field.value, field.label)}
-                                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                              >
-                                Copy
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {!selectedExternalPayment.qrUrl && selectedExternalPayment.copyFields.length === 0 && (
-                      <p className="text-sm text-amber-800">
-                        This store accepts {selectedExternalPayment.label}, but has not added QR or account details. Please contact the store for payment instructions.
-                      </p>
-                    )}
                   </div>
                 )}
 
